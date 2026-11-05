@@ -16,6 +16,8 @@ import { RelationalView } from "@/components/relations/RelationalView";
 import { GitSettings } from "./GitSettings";
 import { SpeechRecognitionSettings } from "./SpeechRecognitionSettings";
 import { SoftwareSettings } from "./SoftwareSettings";
+import { CodexSettings } from "./CodexSettings";
+import openAiIcon from "@/assets/openai.svg";
 import { sidebarMaxSize, workspacePanelMinSize } from "@/lib/workspacePanelSizing";
 
 export const Workspace: React.FC = () => {
@@ -82,7 +84,7 @@ export const Workspace: React.FC = () => {
   const activeLeftTabId = useWorkspaceStore(state => state.activeLeftTabId);
   const activeRightTabId = useWorkspaceStore(state => state.activeRightTabId);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<"git" | "speech" | "software">("git");
+  const [settingsSection, setSettingsSection] = useState<"git" | "speech" | "software" | "codex">("git");
   useEffect(() => {
     if (activeLeftTabId || activeRightTabId) setSettingsOpen(false);
   }, [activeLeftTabId, activeRightTabId]);
@@ -242,8 +244,9 @@ export const Workspace: React.FC = () => {
               <button type="button" onClick={() => setSettingsSection("git")} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "git" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "git" ? "page" : undefined}><GitBranch size={16} />版本控制</button>
               <button type="button" onClick={() => setSettingsSection("speech")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "speech" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "speech" ? "page" : undefined}><Mic size={16} />语音识别</button>
               <button type="button" onClick={() => setSettingsSection("software")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "software" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "software" ? "page" : undefined}><Package size={16} />软件管理</button>
+              <button type="button" onClick={() => setSettingsSection("codex")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "codex" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "codex" ? "page" : undefined}><img src={openAiIcon} alt="" aria-hidden="true" className="h-4 w-4 shrink-0" />Codex</button>
             </nav>
-            <div className="min-h-0 min-w-0 flex-1 overflow-auto">{settingsSection === "git" ? <GitSettings /> : settingsSection === "speech" ? <SpeechRecognitionSettings /> : <SoftwareSettings />}</div>
+            <div className="min-h-0 min-w-0 flex-1 overflow-auto">{settingsSection === "git" ? <GitSettings /> : settingsSection === "speech" ? <SpeechRecognitionSettings /> : settingsSection === "software" ? <SoftwareSettings /> : <CodexSettings />}</div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

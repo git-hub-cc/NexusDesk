@@ -19,6 +19,7 @@ pub mod video_cmds;
 pub mod http_cmds;
 pub mod codex_network;
 pub mod codex_proxy;
+pub mod codex_settings;
 pub mod stt_cmds;
 
 pub mod menu_cmds;

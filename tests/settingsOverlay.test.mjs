@@ -8,10 +8,11 @@ import vm from "node:vm";
 test("settings overlay preserves the workspace tree and browser component positions", () => {
   let settingsOpen = false;
   const component = name => Object.assign(() => null, { displayName: name });
-  const names = ["GitBranch", "X", "Panel", "PanelGroup", "PanelResizeHandle", "DndContext", "PointerSensor", "DragOverlay", "WindowTitleBar", "ActivityBar", "Sidebar", "BottomPanel", "TabUI", "EditorGroupPanel", "RelationalView", "GitSettings"];
+  const names = ["Bot", "GitBranch", "Mic", "Package", "X", "Panel", "PanelGroup", "PanelResizeHandle", "DndContext", "PointerSensor", "DragOverlay", "WindowTitleBar", "ActivityBar", "Sidebar", "BottomPanel", "TabUI", "EditorGroupPanel", "RelationalView", "GitSettings", "CodexSettings", "SpeechRecognitionSettings", "SoftwareSettings"];
   const components = Object.fromEntries(names.map(name => [name, component(name)]));
   const context = {
     ...components, React, AndroidMirrorWorkspace: component("AndroidMirrorWorkspace"),
+    openAiIcon: "openai.svg",
     Dialog: Object.fromEntries(["Root", "Portal", "Overlay", "Content", "Title", "Close", "Description"].map(name => [name, component(`Dialog.${name}`)])),
     useState: initial => [typeof initial === "boolean" ? settingsOpen : initial, () => {}],
     useEffect: () => {}, useLayoutEffect: () => {}, useRef: () => ({ current: null }),

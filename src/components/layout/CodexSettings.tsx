@@ -1,0 +1,60 @@
+import { useEffect, useRef, useState } from "react";
+import { codexSettingsApi } from "@/lib/api";
+
+export function CodexSettings() {
+  const [model, setModel] = useState("");
+  const [proxyUrl, setProxyUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const loaded = useRef(false);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const saveVersion = useRef(0);
+  const inputClass = "w-full min-w-0 rounded border border-ide-panel-border bg-ide-bg px-2 py-1.5 outline-none focus:border-ide-accent";
+
+  useEffect(() => {
+    loaded.current = false;
+    void codexSettingsApi.read().then(settings => {
+      setModel(settings.model);
+      setProxyUrl(settings.proxyUrl);
+      setApiKeyConfigured(settings.apiKeyConfigured);
+      loaded.current = true;
+    }).catch(reason => setError(String(reason)));
+  }, []);
+
+  useEffect(() => {
+    if (!loaded.current) return;
+    const timer = window.setTimeout(async () => {
+      const version = ++saveVersion.current;
+      setBusy(true);
+      setError("");
+      const save = () => codexSettingsApi.save({ model, proxyUrl, apiKey: apiKey || undefined });
+      const currentSave = saveQueue.current.catch(() => {}).then(save);
+      saveQueue.current = currentSave;
+      void currentSave.then(() => {
+        if (version !== saveVersion.current) return;
+        if (apiKey.trim()) setApiKeyConfigured(true);
+      }).catch(reason => {
+        if (version === saveVersion.current) setError(String(reason));
+      }).finally(() => {
+        if (version === saveVersion.current) setBusy(false);
+      });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [model, proxyUrl, apiKey]);
+
+  return <div className="mx-auto w-full max-w-3xl p-8" onKeyDown={event => event.stopPropagation()}>
+    <header className="mb-6 border-b border-ide-panel-border pb-4">
+      <h2 className="text-xl font-semibold">Codex</h2>
+      <p className="mt-1 text-sm text-gray-400">配置 Codex CLI 使用的模型、兼容 API 地址和 API Key。</p>
+    </header>
+    <div className="flex flex-col gap-4 text-sm">
+      <label className="grid gap-1">模型<input className={inputClass} value={model} onChange={event => setModel(event.target.value)} placeholder="例如 gpt-5-codex" spellCheck={false} /></label>
+      <label className="grid gap-1">代理 / API 基础地址<input className={inputClass} value={proxyUrl} onChange={event => setProxyUrl(event.target.value)} placeholder="https://api.openai.com/v1（留空使用默认提供方）" spellCheck={false} /></label>
+      <label className="grid gap-1">OPENAI_API_KEY<input className={inputClass} type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={apiKeyConfigured ? "已配置；留空保留当前密钥" : "输入 API Key"} autoComplete="new-password" /></label>
+      {error && <p role="alert" className="break-all text-red-400">{error}</p>}
+      {busy && <p className="text-xs text-gray-400" role="status">正在保存…</p>}
+    </div>
+  </div>;
+}

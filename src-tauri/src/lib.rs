@@ -200,6 +200,8 @@ pub fn run() {
             commands::codex_proxy::codex_proxy_start,
             commands::codex_proxy::codex_proxy_stop,
             commands::codex_proxy::codex_proxy_requests,
+            commands::codex_settings::codex_settings_read,
+            commands::codex_settings::codex_settings_save,
             logging::write_console_logs,
             commands::remote_cmds::connect_remote,
             commands::remote_cmds::reconnect_remote,

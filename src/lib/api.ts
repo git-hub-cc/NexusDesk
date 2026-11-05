@@ -132,6 +132,7 @@ export interface GitFileStatus { path: string; worktreePath: string; staged: boo
 export interface GitLogEntry { id: string; parents: string[]; message: string; author: string; time: number; refs: string[]; pushed: boolean; isHead: boolean }
 export interface GitRevisionChange { path: string; status: string }
 export interface GitSettings { remote: string; proxy: string; username: string; token: string }
+export interface CodexSettings { model: string; proxyUrl: string; apiKeyConfigured: boolean }
 export type GitProvider = "github" | "gitlab" | "gitee";
 export interface GitRepository { name: string; fullName: string; cloneUrl: string; private: boolean }
 export interface GitCloneAuth { token: string; provider: GitProvider }
@@ -163,4 +164,9 @@ export const gitApi = {
     commit: (repoPath: string, message: string): Promise<string> => invoke("commit_git", { repoPath, message }),
     log: (repoPath: string, limit = 100): Promise<GitLogEntry[]> => invoke("get_git_log", { repoPath, limit }),
     diff: (repoPath: string, path: string, staged: boolean): Promise<string> => invoke("get_git_diff", { repoPath, path, staged }),
+};
+
+export const codexSettingsApi = {
+    read: (): Promise<CodexSettings> => invoke("codex_settings_read"),
+    save: (input: { model: string; proxyUrl: string; apiKey?: string }): Promise<void> => invoke("codex_settings_save", { input }),
 };
