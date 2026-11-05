@@ -57,7 +57,7 @@ export function TerminalSession({ session, active, onExit }: { session: SessionI
     }).catch(error => { if (!disposed) setHistoryError(String(error)); });
 
     if (!host.current) return;
-    const terminal = new Terminal({ allowProposedApi: true, cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Cascadia Code", "Microsoft YaHei", "PingFang SC", "Noto Sans Mono CJK SC", monospace', theme: { background: "#1e1f22", foreground: "#d1d5db" }, scrollback: 5000 });
+    const terminal = new Terminal({ allowProposedApi: true, cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Cascadia Code", "Microsoft YaHei", "PingFang SC", "Noto Sans Mono CJK SC", monospace', theme: { background: "#2b2d30", foreground: "#d1d5db", cursor: "#a9b7c6" }, scrollback: 5000 });
     // ConPTY owns screen reflow and does not restore scrollback when rows grow.
     // xterm's default Unix resize behavior otherwise disagrees with its redraws.
     // Remote PTYs must keep their server's normal terminal behavior.
@@ -319,6 +319,9 @@ export function TerminalSession({ session, active, onExit }: { session: SessionI
         resize();
       });
     };
+    // 分割面板改变的是宿主尺寸，不一定会触发 window.resize。
+    const resizeObserver = new ResizeObserver(() => scheduleResize());
+    resizeObserver.observe(element);
     fitRef.current = () => { scheduleResize(); focusTerminal(); };
     // Wait for fonts and three equal, visible layout samples before opening PTY.
     let finishLayout: (() => void) | undefined;
@@ -442,6 +445,7 @@ export function TerminalSession({ session, active, onExit }: { session: SessionI
       finishLayout?.();
       cancelAnimationFrame(resizeFrame);
       cancelAnimationFrame(layoutFrame);
+      resizeObserver.disconnect();
       window.removeEventListener("resize", scheduleResize);
       document.fonts?.removeEventListener("loadingdone", fontsChanged);
       clearTimeout(historyClickTimer.current);
@@ -477,7 +481,7 @@ export function TerminalSession({ session, active, onExit }: { session: SessionI
 
   return (
     <>
-      <div style={{ display: active ? "flex" : "none", background: "#1e1f22" }} className="terminal-pane h-full w-full min-h-0 flex-col p-2">
+      <div style={{ display: active ? "flex" : "none", background: "#2b2d30" }} className="terminal-pane h-full w-full min-h-0 flex-col p-2">
         <div ref={host} onKeyDown={event => event.stopPropagation()} className="terminal-host min-h-0 flex-1 w-full overflow-hidden" />
         {matches.length > 0 && <div className="shrink-0 border-t border-white/10 pt-1" aria-label="命令历史候选">
           <div className="mb-1 flex justify-between text-[10px] text-gray-500"><span>命令历史 · 单击回填，双击执行</span><span>{matches.length} 条</span></div>

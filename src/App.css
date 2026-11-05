@@ -562,7 +562,7 @@
 .stt-waveform span { width: 3px; min-height: 4px; max-height: 32px; background: #6acb9a; border-radius: 3px; transition: height 90ms ease-out, opacity 90ms ease-out; }
 .stt-waveform.is-idle span { height: 4px !important; opacity: .3 !important; }
 .global-speech-input .stt-floating { inset: 0; width: 100%; height: 100%; box-sizing: border-box; border-radius: 0; box-shadow: none; }
-.terminal-pane, .terminal-host, .terminal-host .xterm, .terminal-host .xterm-screen { min-height: 0; height: 100%; }
+.terminal-pane, .terminal-host, .terminal-host .xterm, .terminal-host .xterm-screen, .terminal-host .xterm-viewport, .terminal-host canvas { min-height: 0; height: 100%; background-color: var(--ide-bg) !important; }
 .terminal-host .xterm { width: 100%; }
 .terminal-host .xterm-viewport { max-height: 100%; overscroll-behavior: contain; }
 .stt-acceleration { display: grid; gap: 6px; margin-bottom: 12px; color: #aeb7b0; font-size: 11px; overflow-wrap: anywhere; }
