@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openNativePopup } from "@/lib/nativePopup";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Compartment, EditorState, StateEffect, StateField } from "@codemirror/state";
-import { editorHighlighting, languageForPath } from "./syntaxHighlight";
+import { editorHighlighting, httpHighlightPlugin, languageForPath } from "./syntaxHighlight";
 import { Decoration, EditorView, WidgetType, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, highlightActiveLine, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess, insertBlankLine, copyLineDown, deleteLine, moveLineUp, moveLineDown, toggleComment, redo, selectAll } from "@codemirror/commands";
 import { search, searchKeymap, openSearchPanel } from "@codemirror/search";
@@ -87,6 +87,7 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const languageCompartment = useRef(new Compartment());
+  const httpHighlightCompartment = useRef(new Compartment());
   const locationsRef = useRef(paneLocations[pane]);
 
   const activeTabId = tabId;
@@ -352,6 +353,7 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
         EditorView.contentAttributes.of(isSnapshot || activeTab?.readOnly ? { tabindex: "0" } : {}),
         editorHighlighting,
         languageCompartment.current.of([]),
+        httpHighlightCompartment.current.of(isHttp ? httpHighlightPlugin : []),
         sharedNodeCounts,
         linkTargetDecoration,
         wikiLinkCompletion(() => tabRef.current?.path),
@@ -816,6 +818,7 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
     const view = viewRef.current;
     if (!view) return;
     let cancelled = false;
+    view.dispatch({ effects: httpHighlightCompartment.current.reconfigure(isHttp ? httpHighlightPlugin : []) });
     view.dispatch({ effects: languageCompartment.current.reconfigure([]) });
     languageForPath(activeTab?.path ?? "").then(extension => {
       if (!cancelled && viewRef.current === view) {
@@ -823,7 +826,7 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
       }
     }).catch(error => console.error("Unable to load syntax highlighting", error));
     return () => { cancelled = true; };
-  }, [activeTab?.path]);
+  }, [activeTab?.path, isHttp]);
 
   // Content updates (including autosave feedback) must not restore a saved location.
   useEffect(() => {

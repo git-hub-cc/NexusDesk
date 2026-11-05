@@ -24,21 +24,27 @@ export const editorHighlighting = syntaxHighlighting(HighlightStyle.define([
   { tag: tags.meta, color: "#bbb7a3" },
 ]));
 
-const httpMethodDeco = Decoration.mark({ class: "cm-http-method", attributes: { style: "color: #3574f0; font-weight: bold;" } });
-const httpSeparatorDeco = Decoration.mark({ class: "cm-http-separator", attributes: { style: "color: #e8bf6a; font-weight: bold;" } });
-const httpHeaderDeco = Decoration.mark({ class: "cm-http-header", attributes: { style: "color: #c6a1cf;" } });
+const httpMethodDeco = Decoration.mark({ class: "cm-http-method", attributes: { style: "color: #82a8ed; font-weight: bold;" } });
+const httpUrlDeco = Decoration.mark({ class: "cm-http-url", attributes: { style: "color: #7fc8a9; text-decoration: underline;" } });
+const httpDescriptionDeco = Decoration.mark({ class: "cm-http-description", attributes: { style: "color: #e8bf6a; font-weight: bold;" } });
+const httpHeaderNameDeco = Decoration.mark({ class: "cm-http-header-name", attributes: { style: "color: #c6a1cf;" } });
 
 const httpDecorator = new MatchDecorator({
-  regexp: /^(?:(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE)\b|(###.*)|([\w-]+)(?=:))/gm,
-  decoration: (match) => {
-    if (match[1]) return httpMethodDeco;
-    if (match[2]) return httpSeparatorDeco;
-    if (match[3]) return httpHeaderDeco;
-    return Decoration.mark({});
+  regexp: /^(?:(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE)\s+(\S+)|(###.*)|([\w-]+)(?=:))/gim,
+  decorate: (add, from, _to, match, _view) => {
+    if (match[1]) {
+      const methodStart = from + match.index;
+      const urlStart = match[0].indexOf(match[2], match[1].length);
+      add(methodStart, methodStart + match[1].length, httpMethodDeco);
+      add(methodStart + urlStart, methodStart + urlStart + match[2].length, httpUrlDeco);
+      return;
+    }
+    if (match[3]) add(from + match.index, from + match.index + match[3].length, httpDescriptionDeco);
+    else if (match[4]) add(from + match.index, from + match.index + match[4].length, httpHeaderNameDeco);
   }
 });
 
-const httpHighlightPlugin = ViewPlugin.fromClass(class {
+export const httpHighlightPlugin = ViewPlugin.fromClass(class {
   decorations;
   constructor(view: EditorView) { this.decorations = httpDecorator.createDeco(view); }
   update(update: ViewUpdate) { this.decorations = httpDecorator.updateDeco(update, this.decorations); }
@@ -67,7 +73,7 @@ export async function languageForPath(path: string): Promise<Extension> {
     return markdown({ codeLanguages: languages });
   }
   if (/\.(http|rest)$/i.test(path)) {
-    return [httpHighlightPlugin, autocompletion({ override: [httpCompletion] })];
+    return autocompletion({ override: [httpCompletion] });
   }
   const language = LanguageDescription.matchFilename(languages, path);
   return language ? language.load() : [];
