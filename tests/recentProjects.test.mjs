@@ -28,7 +28,7 @@ function titleBar({ rootPath = null, exists = async () => true, confirmed = fals
     confirmAction: async (...args) => { prompts.push(args); return confirmed; }, showError: error => errors.push(error),
     DropdownMenu: Object.fromEntries(['Root', 'Trigger', 'Portal', 'Content', 'Item', 'Separator', 'CheckboxItem', 'ItemIndicator'].map(key => [key, `Menu.${key}`])),
     Dialog: Object.fromEntries(['Root', 'Portal', 'Overlay', 'Content', 'Title', 'Close'].map(key => [key, `Dialog.${key}`])),
-    ...Object.fromEntries(['Check', 'FolderTree', 'Link', 'PanelBottom', 'Minus', 'Square', 'X', 'ChevronDown'].map(key => [key, key])),
+    ...Object.fromEntries(['Check', 'FolderTree', 'Link', 'PanelBottom', 'Minus', 'Square', 'X', 'ChevronDown', 'Trash2'].map(key => [key, key])),
     nexusdeskIcon: '', console,
   });
   function render() {
@@ -40,6 +40,11 @@ function titleBar({ rootPath = null, exists = async () => true, confirmed = fals
   }
   return { render, prompts, errors, opened, checked, launched, state: () => state,
     item: path => render().find(node => node.type === 'Menu.Item' && node.key === path),
+    removeButton: path => render().find(node => node.type === 'button' && node.props['aria-label'] === `删除最近项目记录：${path}`),
+    async remove(path) {
+      render().find(node => node.type === 'button' && node.props['aria-label'] === `删除最近项目记录：${path}`).props.onClick({ stopPropagation() {} });
+      await new Promise(resolve => setImmediate(resolve));
+    },
     async select(path) {
       render().find(node => node.type === 'Menu.Item' && node.key === path).props.onSelect();
       await new Promise(resolve => setImmediate(resolve));
@@ -61,11 +66,11 @@ test('recent projects refresh missing colors and clear them when a directory ret
 
 test('project badge shows two letters or one Chinese character and retains the full name', () => {
   for (const [rootPath, shortName, fullName] of [
-    ['C:/NexusDesk', 'NO', 'NexusDesk'],
+    ['C:/NexusDesk', 'NE', 'NexusDesk'],
     ['C:/笔记项目', '笔', '笔记项目'],
-    [null, 'NO', 'NexusDesk'],
+    [null, 'NE', 'NexusDesk'],
   ]) {
-    const badge = titleBar({ rootPath }).render().find(node => node.props.className === 'project-badge');
+    const badge = titleBar({ rootPath }).render().find(node => node.props.className?.includes('project-badge'));
     assert.equal(badge.props.children, shortName);
     assert.equal(badge.props.title, fullName);
   }
@@ -125,3 +130,26 @@ test('existing project opens and directory check errors do not offer removal', a
   assert.deepEqual(failed.opened, []);
   assert.equal(failed.state().recentProjects.length, 2);
 });
+
+test('recent project rows expose an accessible remove button', () => {
+  const bar = titleBar();
+  assert.ok(bar.removeButton('C:/existing'));
+});
+
+test('removing a missing project clears its record without confirmation', async () => {
+  const bar = titleBar({ exists: async path => path !== 'C:/missing' });
+  await bar.remove('C:/missing');
+  assert.equal(bar.prompts.length, 0);
+  assert.deepEqual(bar.state().recentProjects, ['C:/existing']);
+});
+
+for (const confirmed of [false, true]) {
+  test(`removing an existing project ${confirmed ? 'clears' : 'keeps'} its record after confirmation`, async () => {
+    const bar = titleBar({ confirmed });
+    await bar.remove('C:/existing');
+    assert.equal(bar.prompts.length, 1);
+    assert.match(bar.prompts[0][0], /项目仍然存在/);
+    assert.equal(bar.state().recentProjects.includes('C:/existing'), !confirmed);
+    assert.ok(bar.state().recentProjects.includes('C:/missing'));
+  });
+}

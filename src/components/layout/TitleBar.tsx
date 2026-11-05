@@ -6,7 +6,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { flushGlobalSettings, settingsStorage } from "@/lib/globalSettings";
-import { Check, X, ChevronDown } from "lucide-react";
+import { Check, X, ChevronDown, Trash2 } from "lucide-react";
 import { fsApi, gitApi, type GitCloneAuth } from "@/lib/api";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { CreateProjectDialog } from "./CreateProjectDialog";
@@ -83,6 +83,25 @@ export const TitleBar: React.FC<{ expanded?: boolean }> = ({ expanded = false } 
     return false;
   };
 
+  const removeRecentProject = async (path: string) => {
+    if (!path.startsWith("sftp://")) {
+      try {
+        const exists = await fsApi.projectDirectoryExists(path);
+        setMissingProjects(state => ({ ...state, [path]: !exists }));
+        if (exists && !await confirmAction(`项目仍然存在：\n${path}\n\n确定从最近打开的项目中移除这条记录吗？`, {
+          title: "移除最近项目记录", confirmLabel: "移除记录", cancelLabel: "取消",
+        })) return;
+      } catch (error) {
+        showError(`无法检查项目目录：${String(error)}`);
+        return;
+      }
+    } else if (!await confirmAction(`确定从最近打开的项目中移除这条记录吗？\n${path}`, {
+      title: "移除最近项目记录", confirmLabel: "移除记录", cancelLabel: "取消",
+    })) return;
+
+    useWorkspaceStore.setState(state => ({ recentProjects: state.recentProjects.filter(item => item !== path) }));
+  };
+
   const handleRecentSelect = async (path: string) => {
     if (!await checkRecentProject(path)) return;
     if (path === rootPath) return;
@@ -148,19 +167,31 @@ export const TitleBar: React.FC<{ expanded?: boolean }> = ({ expanded = false } 
                 {recentProjects.map(path => {
                   const isCurrent = path === rootPath;
                   return (
+                    <div key={path} className="recent-project-row group flex min-w-0 items-stretch">
                       <DropdownMenu.Item
-                          key={path}
-                          onSelect={() => void handleRecentSelect(path)}
-                          className={`ide-menu-item flex w-full min-w-0 flex-col items-start rounded-sm ${isCurrent ? 'bg-ide-selection/30' : ''} ${missingProjects[path] ? 'recent-project-missing' : ''}`}
-                          title={missingProjects[path] ? `目录不存在：${path}` : path}
+                        key={path}
+                        onSelect={() => void handleRecentSelect(path)}
+                        className={`ide-menu-item flex min-w-0 flex-1 flex-col items-start rounded-sm ${isCurrent ? 'bg-ide-selection/30' : ''} ${missingProjects[path] ? 'recent-project-missing' : ''}`}
+                        title={missingProjects[path] ? `目录不存在：${path}` : path}
                       >
                         <div className="flex min-w-0 w-full items-center justify-between gap-2">
                           <span className="min-w-0 flex-1 truncate">{path.startsWith("sftp://") ? `SFTP ${settingsStorage.getItem(`sftp-label:${new URL(path).hostname}`) || new URL(path).hostname}` : path.split(/[/\\]/).pop()}</span>
-                          {missingProjects[path] && <span className="shrink-0 whitespace-nowrap px-1 text-[10px]">被删</span>}
+                          {missingProjects[path] && <X size={14} className="shrink-0 text-red-400" aria-label="目录不存在" />}
                           {isCurrent && <Check size={14} className="text-blue-400 shrink-0" />}
                         </div>
                         <span className="block w-full min-w-0 truncate text-xs text-gray-500">{path}</span>
                       </DropdownMenu.Item>
+                      <button
+                        type="button"
+                        aria-label={`删除最近项目记录：${path}`}
+                        title="从最近项目中移除"
+                        className="recent-project-remove no-drag-region"
+                        onPointerDown={event => event.stopPropagation()}
+                        onClick={event => { event.stopPropagation(); void removeRecentProject(path); }}
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                      </button>
+                    </div>
                   );
                 })}
                 </section>

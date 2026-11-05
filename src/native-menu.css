@@ -40,6 +40,11 @@ html body .native-menu:has(> .native-menu-scroll) { max-height: min(600px, 100dv
 .native-menu button:disabled { opacity: .4; }
 .native-menu button.recent-project-missing { color: #f87171; }
 .native-menu button.recent-project-missing:hover, .native-menu button.recent-project-missing:focus-visible { color: #fca5a5; }
+.native-menu .recent-project-row { padding: 0; gap: 0; }
+.native-menu .recent-project-row > [role="menuitem"] { width: auto; }
+.native-menu .recent-project-remove { width: 28px; min-width: 28px; min-height: 28px; justify-content: center; padding: 5px; opacity: 0; color: #f87171; cursor: pointer; }
+.native-menu .recent-project-row:hover .recent-project-remove, .native-menu .recent-project-row:focus-within .recent-project-remove { opacity: 1; }
+.native-menu .recent-project-remove:hover, .native-menu .recent-project-remove:focus-visible { background: rgba(248, 113, 113, .16); color: #fca5a5; }
 .native-menu svg { width: 14px; height: 14px; flex-shrink: 0; }
 .native-menu span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .native-menu hr { height: 1px; border: 0; background: var(--ide-panel-border, #1e1f22); margin: 4px 6px; }
