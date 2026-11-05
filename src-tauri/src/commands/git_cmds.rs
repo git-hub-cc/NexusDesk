@@ -169,11 +169,6 @@ pub fn get_git_revision_changes(repo_path: String, commit_id: String) -> Result<
 #[tauri::command]
 pub fn get_git_revision_diff(repo_path: String, commit_id: String, path: String) -> Result<String, String> { git::revision_diff(&repo_path, &commit_id, &path) }
 #[tauri::command]
-pub fn restore_git_revision_file(repo_path: String, commit_id: String, path: String) -> Result<(), String> { git::restore_revision_file(&repo_path, &commit_id, &path) }
-#[tauri::command]
-pub fn restore_git_revision_directory(repo_path: String, commit_id: String, path: String) -> Result<(), String> { git::restore_revision_directory(&repo_path, &commit_id, &path) }
-
-#[tauri::command]
 pub fn revert_git_file(repo_path: String, path: String) -> Result<(), String> { git::revert_files(&repo_path, &[path]) }
 #[tauri::command]
 pub fn revert_git_files(repo_path: String, paths: Vec<String>) -> Result<(), String> { git::revert_files(&repo_path, &paths) }

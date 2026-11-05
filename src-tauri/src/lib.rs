@@ -287,8 +287,6 @@ pub fn run() {
             commands::git_cmds::get_git_revision_content,
             commands::git_cmds::get_git_revision_changes,
             commands::git_cmds::get_git_revision_diff,
-            commands::git_cmds::restore_git_revision_file,
-            commands::git_cmds::restore_git_revision_directory,
         ]);
             handler(invoke)
         })

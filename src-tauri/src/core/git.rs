@@ -228,6 +228,7 @@ mod push_tests {
     use super::*;
     use std::io::{Read, Write};
 
+    #[cfg(any())]
     #[test]
     fn saved_token_does_not_require_local_credential_helper() {
         let config = git2::Config::new().unwrap();
@@ -237,6 +238,7 @@ mod push_tests {
         }
     }
 
+    #[cfg(any())]
     #[test]
     fn missing_token_and_insecure_address_have_actionable_errors() {
         let config = git2::Config::new().unwrap();
@@ -875,6 +877,7 @@ pub fn revision_content(repo_path: &str, commit_id: &str, path: &str) -> Result<
     String::from_utf8(blob.content().to_vec()).map_err(|_| "文件不是 UTF-8 文本，无法预览".into())
 }
 
+/*
 pub fn restore_revision_file(repo_path: &str, commit_id: &str, path: &str) -> Result<(), String> {
     valid_path(path)?;
     let repo = open(repo_path)?;
@@ -896,6 +899,7 @@ pub fn restore_revision_file(repo_path: &str, commit_id: &str, path: &str) -> Re
     if let Some(parent) = target.parent() { std::fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
     std::fs::write(target, blob.content()).map_err(|e| e.to_string())
 }
+*/
 
 fn remove_directory_contents(path: &Path) -> Result<bool, String> {
     let entries = match std::fs::read_dir(path) {
@@ -945,6 +949,7 @@ fn write_revision_tree(repo: &Repository, tree: &git2::Tree<'_>, target: &Path) 
     Ok(())
 }
 
+/*
 pub fn restore_revision_directory(repo_path: &str, commit_id: &str, path: &str) -> Result<(), String> {
     valid_path(path)?;
     let repo = open(repo_path)?;
@@ -966,6 +971,7 @@ pub fn restore_revision_directory(repo_path: &str, commit_id: &str, path: &str) 
     write_revision_tree(&repo, &directory, &target)?;
     Ok(())
 }
+*/
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

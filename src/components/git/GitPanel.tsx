@@ -21,10 +21,8 @@ function RepositoryPanel({ root }: { root: string }) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [contextMenu, setContextMenu] = useState<{ targets: GitTreeTarget[]; x: number; y: number } | null>(null);
     const [commitMenu, setCommitMenu] = useState<{ commit: GitLogEntry; x: number; y: number } | null>(null);
-    const [revisionFileMenu, setRevisionFileMenu] = useState<{ file?: GitRevisionChange; directory?: string; x: number; y: number } | null>(null);
     const contextMenuRef = useRef<HTMLDivElement>(null);
     const commitMenuRef = useRef<HTMLDivElement>(null);
-    const revisionFileMenuRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
         if (!contextMenu) return;
         const dismiss = (event: PointerEvent) => { if (!contextMenuRef.current?.contains(event.target as Node)) setContextMenu(null); };
@@ -59,23 +57,6 @@ function RepositoryPanel({ root }: { root: string }) {
             window.removeEventListener("blur", close);
         };
     }, [commitMenu]);
-    useEffect(() => {
-        if (!revisionFileMenu) return;
-        const dismiss = (event: PointerEvent) => { if (!revisionFileMenuRef.current?.contains(event.target as Node)) setRevisionFileMenu(null); };
-        const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setRevisionFileMenu(null); };
-        const close = () => setRevisionFileMenu(null);
-        document.addEventListener("pointerdown", dismiss);
-        document.addEventListener("keydown", escape);
-        window.addEventListener("resize", close);
-        window.addEventListener("blur", close);
-        revisionFileMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
-        return () => {
-            document.removeEventListener("pointerdown", dismiss);
-            document.removeEventListener("keydown", escape);
-            window.removeEventListener("resize", close);
-            window.removeEventListener("blur", close);
-        };
-    }, [revisionFileMenu]);
     const [files, setFiles] = useState<GitFileStatus[]>([]);
     const [log, setLog] = useState<GitLogEntry[]>([]);
     const [historyQuery, setHistoryQuery] = useState("");
@@ -313,52 +294,6 @@ function RepositoryPanel({ root }: { root: string }) {
         if (!mounted.current || request !== revisionRequest.current) return;
         useWorkspaceStore.getState().openTab({ id: `git-revision:${root}:${commit.id}:${path}`, path, diffContext: { root, path }, title: `${path.split("/").pop()} @${commit.id.slice(0, 8)}`, diff: content, revision: commit.id, imageDiff: isImage(path) ? { repoPath: root, staged: false, commitId: commit.id } : undefined, diffLabels: [commit.parents[0] ? `父提交 ${commit.parents[0].slice(0, 8)}` : "空版本 · 首次提交前", `当前提交 ${commit.id.slice(0, 8)}`] });
     }
-    async function restoreRevisionFile(file: GitRevisionChange) {
-        setRevisionFileMenu(null);
-        if (!revision) return;
-        const commit = revision;
-        const confirmed = await confirmAction(
-            `${file.status === "删除" ? "删除本地文件" : "用提交内容覆盖本地文件"} ${file.path}？`,
-            { title: "恢复提交文件", confirmLabel: file.status === "删除" ? "删除文件" : "覆盖文件", cancelLabel: "取消" }
-        );
-        if (!confirmed || !mounted.current || revision?.id !== commit.id) return;
-        await run(async () => {
-            await gitApi.restoreRevisionFile(root, commit.id, file.path);
-            const state = useWorkspaceStore.getState();
-            for (const pane of ["left", "right"] as const) {
-                for (const tab of pane === "left" ? state.leftTabs : state.rightTabs) {
-                    const normalized = tab.path.replace(/\\/g, "/");
-                    const relative = normalized.startsWith(`${root.replace(/\\/g, "/")}/`) ? normalized.slice(root.length + 1) : normalized;
-                    if (!tab.revision && relative === file.path) state.closeTab(tab.id, pane);
-                }
-            }
-            setNotice(`已从提交 ${commit.id.slice(0, 8)} 恢复 ${file.path}`);
-        }, true);
-    }
-    async function restoreRevisionDirectory(path: string) {
-        setRevisionFileMenu(null);
-        if (!revision) return;
-        const commit = revision;
-        const directoryFiles = revisionFiles.filter(file => file.path.startsWith(`${path}/`));
-        if (!directoryFiles.length) return;
-        const confirmed = await confirmAction(
-            `用提交 ${commit.id.slice(0, 8)} 的完整快照替换本地目录“${path}”的全部内容？目录中该提交不存在的文件也会删除。`,
-            { title: "恢复快照目录", confirmLabel: "覆盖目录文件", cancelLabel: "取消" }
-        );
-        if (!confirmed || !mounted.current || revision?.id !== commit.id) return;
-        await run(async () => {
-            await gitApi.restoreRevisionDirectory(root, commit.id, path);
-            const state = useWorkspaceStore.getState();
-            for (const pane of ["left", "right"] as const) {
-                for (const tab of pane === "left" ? state.leftTabs : state.rightTabs) {
-                    const normalized = tab.path.replace(/\\/g, "/");
-                    const relative = normalized.startsWith(`${root.replace(/\\/g, "/")}/`) ? normalized.slice(root.length + 1) : normalized;
-                    if (!tab.revision && relative.startsWith(`${path}/`)) state.closeTab(tab.id, pane);
-                }
-            }
-            setNotice(`已从提交 ${commit.id.slice(0, 8)} 恢复目录 ${path} 的完整快照`);
-        }, true);
-    }
     async function fileAction(selected: GitTreeTarget[], action: "revert" | "ignore") {
         const roots = selected.filter(target => !selected.some(parent => parent.directory && parent.path !== target.path && target.path.startsWith(`${parent.path}/`)));
         setContextMenu(null);
@@ -461,14 +396,6 @@ function RepositoryPanel({ root }: { root: string }) {
                 <Undo2 size={14} />撤销此提交
             </button>}
         </div>}
-        {revisionFileMenu && revision && <div ref={revisionFileMenuRef} role="menu" aria-label="快照文件操作" style={{ left: revisionFileMenu.x, top: revisionFileMenu.y }} onContextMenu={event => event.preventDefault()}
-            className="fixed z-50 w-60 rounded border border-ide-panel-border bg-ide-panel-bg p-1 shadow-xl">
-            <button type="button" role="menuitem" disabled={operationsPending}
-                className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left hover:bg-ide-tree-hover focus-visible:bg-ide-tree-hover disabled:opacity-40"
-                onClick={() => revisionFileMenu.directory ? void restoreRevisionDirectory(revisionFileMenu.directory) : revisionFileMenu.file && void restoreRevisionFile(revisionFileMenu.file)}>
-                <Undo2 size={14} />{revisionFileMenu.directory ? "用此提交覆盖目录下所有文件" : revisionFileMenu.file?.status === "删除" ? "用此提交删除本地文件" : "用此提交覆盖本地文件"}
-            </button>
-        </div>}
         {contextMenu && <div ref={contextMenuRef} role="group" aria-label="文件操作" style={{ left: contextMenu.x, top: contextMenu.y }} onContextMenu={event => event.preventDefault()}
                              className="fixed z-50 w-52 rounded border border-ide-panel-border bg-ide-panel-bg p-1 shadow-xl">
             <button type="button" disabled={operationsPending} className="block w-full rounded-sm px-3 py-2 text-left hover:bg-ide-tree-hover focus-visible:bg-ide-tree-hover disabled:opacity-40" onClick={() => void fileAction(contextMenu.targets, "revert")}>{contextMenu.targets.length > 1 ? `回退所选 ${contextMenu.targets.length} 项` : contextMenu.targets[0].directory ? "回退目录下所有文件" : "回退文件"}</button>
@@ -486,12 +413,7 @@ function RepositoryPanel({ root }: { root: string }) {
                 {revision ? loadingRevision ? <p className="text-gray-400">正在读取提交文件…</p> : <>
                     <p className="text-gray-500 mb-1">提交更改 ({revisionFiles.length}) · {revision.parents.length > 1 ? "相对第一父提交" : "相对父提交"} · 点击查看差异</p>
                     {!revisionFiles.length && <p className="text-gray-400">此提交没有文件差异</p>}
-                    <GitFileTree key={revision.id} files={revisionFiles} onDirectoryContextMenu={(event, path) => {
-                        if (!operationsPending && revisionFiles.some(file => file.path.startsWith(`${path}/`))) setRevisionFileMenu({ directory: path, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 280)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 48)) });
-                    }} renderFile={(file, name) => <button className={`flex items-center gap-2 text-left w-full py-1 hover:bg-ide-tree-hover ${file.status === "新增" ? "text-green-400" : file.status === "删除" ? "text-red-400" : "text-blue-400"}`} title={file.path} onClick={() => void run(() => openRevisionFile(file.path))} onContextMenu={event => {
-                        event.preventDefault(); event.stopPropagation();
-                        if (!operationsPending) setRevisionFileMenu({ file, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 248)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 48)) });
-                    }}><span className="truncate">{name}</span><span className="shrink-0">{file.status}</span></button>} />
+                    <GitFileTree key={revision.id} files={revisionFiles} renderFile={(file, name) => <button className={`flex items-center gap-2 text-left w-full py-1 hover:bg-ide-tree-hover ${file.status === "新增" ? "text-green-400" : file.status === "删除" ? "text-red-400" : "text-blue-400"}`} title={file.path} onClick={() => void run(() => openRevisionFile(file.path))}><span className="truncate">{name}</span><span className="shrink-0">{file.status}</span></button>} />
                 </> : <>
                     {!files.length && (isRepository === false ? <div className="flex flex-col items-start gap-2 text-sm text-gray-400">
                         <span>当前项目尚未初始化 Git 仓库。</span>
