@@ -1,0 +1,10 @@
+{
+  "keys": [
+    "noteide-workspace-storage",
+    "noteide-terminal-profiles",
+    "noteide-browser-history",
+    "noteide.music.libraryTab",
+    "noteide.http.extraction.v1"
+  ],
+  "prefixes": ["sftp-profile:", "sftp-label:", "noteide-ui:"]
+}

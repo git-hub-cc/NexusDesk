@@ -1,0 +1,8 @@
+<svg viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="128" height="128" rx="28" fill="#1E1F22"/>
+            <!-- 笔记外框 -->
+            <rect x="28" y="24" width="72" height="80" rx="8" stroke="#A9B7C6" stroke-width="8"/>
+            <!-- 终端提示符 >_ -->
+            <path d="M44 48L58 60L44 72" stroke="#3574F0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M68 74H84" stroke="#85C88A" stroke-width="8" stroke-linecap="round"/>
+          </svg>

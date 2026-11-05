@@ -1,0 +1,72 @@
+.native-menu {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 4px;
+  background: var(--ide-bg, #2b2d30);
+  color: var(--ide-fg, #a9b7c6);
+  border: 1px solid var(--ide-panel-border, #1e1f22);
+  border-radius: 6px;
+  font: 13px/20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: dark;
+  user-select: none;
+}
+.native-menu * { box-sizing: border-box; }
+.native-menu:has(> .native-menu-scroll) {
+  display: flex;
+  flex-direction: column;
+  max-height: 600px;
+  overflow: hidden;
+}
+.native-menu:has(> .native-menu-scroll) > * { flex-shrink: 0; }
+.native-menu > .native-menu-scroll {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ide-selection-inactive, #4b5054) transparent;
+}
+html body:has(.native-menu-scroll) { overflow: hidden; }
+html body .native-menu:has(> .native-menu-scroll) { max-height: min(600px, 100dvh); }
+.native-menu button, .native-menu label {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px;
+  padding: 5px 10px; border: 0; border-radius: 3px; background: transparent;
+  color: inherit; font: inherit; text-align: left; cursor: default;
+}
+.native-menu button:hover:not(:disabled), .native-menu button:focus-visible {
+  background: var(--ide-selection, #2f65ca); color: #fff; outline: none;
+}
+.native-menu button:disabled { opacity: .4; }
+.native-menu button.recent-project-missing { color: #f87171; }
+.native-menu button.recent-project-missing:hover, .native-menu button.recent-project-missing:focus-visible { color: #fca5a5; }
+.native-menu svg { width: 14px; height: 14px; flex-shrink: 0; }
+.native-menu span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.native-menu hr { height: 1px; border: 0; background: var(--ide-panel-border, #1e1f22); margin: 4px 6px; }
+.native-menu input { margin-left: auto; accent-color: var(--ide-accent, #3574f0); }
+.native-menu span[style*="background-color"] { display: inline-block; width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+.native-menu .submenu-content { display: none; margin-left: 12px; padding-left: 4px; border-left: 1px solid var(--ide-selection-inactive, #4b5054); }
+.native-menu .submenu.open > .submenu-content { display: block; }
+.native-menu .submenu-trigger::after { content: '›'; margin-left: auto; }
+.native-menu .flex { display: flex; }
+.native-menu .shrink-0 { flex-shrink: 0; }
+.native-menu .flex-1 { flex: 1 1 0%; }
+.native-menu .min-w-0 { min-width: 0; }
+.native-menu .whitespace-nowrap { white-space: nowrap; }
+.native-menu .px-1 { padding-left: 4px; padding-right: 4px; }
+.native-menu .flex-col { flex-direction: column; gap: 0; }
+.native-menu .items-start { align-items: flex-start; }
+.native-menu .items-center { align-items: center; }
+.native-menu .justify-between { justify-content: space-between; }
+.native-menu .w-full { width: 100%; }
+.native-menu .gap-2 { gap: 8px; }
+.native-menu .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.native-menu .text-xs { font-size: 11px; }
+.native-menu .text-gray-500, .native-menu .text-gray-400 { color: inherit; opacity: .65; }
+.native-menu > div:not(.submenu) { padding: 4px 10px; font-size: 11px; }
+.native-menu .menu-check { color: var(--ide-accent, #3574f0); }
+html { scrollbar-color: var(--ide-selection-inactive, #4b5054) var(--ide-bg, #2b2d30); scrollbar-width: thin; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: var(--ide-bg, #2b2d30); }
+::-webkit-scrollbar-thumb { background: var(--ide-selection-inactive, #4b5054); border: 2px solid var(--ide-bg, #2b2d30); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ide-fg, #a9b7c6); }

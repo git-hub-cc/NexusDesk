@@ -1,0 +1,5 @@
+node_modules
+dist
+/patch.md
+/res.md
+/00code.md
