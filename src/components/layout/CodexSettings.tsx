@@ -6,6 +6,7 @@ export function CodexSettings() {
   const [proxyUrl, setProxyUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
+  const [trustMode, setTrustMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const loaded = useRef(false);
@@ -19,6 +20,7 @@ export function CodexSettings() {
       setModel(settings.model);
       setProxyUrl(settings.proxyUrl);
       setApiKeyConfigured(settings.apiKeyConfigured);
+      setTrustMode(settings.trustMode);
       loaded.current = true;
     }).catch(reason => setError(String(reason)));
   }, []);
@@ -29,7 +31,7 @@ export function CodexSettings() {
       const version = ++saveVersion.current;
       setBusy(true);
       setError("");
-      const save = () => codexSettingsApi.save({ model, proxyUrl, apiKey: apiKey || undefined });
+      const save = () => codexSettingsApi.save({ model, proxyUrl, apiKey: apiKey || undefined, trustMode });
       const currentSave = saveQueue.current.catch(() => {}).then(save);
       saveQueue.current = currentSave;
       void currentSave.then(() => {
@@ -42,7 +44,7 @@ export function CodexSettings() {
       });
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [model, proxyUrl, apiKey]);
+  }, [model, proxyUrl, apiKey, trustMode]);
 
   return <div className="mx-auto w-full max-w-3xl p-8" onKeyDown={event => event.stopPropagation()}>
     <header className="mb-6 border-b border-ide-panel-border pb-4">
@@ -53,6 +55,10 @@ export function CodexSettings() {
       <label className="grid gap-1">模型<input className={inputClass} value={model} onChange={event => setModel(event.target.value)} placeholder="例如 gpt-5-codex" spellCheck={false} /></label>
       <label className="grid gap-1">代理 / API 基础地址<input className={inputClass} value={proxyUrl} onChange={event => setProxyUrl(event.target.value)} placeholder="https://api.openai.com/v1（留空使用默认提供方）" spellCheck={false} /></label>
       <label className="grid gap-1">OPENAI_API_KEY<input className={inputClass} type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={apiKeyConfigured ? "已配置；留空保留当前密钥" : "输入 API Key"} autoComplete="new-password" /></label>
+      <label className="flex items-start gap-2">
+        <input type="checkbox" className="mt-0.5 accent-ide-accent" checked={trustMode} onChange={event => setTrustMode(event.target.checked)} />
+        <span><span className="block">信任模式</span><span className="mt-0.5 block text-xs text-gray-400">允许 Codex 不受沙箱限制地访问系统。</span></span>
+      </label>
       {error && <p role="alert" className="break-all text-red-400">{error}</p>}
       {busy && <p className="text-xs text-gray-400" role="status">正在保存…</p>}
     </div>

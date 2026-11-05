@@ -10,6 +10,7 @@ pub struct CodexSettings {
     model: String,
     proxy_url: String,
     api_key_configured: bool,
+    trust_mode: bool,
 }
 
 #[derive(Deserialize)]
@@ -18,6 +19,7 @@ pub struct CodexSettingsInput {
     model: String,
     proxy_url: String,
     api_key: Option<String>,
+    trust_mode: bool,
 }
 
 fn codex_dir() -> Result<PathBuf, String> {
@@ -180,6 +182,10 @@ pub fn codex_settings_read() -> Result<CodexSettings, String> {
             .to_owned(),
         proxy_url,
         api_key_configured,
+        trust_mode: config
+            .get("sandbox_mode")
+            .and_then(toml::Value::as_str)
+            == Some("danger-full-access"),
     })
 }
 
@@ -213,6 +219,14 @@ pub fn codex_settings_save(input: CodexSettingsInput) -> Result<(), String> {
         table.remove("model");
     } else {
         table.insert("model".into(), toml::Value::String(model.into()));
+    }
+    if input.trust_mode {
+        table.insert(
+            "sandbox_mode".into(),
+            toml::Value::String("danger-full-access".into()),
+        );
+    } else {
+        table.remove("sandbox_mode");
     }
 
     let proxy_url = input.proxy_url.trim();
