@@ -1,12 +1,14 @@
 // src/components/layout/BottomPanel.tsx
 import { PanelMinimizeButton } from "./PanelMinimizeButton";
 import { isSnapshot } from "@/lib/snapshot";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { gitApi } from "@/lib/api";
 import { GitBranch, Settings, Terminal, X, CircleDot } from "lucide-react";
 import openaiIcon from "@/assets/openai.svg";
 import { useLayoutStore } from "@/store/layoutStore";
 import { useWorkspaceStore } from "@/store/workspaceStore";
+import { isRemotePath } from "@/lib/remote";
+import { settingsStorage } from "@/lib/globalSettings";
 import { useTerminalStore, type TerminalProfile } from "@/store/terminalStore";
 import { GitPanel } from "@/components/git/GitPanel";
 import { TerminalSettings } from "./TerminalSettings";
@@ -18,6 +20,7 @@ export function BottomPanel() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [gitInstalled, setGitInstalled] = useState<boolean | null>(null);
   const [exitedSessions, setExitedSessions] = useState<Record<string, boolean>>({});
+  const autoReviewingSessions = useRef(new Set<string>());
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +45,33 @@ export function BottomPanel() {
       const id = useTerminalStore.getState().activeSessionId;
       setExitedSessions(prev => { const next = { ...prev }; delete next[id]; return next; });
       setBottomPanelTab("terminal");
+    }
+  };
+  const handleCodexCompleted = async (session: { id: string; command: string; name: string }) => {
+    if (session.name === "Codex 自动审核") return;
+    if (!/\bcodex\b/i.test(session.command) && !/codex/i.test(session.name)) return;
+    if (autoReviewingSessions.current.has(session.id)) return;
+    autoReviewingSessions.current.add(session.id);
+    try {
+      if (settingsStorage.getItem("nexusdesk.codex.autoReview") !== "true") return;
+      const root = useWorkspaceStore.getState().rootPath;
+      if (!root || isRemotePath(root)) throw new Error("自动审核仅支持本地 Git 仓库");
+      const changes = await gitApi.status(root);
+      if (!changes.length) return;
+      for (const change of changes) await gitApi.stage(root, change.path, true);
+      const commitId = await gitApi.commit(root, "自动审核：提交 Codex 变更");
+      const reviewCommand = `codex '${commitId}变更集修改是否引入新问题'`;
+      const reviewProfile = { id: "codex-auto-review", name: "Codex 自动审核", command: reviewCommand };
+      if (await createSession(reviewProfile, root)) {
+        const id = useTerminalStore.getState().activeSessionId;
+        setExitedSessions(prev => { const next = { ...prev }; delete next[id]; return next; });
+        setBottomPanelTab("terminal");
+      }
+    } catch (error) {
+      useTerminalStore.setState({ launchError: `自动审核失败：${String(error)}` });
+      setBottomPanelTab("terminal");
+    } finally {
+      autoReviewingSessions.current.delete(session.id);
     }
   };
   const terminalProfile = profiles.find(profile => profile.id === "shell") ?? { id: "shell", name: "终端", command: "" };
@@ -92,7 +122,7 @@ export function BottomPanel() {
     </div>}
     <div className="flex-1 min-h-0 overflow-hidden">
       {gitInstalled && activeTab === "git" && <GitPanel />}
-      {sessions.map(session => <TerminalSession key={session.id} session={session} active={activeTab === "terminal" && activeSessionId === session.id} onExit={handleExit} />)}
+      {sessions.map(session => <TerminalSession key={session.id} session={session} active={activeTab === "terminal" && activeSessionId === session.id} onExit={handleExit} onCodexCompleted={() => void handleCodexCompleted(session)} />)}
     </div>
     {settingsOpen && <TerminalSettings onClose={() => setSettingsOpen(false)} />}
   </div>;

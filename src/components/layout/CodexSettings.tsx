@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { codexSettingsApi } from "@/lib/api";
+import { settingsStorage } from "@/lib/globalSettings";
 
 export function CodexSettings() {
   const [model, setModel] = useState("");
@@ -7,6 +8,7 @@ export function CodexSettings() {
   const [apiKey, setApiKey] = useState("");
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
   const [trustMode, setTrustMode] = useState(false);
+  const [autoReview, setAutoReview] = useState(settingsStorage.getItem("nexusdesk.codex.autoReview") === "true");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const loaded = useRef(false);
@@ -46,6 +48,10 @@ export function CodexSettings() {
     return () => window.clearTimeout(timer);
   }, [model, proxyUrl, apiKey, trustMode]);
 
+  useEffect(() => {
+    settingsStorage.setItem("nexusdesk.codex.autoReview", String(autoReview));
+  }, [autoReview]);
+
   return <div className="mx-auto w-full max-w-3xl p-8" onKeyDown={event => event.stopPropagation()}>
     <header className="mb-6 border-b border-ide-panel-border pb-4">
       <h2 className="text-xl font-semibold">Codex</h2>
@@ -58,6 +64,10 @@ export function CodexSettings() {
       <label className="flex items-start gap-2">
         <input type="checkbox" className="mt-0.5 accent-ide-accent" checked={trustMode} onChange={event => setTrustMode(event.target.checked)} />
         <span><span className="block">信任模式</span><span className="mt-0.5 block text-xs text-gray-400">允许 Codex 不受沙箱限制地访问系统。</span></span>
+      </label>
+      <label className="flex items-start gap-2">
+        <input type="checkbox" className="mt-0.5 accent-ide-accent" checked={autoReview} onChange={event => setAutoReview(event.target.checked)} />
+        <span><span className="block">自动审核模式</span><span className="mt-0.5 block text-xs text-gray-400">Codex 退出后，提交未忽略的变更并启动一次 Codex 变更审核。</span></span>
       </label>
       {error && <p role="alert" className="break-all text-red-400">{error}</p>}
       {busy && <p className="text-xs text-gray-400" role="status">正在保存…</p>}
