@@ -64,9 +64,15 @@ export function BottomPanel() {
       const root = useWorkspaceStore.getState().rootPath;
       if (!root || isRemotePath(root)) throw new Error("自动审核仅支持本地 Git 仓库");
       const changes = await gitApi.status(root);
-      if (!changes.length) return;
-      for (const change of changes) await gitApi.stage(root, change.path, true);
-      const commitId = await gitApi.commit(root, "自动审核：提交 Codex 变更");
+      let commitId: string;
+      if (changes.length) {
+        for (const change of changes) await gitApi.stage(root, change.path, true);
+        commitId = await gitApi.commit(root, "自动审核：提交 Codex 变更");
+      } else {
+        const [latestCommit] = await gitApi.log(root, 1);
+        if (!latestCommit) throw new Error("仓库中没有可审核的提交");
+        commitId = latestCommit.id;
+      }
       const prompt = settingsStorage.getItem(AUTO_REVIEW_PROMPT_KEY)?.trim() || DEFAULT_AUTO_REVIEW_PROMPT;
       const reviewText = `${commitId}${prompt}`.replace(/[\r\n]+/g, " ").replace(/'/g, "''");
       const reviewCommand = `codex '${reviewText}'`;
