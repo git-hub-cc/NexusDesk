@@ -22,7 +22,14 @@ const SOFTWARE: [ManagedSoftware; 9] = [
 ];
 
 async fn winget_path() -> Result<PathBuf, String> {
-    let output = Command::new("where.exe").arg("winget.exe").output().await;
+    let mut command = Command::new("where.exe");
+    command.arg("winget.exe");
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = command.output().await;
     if let Ok(output) = output {
         if output.status.success() {
             if let Some(path) = String::from_utf8_lossy(&output.stdout).lines().next() {
@@ -42,7 +49,11 @@ async fn winget(args: &[&str]) -> Result<String, String> {
     let path = winget_path().await?;
     let mut command = Command::new(&path);
     command.args(args).arg("--disable-interactivity");
-    command.creation_flags(0x08000000);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
     let output = command.output().await.map_err(|error| format!("无法启动 winget：{error}"))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
