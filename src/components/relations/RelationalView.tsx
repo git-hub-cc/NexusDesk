@@ -1,6 +1,6 @@
 ﻿import { PanelMinimizeButton } from "@/components/layout/PanelMinimizeButton";
 import React, { useEffect, useState } from "react";
-import { Link, ArrowRight, ArrowLeft, Activity } from "lucide-react";
+import { Link, ArrowRight, ArrowLeft, Activity, ChevronDown, ChevronRight } from "lucide-react";
 import { fsApi } from "@/lib/api";
 import { flushEditorContent, useWorkspaceStore } from "@/store/workspaceStore";
 import { NetworkMonitor } from "@/components/NetworkMonitor";
@@ -19,7 +19,7 @@ export const RelationalView: React.FC = () => {
   const openTab = useWorkspaceStore(state => state.openTab);
   const [relations, setRelations] = useState<Relations | null>(null);
   const [navigationError, setNavigationError] = useState("");
-  const [networkOpen, setNetworkOpen] = useState(true);
+  const [relationsOpen, setRelationsOpen] = useState(true);
 
   useEffect(() => {
     let live = true;
@@ -54,12 +54,22 @@ export const RelationalView: React.FC = () => {
       {items.map(([target, anchor]) => <button key={JSON.stringify([target, anchor])} title={target + (anchor ? "#" + anchor : "")} onClick={() => void nav(target)} className="block w-full pl-4 text-left text-gray-400 hover:text-white truncate">{target.split(/[\\/]/).pop()} {anchor && "#" + anchor}</button>)}
     </div>
   );
-  return <div className="group/panel flex flex-col h-full w-full bg-ide-panel-bg">
-    <div className="px-2 py-1 border-b border-ide-panel-border text-xs font-semibold flex items-center gap-1"><button type="button" onClick={() => setNetworkOpen(false)} className={networkOpen ? "text-gray-400" : "text-white"}><Link size={14} className="inline mr-1"/>关联</button><button type="button" onClick={() => setNetworkOpen(true)} className={networkOpen ? "text-white ml-1" : "text-gray-400 ml-1"}><Activity size={14} className="inline mr-1"/>Codex 捕获</button><PanelMinimizeButton panel="right" className="!ml-auto" /></div>
-    <div className={`flex-1 overflow-auto p-2 text-sm ${networkOpen ? "hidden" : ""}`}>
+  return <div className="group/panel flex h-full w-full min-h-0 flex-col bg-ide-panel-bg">
+    <section className={`flex min-h-0 flex-col ${relationsOpen ? "max-h-[50%] shrink" : "shrink-0"}`}>
+      <header className="flex h-8 shrink-0 items-center gap-1 border-b border-ide-panel-border px-2 text-xs font-semibold">
+        <button type="button" onClick={() => setRelationsOpen(value => !value)} aria-expanded={relationsOpen} className="flex items-center gap-1 text-gray-200 hover:text-white">
+          {relationsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}<Link size={14} />关联
+        </button>
+        <PanelMinimizeButton panel="right" className="!ml-auto" />
+      </header>
+      <div className={`min-h-0 overflow-auto p-2 text-sm ${relationsOpen ? "" : "hidden"}`}>
       {!path ? <p className="text-gray-500">请选择文件</p> : !current ? <p className="text-gray-500">正在加载关联…</p> : <>{group("反向链接", ArrowLeft, current.backlinks)}{group("正向链接", ArrowRight, current.outgoing)}</>}
       {(current?.error || navigationError) && <p role="alert" className="text-xs text-red-400 break-words">{navigationError || current?.error}</p>}
-    </div>
-    <div className={`flex-1 min-h-0 ${networkOpen ? "" : "hidden"}`}><NetworkMonitor /></div>
+      </div>
+    </section>
+    <section className="flex min-h-0 flex-1 flex-col border-t border-ide-panel-border">
+      <div className="flex h-8 shrink-0 items-center gap-1 px-2 text-xs font-semibold"><Activity size={14} />Codex 捕获</div>
+      <div className="min-h-0 flex-1"><NetworkMonitor /></div>
+    </section>
   </div>;
 };

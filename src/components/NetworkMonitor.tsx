@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Activity, Trash2, Pause, Play, X } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { type NetworkRequest } from "@/lib/networkMonitor";
@@ -13,7 +13,6 @@ export const NetworkMonitor: React.FC = () => {
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
-  const [filter, setFilter] = useState("");
   const [selected, setSelected] = useState<NetworkRequest | null>(null);
   const [copyStatus, setCopyStatus] = useState("");
   const [proxyInfo, setProxyInfo] = useState<ProxyInfo | null>(null);
@@ -27,14 +26,13 @@ export const NetworkMonitor: React.FC = () => {
       setSelected(current => current?.id === item.id ? item : current);
     }
   }, setProxyInfo), []);
-  const visible = useMemo(() => items.filter(item => [item.method, item.url, item.status ?? (item.inFlight ? "接收中" : "ERR"), item.source ?? ""].join(" ").toLowerCase().includes(filter.toLowerCase())), [items, filter]);
+  const visible = items;
   return <div className="group/panel flex flex-col h-full w-full bg-ide-panel-bg">
     <div className="flex items-center gap-1 px-2 py-1 border-b border-ide-panel-border text-xs font-semibold">
       <Activity size={14} /> 请求记录 <span className="text-gray-500 font-normal">({items.length})</span>
       <button type="button" title={paused ? "继续更新列表" : "暂停更新列表"} onClick={() => setPaused(value => !value)} className="ml-auto p-1 text-gray-400 hover:text-white">{paused ? <Play size={13} /> : <Pause size={13} />}</button>
       <button type="button" title="清空记录" onClick={() => { setItems([]); setSelected(null); }} className="p-1 text-gray-400 hover:text-white"><Trash2 size={13} /></button>
     </div>
-    <div className="px-2 py-1 border-b border-ide-panel-border"><input value={filter} onChange={event => setFilter(event.target.value)} placeholder="搜索 URL、方法或状态码" className="w-full rounded border border-ide-panel-border bg-ide-bg px-1.5 py-1 text-xs text-gray-200 outline-none focus:border-ide-accent" /></div>
     <CodexProxyControls info={proxyInfo} onChange={setProxyInfo} />
     <div className="flex-1 min-h-0 overflow-auto text-[11px]">
       <div className="grid min-w-[470px] whitespace-nowrap grid-cols-[42px_minmax(100px,1fr)_42px_80px_72px_72px] gap-1 px-2 py-2 text-gray-500 sticky top-0 bg-ide-panel-bg"><span>方法</span><span>URL</span><span>状态</span><span>耗时</span><span>请求</span><span>响应</span></div>
@@ -42,8 +40,8 @@ export const NetworkMonitor: React.FC = () => {
         <span className="text-blue-300">{item.method}</span><span className="truncate text-gray-300">{item.url}</span><span className={item.failed ? "text-red-400" : item.status && item.status >= 400 ? "text-amber-400" : "text-green-400"}>{item.status ?? (item.inFlight ? "…" : "ERR")}</span><span className="text-gray-400">{item.metricsUnavailable ? "--" : `${item.timeMs}ms`}</span><span className="text-gray-500">{item.metricsUnavailable ? "--" : size(item.requestBytes)}</span><span className="text-gray-500">{item.metricsUnavailable ? "--" : size(item.responseBytes)}</span>
       </button>)}
       {!visible.length && <div className="space-y-1 p-4 text-center text-gray-500">
-        <p>{filter ? "没有匹配的请求" : paused ? "列表更新已暂停" : proxyInfo?.running ? "等待捕获会话中的请求" : "尚未启动捕获会话"}</p>
-        {!filter && !paused && <p>{proxyInfo?.running ? "启动捕获会话后，在终端向 Codex 发送消息，请求和响应将在这里显示。" : "点击上方“启动捕获会话”，开始记录 Codex 的请求和响应。"}</p>}
+        <p>{paused ? "列表更新已暂停" : proxyInfo?.running ? "等待捕获会话中的请求" : "尚未启动捕获会话"}</p>
+        {!paused && <p>{proxyInfo?.running ? "启动捕获会话后，在终端向 Codex 发送消息，请求和响应将在这里显示。" : "点击上方“启动捕获会话”，开始记录 Codex 的请求和响应。"}</p>}
       </div>}
     </div>
     <Dialog.Root open={selected !== null} onOpenChange={open => { if (!open) setSelected(null); }}>

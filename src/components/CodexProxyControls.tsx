@@ -44,21 +44,17 @@ export function CodexProxyControls({ info, onChange }: { info: ProxyInfo | null;
     finally { setBusy(false); }
   };
   return <div className="space-y-2 border-b border-ide-panel-border p-2 text-[11px]">
-    <div className="font-semibold">{launched && info?.running ? "捕获会话已打开" : "开始捕获 Codex 会话"}</div>
-    <p className="text-gray-400">{launched && info?.running ? "在下方终端向 Codex 发送消息，即可在这里查看请求正文与响应。" : "启动一个新的 Codex 终端会话，自动记录其中的请求正文与响应。"}</p>
     {info?.running ? <>
       <div role="status" className="text-gray-400">捕获已就绪</div>
     </> : <>
       <input aria-label="Codex 上游 API 地址" placeholder="上游 API 地址，例如 https://example.com/v1" value={upstream} onChange={event => setUpstream(event.target.value)} spellCheck={false}
         className="w-full rounded border border-ide-panel-border bg-ide-bg px-1.5 py-1 outline-none focus:border-ide-accent" />
-      <p className="text-gray-500">{detecting ? "正在读取 Codex 配置…" : "已尝试从 Codex 配置读取 API 地址，可在上方确认或填写。"}</p>
     </>}
     <button type="button" disabled={busy || detecting || (!info?.running && !upstream.trim()) || !isTauri()} onClick={() => void launch()}
       className="w-full rounded bg-ide-accent px-3 py-2 text-white disabled:opacity-50">
       {busy ? "正在处理…" : launched && info?.running ? "再启动一个捕获会话" : "启动捕获会话"}
     </button>
     {!isTauri() && <p className="text-gray-500">请在桌面应用中启动捕获会话。</p>}
-    <p className="text-gray-500">已有会话请通过此入口重新启动。最近记录仅保存在内存中，认证头已脱敏。</p>
     {info?.running && <details className="text-gray-500">
       <summary className="cursor-pointer">捕获设置</summary>
       <div className="mt-2 space-y-2 break-all">
