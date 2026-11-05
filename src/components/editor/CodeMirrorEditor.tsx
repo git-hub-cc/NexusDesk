@@ -8,7 +8,7 @@ import { Decoration, EditorView, WidgetType, lineNumbers, highlightActiveLineGut
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess, insertBlankLine, copyLineDown, deleteLine, moveLineUp, moveLineDown, toggleComment, redo, selectAll } from "@codemirror/commands";
 import { search, searchKeymap, openSearchPanel } from "@codemirror/search";
 import * as ContextMenu from "@/lib/nativeMenu";
-import { Heading2, Bold, Italic, Code, Quote, Link as LinkIcon, Image as ImageIcon, Minus, Table as TableIcon, Video as VideoIcon } from "lucide-react";
+import { Heading2, Bold, Italic, Code, Quote, Link as LinkIcon, Image as ImageIcon, Minus, Table as TableIcon, Video as VideoIcon, Globe, Send } from "lucide-react";
 import { flushEditorContent, hasPendingEditorContent, queueEditorContent, useWorkspaceStore } from "@/store/workspaceStore";
 import { createLinkWire, fileHeadings, headingAt, highlightLinkTarget, linkEditors, linkTargetDecoration, relativeNotePath } from "./dragLink";
 import { InsertTableDialog } from "./InsertTableDialog";
@@ -113,6 +113,7 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
   const [sharedCounts, setSharedCounts] = useState<Map<string, number>>(new Map());
   const importing = useRef(false);
   const isMarkdown = /\.(md|markdown|mdown|mkd)$/i.test(activeTab?.path ?? "");
+  const isHttp = /\.(http|rest)$/i.test(activeTab?.path ?? "");
 
   useEffect(() => () => {
     const target = getSpeechTarget();
@@ -291,6 +292,23 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
         head: selection.from + before.length + textToInsert.length
       },
       userEvent: "input"
+    });
+    view.focus();
+  };
+
+  const insertHttpTemplate = (method: "GET" | "POST") => {
+    const view = viewRef.current;
+    if (!view) return;
+    const selection = view.state.selection.main;
+    const template = method === "GET"
+      ? "### GET 请求\nGET https://example.com\n\n"
+      : "### POST 请求\nPOST https://example.com\nContent-Type: application/json\n\n{}\n";
+    const urlStart = template.indexOf("https://example.com");
+    const from = selection.from;
+    view.dispatch({
+      changes: { from, to: selection.to, insert: template },
+      selection: { anchor: from + urlStart, head: from + urlStart + "https://example.com".length },
+      userEvent: "input",
     });
     view.focus();
   };
@@ -875,7 +893,7 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
     <>
     {assetError && <div role="alert" className="absolute bottom-2 left-2 right-2 z-30 bg-ide-panel-bg p-2 text-xs text-red-400" onClick={() => setAssetError("")}>{assetError}（点击关闭）</div>}
     <ContextMenu.Root>
-      <ContextMenu.Trigger asChild disabled={isSnapshot || !isMarkdown}>
+      <ContextMenu.Trigger asChild disabled={isSnapshot || (!isMarkdown && !isHttp)}>
         <div
           ref={editorRef}
           className="absolute inset-0 text-sm font-mono"
@@ -917,6 +935,16 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
               </ContextMenu.Item>
               <ContextMenu.Item className="ide-menu-item" onSelect={() => insertMarkdown("\n---\n", "", "")}>
                 <Minus size={14} className="text-gray-400" /> 水平分割线
+              </ContextMenu.Item>
+            </>
+          )}
+          {isHttp && !isSnapshot && (
+            <>
+              <ContextMenu.Item className="ide-menu-item" onSelect={() => insertHttpTemplate("GET")}>
+                <Globe size={14} className="text-gray-400" /> GET 请求模板
+              </ContextMenu.Item>
+              <ContextMenu.Item className="ide-menu-item" onSelect={() => insertHttpTemplate("POST")}>
+                <Send size={14} className="text-gray-400" /> POST 请求模板
               </ContextMenu.Item>
             </>
           )}
