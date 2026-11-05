@@ -9,12 +9,16 @@ pub struct ManagedSoftware {
     name: &'static str,
 }
 
-const SOFTWARE: [ManagedSoftware; 5] = [
+const SOFTWARE: [ManagedSoftware; 9] = [
     ManagedSoftware { id: "Google.PlatformTools", name: "Android SDK Platform-Tools (ADB)" },
-    ManagedSoftware { id: "Gyan.FFmpeg", name: "FFmpeg" },
     ManagedSoftware { id: "yt-dlp.FFmpeg", name: "FFmpeg for yt-dlp" },
     ManagedSoftware { id: "yt-dlp.yt-dlp", name: "yt-dlp" },
     ManagedSoftware { id: "Genymobile.scrcpy", name: "scrcpy" },
+    ManagedSoftware { id: "OpenAI.Codex", name: "Codex CLI" },
+    ManagedSoftware { id: "Rustlang.Rust.MSVC", name: "Rust 1.99 (MSVC 64-bit)" },
+    ManagedSoftware { id: "Python.Python.3.14", name: "Python 3.14.10 (64-bit)" },
+    ManagedSoftware { id: "Python.Launcher", name: "Python Launcher" },
+    ManagedSoftware { id: "OpenJS.NodeJS", name: "Node.js" },
 ];
 
 async fn winget_path() -> Result<PathBuf, String> {
