@@ -12,6 +12,9 @@ interface BrowserDownload {
 }
 
 const DIRECTORY_REVEAL_WINDOW_MS = 5 * 60 * 1000;
+// 自动打开目录的状态必须跨组件实例共享，避免并发完成事件重复弹窗。
+const autoRevealedDownloads = new Set<string>();
+let lastAutoDirectoryRevealAt = 0;
 
 export function downloadSize(bytes: number): string {
   if (bytes < 1024) return `${Math.max(0, bytes).toFixed(0)} B`;
@@ -37,17 +40,15 @@ export function BrowserDownloads({ labels }: { labels: string[] }) {
   const [error, setError] = useState("");
   const dismissTimers = useRef(new Map<string, number>());
   const observedStates = useRef(new Map<string, BrowserDownload["state"]>());
-  const revealedDownloads = useRef(new Set<string>());
-  const lastDirectoryRevealAt = useRef(0);
   const [cancelling, setCancelling] = useState<string[]>([]);
   const handleDownload = (next: BrowserDownload) => {
     const previousState = observedStates.current.get(next.id);
     observedStates.current.set(next.id, next.state);
     const now = Date.now();
     if (next.state === "completed" && previousState === "downloading" && next.path &&
-      !revealedDownloads.current.has(next.id) && now - lastDirectoryRevealAt.current >= DIRECTORY_REVEAL_WINDOW_MS) {
-      revealedDownloads.current.add(next.id);
-      lastDirectoryRevealAt.current = now;
+      !autoRevealedDownloads.has(next.id) && now - lastAutoDirectoryRevealAt >= DIRECTORY_REVEAL_WINDOW_MS) {
+      autoRevealedDownloads.add(next.id);
+      lastAutoDirectoryRevealAt = now;
       void revealItemInDir(next.path).catch(reason => setError(String(reason)));
     }
   };
