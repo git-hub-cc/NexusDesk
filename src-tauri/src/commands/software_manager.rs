@@ -31,7 +31,7 @@ async fn winget_path() -> Result<PathBuf, String> {
         .ok_or_else(|| "找不到 winget：LOCALAPPDATA 环境变量未设置。请先安装或启动一次“应用安装程序”。".to_string())?;
     let links = local_app_data.join("Microsoft/WindowsApps/winget.exe");
     if links.is_file() { return Ok(links); }
-    Err("找不到 winget。请先安装或启动一次“应用安装程序”，然后重启 NoteIDE。".into())
+    Err("找不到 winget。请先安装或启动一次“应用安装程序”，然后重启 NexusDesk。".into())
 }
 
 async fn winget(args: &[&str]) -> Result<String, String> {

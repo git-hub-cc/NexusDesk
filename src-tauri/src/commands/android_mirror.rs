@@ -51,7 +51,7 @@ fn adb() -> Command {
 
 fn resolve_adb() -> PathBuf {
     let executable_name = if cfg!(windows) { "adb.exe" } else { "adb" };
-    if let Some(explicit) = std::env::var_os("NOTEIDE_ADB").map(PathBuf::from) {
+    if let Some(explicit) = std::env::var_os("NEXUSDESK_ADB").map(PathBuf::from) {
         return std::fs::canonicalize(&explicit).unwrap_or(explicit);
     }
 
@@ -134,7 +134,7 @@ fn output_bytes_with_timeout(mut command: Command, timeout: Duration) -> Result<
         .spawn()
         .map_err(|e| {
             if cfg!(windows) && e.raw_os_error() == Some(126) {
-                format!("无法启动 {executable}：缺少 AdbWinApi.dll 或 AdbWinUsbApi.dll。请将完整的 Android SDK Platform-Tools 解压到 platform-tools 目录，或设置 NOTEIDE_ADB 指向包含这些 DLL 的 adb.exe。")
+                format!("无法启动 {executable}：缺少 AdbWinApi.dll 或 AdbWinUsbApi.dll。请将完整的 Android SDK Platform-Tools 解压到 platform-tools 目录，或设置 NEXUSDESK_ADB 指向包含这些 DLL 的 adb.exe。")
             } else {
                 format!("无法启动 {executable}，请检查工具安装路径或环境变量：{e}")
             }
@@ -303,7 +303,7 @@ pub async fn mirror_download_file(serial: String, remote_path: String, local_dir
         static NEXT_DOWNLOAD: AtomicU32 = AtomicU32::new(0);
         let temporary = loop {
             let id = NEXT_DOWNLOAD.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!("noteide-android-{}-{id}", std::process::id()));
+            let path = std::env::temp_dir().join(format!("nexusdesk-android-{}-{id}", std::process::id()));
             match std::fs::create_dir(&path) {
                 Ok(()) => break TemporaryDownload(path),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -643,7 +643,7 @@ fn find_server(explicit: Option<PathBuf>, directories: &[PathBuf]) -> Result<Pat
             .find(|path| path.is_file())
     });
     path.filter(|path| path.is_file()).ok_or_else(||
-        "未找到 scrcpy-server，请安装 scrcpy，或将 NOTEIDE_SCRCPY_SERVER 指向该文件（支持 3.3.4 / 5.0.1）".into())
+        "未找到 scrcpy-server，请安装 scrcpy，或将 NEXUSDESK_SCRCPY_SERVER 指向该文件（支持 3.3.4 / 5.0.1）".into())
 }
 
 fn parse_version(output: &str) -> Result<String, String> {
@@ -658,10 +658,10 @@ fn parse_version(output: &str) -> Result<String, String> {
 
 fn server_tools() -> Result<(PathBuf, String, Protocol), String> {
     let server = find_server(
-        std::env::var_os("NOTEIDE_SCRCPY_SERVER").map(PathBuf::from),
+        std::env::var_os("NEXUSDESK_SCRCPY_SERVER").map(PathBuf::from),
         &tool_directories(),
     )?;
-    let version = if let Ok(version) = std::env::var("NOTEIDE_SCRCPY_VERSION") {
+    let version = if let Ok(version) = std::env::var("NEXUSDESK_SCRCPY_VERSION") {
         version.trim().to_owned()
     } else {
         let executable = server.with_file_name(if cfg!(windows) {
@@ -670,7 +670,7 @@ fn server_tools() -> Result<(PathBuf, String, Protocol), String> {
             "scrcpy"
         });
         if !executable.is_file() {
-            return Err("scrcpy-server 同目录下缺少 scrcpy 可执行文件；单独配置 server 时请同时设置 NOTEIDE_SCRCPY_VERSION（3.3.4 或 5.0.1）".into());
+            return Err("scrcpy-server 同目录下缺少 scrcpy 可执行文件；单独配置 server 时请同时设置 NEXUSDESK_SCRCPY_VERSION（3.3.4 或 5.0.1）".into());
         }
         let mut command = hidden_command(executable);
         command.arg("--version");
@@ -695,7 +695,7 @@ fn start(
         .wrapping_mul(65537)
         .wrapping_add(NEXT_ID.fetch_add(1, Ordering::Relaxed))
         & 0x7fffffff;
-    let remote = format!("/data/local/tmp/noteide-scrcpy-{scid:08x}.jar");
+    let remote = format!("/data/local/tmp/nexusdesk-scrcpy-{scid:08x}.jar");
     let mut push = adb();
     push.args(["-s", &session.serial, "push"])
         .arg(server)
@@ -1109,12 +1109,12 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Requires an authorized Android device; set NOTEIDE_MIRROR_TEST_SERIAL to opt in"]
+    #[ignore = "Requires an authorized Android device; set NEXUSDESK_MIRROR_TEST_SERIAL to opt in"]
     async fn file_transfers_round_trip_binary_directories_and_special_names() {
-        let serial = std::env::var("NOTEIDE_MIRROR_TEST_SERIAL").expect("set NOTEIDE_MIRROR_TEST_SERIAL");
+        let serial = std::env::var("NEXUSDESK_MIRROR_TEST_SERIAL").expect("set NEXUSDESK_MIRROR_TEST_SERIAL");
         let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let local = std::env::temp_dir().join(format!("noteide-transfer-test-{id}"));
-        let remote = format!("/sdcard/Download/.noteide-transfer-test-{id}");
+        let local = std::env::temp_dir().join(format!("nexusdesk-transfer-test-{id}"));
+        let remote = format!("/sdcard/Download/.nexusdesk-transfer-test-{id}");
         struct Cleanup { local: PathBuf, remote: String, serial: String }
         impl Drop for Cleanup {
             fn drop(&mut self) {
@@ -1223,7 +1223,7 @@ mod tests {
         assert!(parse_version("scrcpy 99.0").is_err());
         assert!(parse_version("unrelated tool 5.0.1").is_err());
         let root = std::env::temp_dir().join(format!(
-            "noteide-mirror-discovery-{}-{}",
+            "nexusdesk-mirror-discovery-{}-{}",
             std::process::id(),
             NEXT_ID.fetch_add(1, Ordering::Relaxed)
         ));
@@ -1287,10 +1287,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires an authorized Android device; set NOTEIDE_MIRROR_TEST_SERIAL to opt in"]
+    #[ignore = "Requires an authorized Android device; set NEXUSDESK_MIRROR_TEST_SERIAL to opt in"]
     fn installed_scrcpy_streams_h264_and_pcm_and_releases_its_forward() {
         let serial =
-            std::env::var("NOTEIDE_MIRROR_TEST_SERIAL").expect("set NOTEIDE_MIRROR_TEST_SERIAL");
+            std::env::var("NEXUSDESK_MIRROR_TEST_SERIAL").expect("set NEXUSDESK_MIRROR_TEST_SERIAL");
         let (_, version, _) = server_tools().unwrap();
         let session = Arc::new(Session {
             serial,

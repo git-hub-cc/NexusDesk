@@ -84,9 +84,9 @@ test('captures trusted edits and commits only after login controls disappear', (
   p.change(false);
   assert.equal(p.location.href, undefined);
   p.change();
-  assert.match(p.location.href, /^noteide-password:\/\/capture\//);
+  assert.match(p.location.href, /^nexusdesk-password:\/\/capture\//);
   p.hide();
-  assert.equal(p.location.href, 'noteide-password://commit/');
+  assert.equal(p.location.href, 'nexusdesk-password://commit/');
   p.location.href = 'https://example.com/accountchooser';
   p.hide();
   assert.equal(p.location.href, 'https://example.com/accountchooser');

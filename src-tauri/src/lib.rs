@@ -23,7 +23,7 @@ mod lifecycle_tests {
     fn only_project_windows_keep_app_alive() {
         assert!(is_project_window("main"));
         assert!(is_project_window("window-1720000000000"));
-        for utility in ["noteide-native-menu", "window-snapshot-123", "browser-popup-123",
+        for utility in ["nexusdesk-native-menu", "window-snapshot-123", "browser-popup-123",
             "window-1720000000000-browser-popup-123", "window-", "main-browser-popup-123"] {
             assert!(!is_project_window(utility), "{utility}");
         }
@@ -38,7 +38,7 @@ pub fn run() {
         return;
     }
     let project = commands::project_cmds::project_argument(std::env::args_os());
-    let profile_root = dirs::home_dir().expect("Cannot find home directory").join(".note/profiles");
+    let profile_root = dirs::home_dir().expect("Cannot find home directory").join(".nexus/profiles");
     let profile = profiles::allocate(&profile_root, project.as_deref()).expect("Cannot create project profile");
     let window_state_file = format!("window-state-{}.json",
         profiles::profile_key(project.as_deref()).expect("Cannot identify project"));

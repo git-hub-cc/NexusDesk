@@ -15,7 +15,7 @@ import { BrowserPasswords } from "./BrowserPasswords";
 import { BrowserDownloads } from "./BrowserDownloads";
 import { BrowserExtensions, CHROME_EXTENSION_STORE_URL } from "./BrowserExtensions";
 
-export const BROWSER_HOME = "noteide:nav";
+export const BROWSER_HOME = "nexusdesk:nav";
 
 function updateBrowserTabs(tabs: Tab[], id: string, url: string, title?: string): Tab[] {
   const fallback = new URL(url).hostname || "网页";
@@ -36,11 +36,11 @@ function NavigationEditor({ tab, active }: { tab: Tab; active: boolean }) {
   const frame = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
     const receive = (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow || event.origin !== window.location.origin || !["noteide:navigate", "noteide:speculate"].includes(event.data?.type)) return;
+      if (event.source !== frame.current?.contentWindow || event.origin !== window.location.origin || !["nexusdesk:navigate", "nexusdesk:speculate"].includes(event.data?.type)) return;
       try {
         const url = new URL(event.data.url);
         if (!["https:", "http:"].includes(url.protocol)) return;
-        if (event.data.type === "noteide:speculate") { if (active) speculateBrowser(url.href); return; }
+        if (event.data.type === "nexusdesk:speculate") { if (active) speculateBrowser(url.href); return; }
         const state = useWorkspaceStore.getState();
         state.setFocusedPane(state.rightTabs.some(item => item.id === tab.id) ? "right" : "left");
         const id = `browser:${crypto.randomUUID()}`;

@@ -12,7 +12,7 @@ export async function fillCodexCommitMessage(root: string, message: string): Pro
   if (!message.trim() || message.trimStart().startsWith("/")) return;
   const previous = updates.get(root) ?? Promise.resolve();
   const update = previous.catch(() => {}).then(async () => {
-    const path = `${root}/.git/noteide_commit_msg.txt`;
+    const path = `${root}/.git/nexusdesk_commit_msg.txt`;
     if (!await fsApi.isDirectory(`${root}/.git`)) return;
     let saved = drafts.get(root);
     if (saved === undefined) {

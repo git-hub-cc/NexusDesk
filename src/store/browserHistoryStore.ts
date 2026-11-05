@@ -39,4 +39,4 @@ export const useBrowserHistoryStore = create<{
   entries: [],
   visit: url => set(state => ({ entries: recordVisit(state.entries, url) })),
   remove: url => set(state => ({ entries: removeHistoryEntry(state.entries, url) })),
-}), { name: "noteide-browser-history", storage: globalJsonStorage, version: 1 }));
+}), { name: "nexusdesk-browser-history", storage: globalJsonStorage, version: 1 }));

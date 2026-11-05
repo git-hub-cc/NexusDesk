@@ -22,23 +22,23 @@ function page() {
 
 test('injected panel updates one closed shadow root and ignores obsolete cleanup', () => {
   const view = page();
-  view.window.__noteideSuggestions({ request: 'first', html: '<div class="native-menu">one</div>', x: 20, width: 1000 });
-  view.window.__noteideSuggestions({ request: 'second', html: '<div class="native-menu">two</div>', x: 20, width: 1000 });
+  view.window.__nexusdeskSuggestions({ request: 'first', html: '<div class="native-menu">one</div>', x: 20, width: 1000 });
+  view.window.__nexusdeskSuggestions({ request: 'second', html: '<div class="native-menu">two</div>', x: 20, width: 1000 });
   assert.equal(view.created(), 1);
   assert.ok(view.panel.style.cssText.includes('width:780px'));
-  view.window.__noteideSuggestions({ request: 'first', html: '' });
+  view.window.__nexusdeskSuggestions({ request: 'first', html: '' });
   assert.equal(view.removed(), 0);
-  view.window.__noteideSuggestions({ request: 'second', html: '' });
+  view.window.__nexusdeskSuggestions({ request: 'second', html: '' });
   assert.equal(view.removed(), 1);
 });
 
 test('injected delete preserves URL encoding and outside presses dismiss', () => {
   const view = page();
-  view.window.__noteideSuggestions({ request: 'token', html: '<div class="native-menu"></div>', x: 0, width: 300 });
+  view.window.__nexusdeskSuggestions({ request: 'token', html: '<div class="native-menu"></div>', x: 0, width: 300 });
   const url = 'https://example.com/path?q=a%20b&x=??#part';
   view.rootHandlers.click({ target: { closest: () => ({ dataset: { action: 'browser-history-remove', value: url } }) }, stopPropagation() {} });
   const message = new URL(view.location.href);
-  assert.equal(message.protocol, 'noteide-suggestion:');
+  assert.equal(message.protocol, 'nexusdesk-suggestion:');
   assert.equal(message.searchParams.get('value'), url);
   assert.equal(message.searchParams.get('request'), 'token');
   view.handlers.pointerdown({ composedPath: () => [view.host()] });

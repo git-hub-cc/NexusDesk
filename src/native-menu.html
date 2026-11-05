@@ -6,7 +6,7 @@ let lastHeight = 0;
 let lastHtml = null;
 let passiveMenu = false;
 let resizeTimer = null;
-const navigate=(kind,path,values={})=>{location.href='noteide-menu://'+kind+'/'+path+'?'+new URLSearchParams({...values,request})};
+const navigate=(kind,path,values={})=>{location.href='nexusdesk-menu://'+kind+'/'+path+'?'+new URLSearchParams({...values,request})};
 const send=(id,value)=>navigate('action',encodeURIComponent(id),value===undefined?{}:{value});
 const notifyResize=()=>{
   resizeTimer=null;

@@ -23,17 +23,17 @@ function setup(saved = '', beforeWrite = async () => {}) {
 test('Codex fills an empty draft and appends to existing or edited descriptions', async () => {
   const empty = setup('  ');
   await empty.fillCodexCommitMessage('repo', '修复保存问题');
-  assert.deepEqual(empty.writes, [['repo/.git/noteide_commit_msg.txt', '修复保存问题']]);
+  assert.deepEqual(empty.writes, [['repo/.git/nexusdesk_commit_msg.txt', '修复保存问题']]);
   await empty.fillCodexCommitMessage('repo', 'another prompt');
-  assert.deepEqual(empty.writes[1], ['repo/.git/noteide_commit_msg.txt', '修复保存问题\nanother prompt']);
+  assert.deepEqual(empty.writes[1], ['repo/.git/nexusdesk_commit_msg.txt', '修复保存问题\nanother prompt']);
   const existing = setup('existing');
   await existing.fillCodexCommitMessage('repo', 'new');
-  assert.deepEqual(existing.writes, [['repo/.git/noteide_commit_msg.txt', 'existing\nnew']]);
+  assert.deepEqual(existing.writes, [['repo/.git/nexusdesk_commit_msg.txt', 'existing\nnew']]);
   const edited = setup();
   const pending = edited.fillCodexCommitMessage('repo', 'new');
   edited.rememberCommitDraft('repo', 'manual edit');
   await pending;
-  assert.deepEqual(edited.writes, [['repo/.git/noteide_commit_msg.txt', 'manual edit\nnew']]);
+  assert.deepEqual(edited.writes, [['repo/.git/nexusdesk_commit_msg.txt', 'manual edit\nnew']]);
 });
 
 test('serializes concurrent Codex drafts so an older write cannot erase a newer prompt', async () => {
@@ -53,8 +53,8 @@ test('serializes concurrent Codex drafts so an older write cannot erase a newer 
   releaseFirst();
   await Promise.all([first, second]);
   assert.deepEqual(state.writes, [
-    ['repo/.git/noteide_commit_msg.txt', 'first'],
-    ['repo/.git/noteide_commit_msg.txt', 'first\nsecond'],
+    ['repo/.git/nexusdesk_commit_msg.txt', 'first'],
+    ['repo/.git/nexusdesk_commit_msg.txt', 'first\nsecond'],
   ]);
 });
 

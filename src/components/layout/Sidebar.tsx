@@ -14,14 +14,14 @@ export const Sidebar: React.FC = () => {
     const handleDragEnterLogical = (e: React.DragEvent) => {
         if (remote) return;
         e.preventDefault();
-        if (e.dataTransfer.types.includes("application/x-noteide-file")) {
+        if (e.dataTransfer.types.includes("application/x-nexusdesk-file")) {
             setSidebarMode("logical");
         }
     };
 
     const handleDragEnterPhysical = (e: React.DragEvent) => {
         e.preventDefault();
-        if (e.dataTransfer.types.includes("application/x-noteide-logical-file")) {
+        if (e.dataTransfer.types.includes("application/x-nexusdesk-logical-file")) {
             setSidebarMode("physical");
         }
     };
@@ -75,7 +75,7 @@ export const Sidebar: React.FC = () => {
                     onClick={() => setSidebarMode("graph")}
                     onDragEnter={event => {
                         if (remote) return;
-                        if (event.dataTransfer.types.some(type => ["application/x-noteide-file", "application/x-noteide-files", "application/x-noteide-logical-file"].includes(type))) {
+                        if (event.dataTransfer.types.some(type => ["application/x-nexusdesk-file", "application/x-nexusdesk-files", "application/x-nexusdesk-logical-file"].includes(type))) {
                             event.preventDefault();
                             setSidebarMode("graph");
                         }

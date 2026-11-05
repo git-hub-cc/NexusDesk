@@ -42,7 +42,7 @@ export function SpeechRecognitionSettings() {
       <div className="rounded border border-ide-panel-border bg-ide-bg p-3">
         <h3 className="font-medium">全局跨应用语音输入（Windows）</h3>
         <p className="mt-2 text-xs leading-relaxed text-gray-400">点击左侧边栏的语音转文字按钮即可开启或关闭语音识别。悬浮窗显示录音状态，每段转写完成后自动填入当前输入光标处；切换输入框可继续输入。</p>
-        <p className="mt-2 text-xs leading-relaxed text-gray-400">目标位置需要支持文本粘贴；仅悬停鼠标不会建立文字插入光标。自动填入会使用系统剪贴板；向以管理员身份运行的应用输入时，需要以相同权限运行 NoteIDE。</p>
+        <p className="mt-2 text-xs leading-relaxed text-gray-400">目标位置需要支持文本粘贴；仅悬停鼠标不会建立文字插入光标。自动填入会使用系统剪贴板；向以管理员身份运行的应用输入时，需要以相同权限运行 NexusDesk。</p>
       </div>
       <label className="flex items-start gap-2"><input className="mt-1 accent-ide-accent" type="checkbox" checked={preferences.filterNoise} onChange={event => update({ ...preferences, filterNoise: event.target.checked })} /><span>过滤杂音标记<span className="mt-1 block text-xs text-gray-400">忽略音乐、掌声、静音等非语音标记。</span></span></label>
       <p className="text-xs text-gray-500">设置会立即保存，并在下次开启语音转文字时生效。</p>

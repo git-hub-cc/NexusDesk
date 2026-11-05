@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 
-const MENU_LABEL: &str = "noteide-native-menu";
+const MENU_LABEL: &str = "nexusdesk-native-menu";
 
 #[derive(Clone)]
 struct MenuSession {
@@ -157,7 +157,7 @@ fn create_menu_window(app: &tauri::AppHandle, session: MenuSessionState) -> taur
         MENU_LABEL,
         tauri::WebviewUrl::App("src/native-menu.html".into()),
     )
-    .title("NoteIDE menu")
+    .title("NexusDesk menu")
     .data_directory(crate::profiles::data_directory(app))
     .decorations(false)
     .always_on_top(true)
@@ -169,7 +169,7 @@ fn create_menu_window(app: &tauri::AppHandle, session: MenuSessionState) -> taur
     .initialization_script("window.__setMenu = (...args) => { window.__pendingMenu = args; };")
     .on_navigation(move |url| {
         let app = &navigation_app;
-        if url.scheme() != "noteide-menu" {
+        if url.scheme() != "nexusdesk-menu" {
             return url.scheme() == "tauri" || url.scheme() == "http" || url.scheme() == "https";
         }
         let current = events.lock().ok().and_then(|state| state.clone());

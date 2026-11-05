@@ -13,7 +13,7 @@
       const url = urls.find(value => /^https?:\/\//i.test(value));
       if (!url || reported) return;
       reported = true;
-      location.href = 'noteide-douyin://result?url=' + encodeURIComponent(url.replace(/^http:/i, 'https:'))
+      location.href = 'nexusdesk-douyin://result?url=' + encodeURIComponent(url.replace(/^http:/i, 'https:'))
         + '&title=' + encodeURIComponent(detail.desc || '抖音视频');
     } catch {}
   };
@@ -27,12 +27,12 @@
   const open = XMLHttpRequest.prototype.open;
   const send = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (method, url, ...args) {
-    this.__noteideUrl = url;
+    this.__nexusdeskUrl = url;
     return open.call(this, method, url, ...args);
   };
   XMLHttpRequest.prototype.send = function (...args) {
     this.addEventListener('load', () => {
-      if (!isDetail(this.__noteideUrl)) return;
+      if (!isDetail(this.__nexusdeskUrl)) return;
       try { report(this.responseType === 'json' ? this.response : JSON.parse(this.responseText)); } catch {}
     });
     return send.apply(this, args);

@@ -1,6 +1,6 @@
 (() => {
   if (window.top !== window || !/(^|\.)youtube\.com$/i.test(location.hostname)) return;
-  const prefix = 'noteide:youtube-progress:';
+  const prefix = 'nexusdesk:youtube-progress:';
   let active = null;
   const videoId = () => {
     const url = new URL(location.href);

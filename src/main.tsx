@@ -40,7 +40,7 @@ async function boot() {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     await getCurrentWindow().onCloseRequested(event => {
       event.preventDefault();
-      window.dispatchEvent(new CustomEvent("noteide-speech-close"));
+      window.dispatchEvent(new CustomEvent("nexusdesk-speech-close"));
     });
     document.body.classList.add("global-speech-input");
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<GlobalSpeechInput />);
@@ -56,7 +56,7 @@ async function boot() {
     void useBrowserHistoryStore.persist.rehydrate();
   });
   const snapshotUI = () => {
-    window.dispatchEvent(new Event("noteide-snapshot-ui"));
+    window.dispatchEvent(new Event("nexusdesk-snapshot-ui"));
     flushUIState();
   };
   window.addEventListener("blur", () => { snapshotUI(); void flushGlobalSettings().catch(console.error); });

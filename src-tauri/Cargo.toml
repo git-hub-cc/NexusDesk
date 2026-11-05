@@ -1,5 +1,5 @@
 [package]
-name = "noteide"
+name = "nexusdesk"
 version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
@@ -9,7 +9,7 @@ edition = "2024"
 default = []
 
 [lib]
-name = "noteide_lib"
+name = "nexusdesk_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

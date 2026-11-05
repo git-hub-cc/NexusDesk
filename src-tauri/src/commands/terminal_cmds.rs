@@ -125,7 +125,7 @@ impl TerminalState {
 static HISTORY_LOCK: Mutex<()> = Mutex::new(());
 
 fn history_path() -> Result<std::path::PathBuf, String> {
-    Ok(dirs::home_dir().ok_or("Cannot find home directory")?.join(".note/terminal_history.json"))
+    Ok(dirs::home_dir().ok_or("Cannot find home directory")?.join(".nexus/terminal_history.json"))
 }
 
 fn read_history() -> Result<Vec<String>, String> {
@@ -197,7 +197,7 @@ fn resolve_terminal_command(command: &str, cwd: Option<&str>) -> Result<String, 
         probe.args(["-NoLogo", "-NonInteractive", "-Command", r#"
             [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
             $tokens = $null; $errors = $null
-            $ast = [System.Management.Automation.Language.Parser]::ParseInput($env:NOTEIDE_STARTUP_COMMAND, [ref]$tokens, [ref]$errors)
+            $ast = [System.Management.Automation.Language.Parser]::ParseInput($env:NEXUSDESK_STARTUP_COMMAND, [ref]$tokens, [ref]$errors)
             if ($errors.Count) { [Console]::Error.Write('启动命令语法错误'); exit 2 }
             $first = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)
             if ($null -eq $first) { exit 0 }
@@ -208,7 +208,7 @@ fn resolve_terminal_command(command: &str, cwd: Option<&str>) -> Result<String, 
                 $resolved = Get-Command -Name 'codex-*-pc-windows-msvc.exe' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
             }
             if (-not $resolved) {
-                [Console]::Error.Write(('未找到命令 {0}。请先安装对应 CLI 并将其加入 PATH，或在命令行工具设置中修改启动命令。安装后请重启 NoteIDE。' -f $name)); exit 1
+                [Console]::Error.Write(('未找到命令 {0}。请先安装对应 CLI 并将其加入 PATH，或在命令行工具设置中修改启动命令。安装后请重启 NexusDesk。' -f $name)); exit 1
             }
             if ($resolved.CommandType -eq 'Application' -and $resolved.Path.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)) {
                 $shim = [IO.Path]::ChangeExtension($resolved.Path, '.shim')
@@ -221,14 +221,14 @@ fn resolve_terminal_command(command: &str, cwd: Option<&str>) -> Result<String, 
                         $path = [Environment]::ExpandEnvironmentVariables($target.Groups[1].Value)
                         if (-not [IO.Path]::IsPathRooted($path)) { $path = Join-Path (Split-Path $shim) $path }
                         $element = $first.CommandElements[0].Extent
-                        $prefix = $env:NOTEIDE_STARTUP_COMMAND.Substring(0, $element.StartOffset)
+                        $prefix = $env:NEXUSDESK_STARTUP_COMMAND.Substring(0, $element.StartOffset)
                         if ($first.InvocationOperator.ToString() -eq 'Unknown') { $prefix += '& ' }
-                        @{ path = $path; prefix = $prefix; suffix = $env:NOTEIDE_STARTUP_COMMAND.Substring($element.EndOffset) } | ConvertTo-Json -Compress
+                        @{ path = $path; prefix = $prefix; suffix = $env:NEXUSDESK_STARTUP_COMMAND.Substring($element.EndOffset) } | ConvertTo-Json -Compress
                     }
                 }
             }
         "#]);
-        probe.env("NOTEIDE_STARTUP_COMMAND", command);
+        probe.env("NEXUSDESK_STARTUP_COMMAND", command);
         probe
     };
     #[cfg(not(windows))]
@@ -245,7 +245,7 @@ fn resolve_terminal_command(command: &str, cwd: Option<&str>) -> Result<String, 
         }
         if quote.is_some() || executable.is_empty() { return Err("请使用明确的工具名称或路径作为启动命令".into()); }
         let mut probe = std::process::Command::new(std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()));
-        probe.args(["-c", "command -v -- \"$1\" >/dev/null 2>&1", "noteide-check", &executable]);
+        probe.args(["-c", "command -v -- \"$1\" >/dev/null 2>&1", "nexusdesk-check", &executable]);
         probe
     };
     if let Some(path) = cwd { probe.current_dir(path); }
@@ -269,7 +269,7 @@ fn resolve_terminal_command(command: &str, cwd: Option<&str>) -> Result<String, 
     }
     let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
     Err(if detail.is_empty() {
-        "未找到启动命令。请安装对应 CLI 并将其加入 PATH，或在命令行工具设置中修改启动命令。安装后请重启 NoteIDE。".into()
+        "未找到启动命令。请安装对应 CLI 并将其加入 PATH，或在命令行工具设置中修改启动命令。安装后请重启 NexusDesk。".into()
     } else { detail })
 }
 
@@ -310,7 +310,7 @@ fn direct_terminal_command(command: &str, cwd: Option<&str>) -> Result<Option<Co
     probe.args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", r#"
         [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
         $tokens = $null; $errors = $null
-        $ast = [Management.Automation.Language.Parser]::ParseInput($env:NOTEIDE_STARTUP_COMMAND, [ref]$tokens, [ref]$errors)
+        $ast = [Management.Automation.Language.Parser]::ParseInput($env:NEXUSDESK_STARTUP_COMMAND, [ref]$tokens, [ref]$errors)
         if ($errors.Count -or $ast.EndBlock.Statements.Count -ne 1) { exit 0 }
         $pipeline = $ast.EndBlock.Statements[0]
         if ($pipeline -isnot [Management.Automation.Language.PipelineAst] -or $pipeline.PipelineElements.Count -ne 1) { exit 0 }
@@ -344,7 +344,7 @@ fn direct_terminal_command(command: &str, cwd: Option<&str>) -> Result<Option<Co
         if ([IO.Path]::GetFileName($path) -match '^(powershell|pwsh)\.exe$') { exit 0 }
         @{ path = $path; arguments = @($arguments) } | ConvertTo-Json -Compress
     "#]);
-    probe.env("NOTEIDE_STARTUP_COMMAND", command);
+    probe.env("NEXUSDESK_STARTUP_COMMAND", command);
     if let Some(cwd) = cwd { probe.current_dir(cwd); }
     let output = probe.output().map_err(|error| error.to_string())?;
     if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).into_owned()); }
@@ -497,7 +497,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn launcher_resolves_directory_junction_before_traversing() {
-        let root = std::env::temp_dir().join(format!("noteide-junction-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-junction-{}", std::process::id()));
         let version = root.join("1.0");
         std::fs::create_dir_all(version.join("bin")).unwrap();
         std::fs::write(version.join("bin/tool.exe"), []).unwrap();
@@ -517,7 +517,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn scoop_shim_resolves_target_and_preserves_arguments() {
-        let root = std::env::temp_dir().join(format!("noteide-shim-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-shim-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let shim = root.join("tool.exe");
         std::fs::write(&shim, []).unwrap();
@@ -551,7 +551,7 @@ mod tests {
 
     #[test]
     fn missing_tool_returns_installation_guidance() {
-        let error = validate_terminal_command("noteide_missing_tool_9f3c71 --version", None).unwrap_err();
+        let error = validate_terminal_command("nexusdesk_missing_tool_9f3c71 --version", None).unwrap_err();
         assert!(error.contains("PATH"), "{error}");
     }
 

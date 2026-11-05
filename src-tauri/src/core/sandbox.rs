@@ -17,7 +17,7 @@ pub fn prepare(base: &Path, project: &Path, category: &str, sources: &[String]) 
     let project = project.canonicalize().map_err(|e| e.to_string())?;
     let directory = base.join(hash(&project.to_string_lossy())).join(component(category));
     std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-    let manifest = directory.join(".noteide-links.json");
+    let manifest = directory.join(".nexusdesk-links.json");
     let previous: Vec<String> = match std::fs::read(&manifest) {
         Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("Invalid sandbox manifest: {e}"))?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
@@ -91,8 +91,8 @@ fn create_link(source: &Path, link: &Path) -> Result<(), String> {
         target.strip_prefix("\\\\?\\").unwrap_or(&target).to_owned()
     };
     let output = std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path $env:NOTEIDE_LINK -Target $env:NOTEIDE_SOURCE | Out-Null"])
-        .env("NOTEIDE_LINK", link).env("NOTEIDE_SOURCE", target)
+        .args(["-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path $env:NEXUSDESK_LINK -Target $env:NEXUSDESK_SOURCE | Out-Null"])
+        .env("NEXUSDESK_LINK", link).env("NEXUSDESK_SOURCE", target)
         .creation_flags(0x08000000).output().map_err(|e| e.to_string())?;
     if output.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&output.stderr).into_owned()) }
 }
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn links_write_through_and_refresh_without_deleting_sources() {
-        let root = std::env::temp_dir().join(format!("noteide-sandbox-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-sandbox-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let a = root.join("a/same");
         let b = root.join("b/same");
         std::fs::create_dir_all(&a).unwrap();
@@ -111,7 +111,7 @@ mod tests {
         std::fs::write(a.join("note.md"), "original").unwrap();
         let sources = vec![a.to_string_lossy().into_owned(), b.to_string_lossy().into_owned()];
         let sandbox = prepare(&root.join("mirrors"), &root, "../分类", &sources).unwrap();
-        let links: Vec<_> = std::fs::read_dir(&sandbox).unwrap().map(|e| e.unwrap().path()).filter(|p| p.file_name().unwrap() != ".noteide-links.json").collect();
+        let links: Vec<_> = std::fs::read_dir(&sandbox).unwrap().map(|e| e.unwrap().path()).filter(|p| p.file_name().unwrap() != ".nexusdesk-links.json").collect();
         assert_eq!(links.len(), 2);
         let link = links.iter().find(|p| p.join("note.md").exists()).unwrap();
         std::fs::write(link.join("note.md"), "changed").unwrap();

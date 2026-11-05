@@ -4,7 +4,7 @@
   "description": "Capability for the main and project windows",
   "windows": [
     "main",
-    "noteide-speech",
+    "nexusdesk-speech",
     "settings-migration",
     "window-*"
   ],

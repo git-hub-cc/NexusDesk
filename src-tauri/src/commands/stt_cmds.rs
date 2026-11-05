@@ -415,10 +415,10 @@ mod tests {
 
     // 手动集成验证：模型目录和 16 kHz 单声道小端 float32 音频。
     #[test]
-    #[ignore = "requires NOTEIDE_STT_MODEL and NOTEIDE_STT_AUDIO"]
+    #[ignore = "requires NEXUSDESK_STT_MODEL and NEXUSDESK_STT_AUDIO"]
     fn hardware_transcription() {
-        let path = PathBuf::from(std::env::var("NOTEIDE_STT_MODEL").unwrap());
-        let bytes = std::fs::read(std::env::var("NOTEIDE_STT_AUDIO").unwrap()).unwrap();
+        let path = PathBuf::from(std::env::var("NEXUSDESK_STT_MODEL").unwrap());
+        let bytes = std::fs::read(std::env::var("NEXUSDESK_STT_AUDIO").unwrap()).unwrap();
         assert_eq!(bytes.len() % 4, 0);
         let samples: Vec<f32> = bytes
             .chunks_exact(4)
@@ -430,7 +430,7 @@ mod tests {
             let text = transcribe(&engine, &samples, generation).unwrap();
             eprintln!("{text}");
             assert!(!text.trim().is_empty());
-            if let Ok(expected) = std::env::var("NOTEIDE_STT_EXPECT") {
+            if let Ok(expected) = std::env::var("NEXUSDESK_STT_EXPECT") {
                 assert!(
                     text.to_lowercase().contains(&expected.to_lowercase()),
                     "{text}"

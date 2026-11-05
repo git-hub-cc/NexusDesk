@@ -41,7 +41,7 @@ try {
         }
     }
 
-    $downloadDirectory = Join-Path ([IO.Path]::GetTempPath()) ('NoteIDE-vcredist-' + [guid]::NewGuid().ToString('N'))
+    $downloadDirectory = Join-Path ([IO.Path]::GetTempPath()) ('NexusDesk-vcredist-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $downloadDirectory | Out-Null
     $installer = Join-Path $downloadDirectory "vc_redist.$Architecture.exe"
     # Microsoft's official permalink redirects to the Microsoft download CDN.

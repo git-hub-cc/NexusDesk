@@ -182,7 +182,7 @@ async fn parallel_download(
     let etag = probe.headers().get(ETAG).filter(|v| !v.as_bytes().starts_with(b"W/"))
         .cloned().ok_or("服务器未提供文件版本标识")?;
     drop(probe);
-    let temporary = destination.with_file_name(format!(".noteide-{id}.part"));
+    let temporary = destination.with_file_name(format!(".nexusdesk-{id}.part"));
     let file = tokio::fs::OpenOptions::new().write(true).create_new(true).open(&temporary).await.map_err(|e| e.to_string())?;
     let transfer = async {
         file.set_len(total).await.map_err(|e| e.to_string())?;
@@ -507,7 +507,7 @@ mod tests {
 
     #[test]
     fn native_snapshot_recovers_zero_progress_and_finalized_file_without_completion_event() {
-        let root = std::env::temp_dir().join(format!("noteide-native-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-native-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("small.bin");
         let mut item = native_item(&path);
@@ -524,7 +524,7 @@ mod tests {
 
     #[test]
     fn native_snapshot_does_not_complete_missing_partial_unknown_or_interrupted_files() {
-        let root = std::env::temp_dir().join(format!("noteide-native-partial-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-native-partial-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("small.bin");
         let mut item = native_item(&path);
@@ -546,7 +546,7 @@ mod tests {
     #[test]
     fn fully_received_file_still_open_by_writer_is_protected_from_cancel_until_finalized() {
         use std::os::windows::fs::OpenOptionsExt;
-        let path = std::env::temp_dir().join(format!("noteide-native-writer-{}-{}.bin", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let path = std::env::temp_dir().join(format!("nexusdesk-native-writer-{}-{}.bin", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let writer = std::fs::OpenOptions::new().write(true).create_new(true).share_mode(3).open(&path).unwrap();
         let mut item = native_item(&path);
         let full = item.total.unwrap();
@@ -623,7 +623,7 @@ mod tests {
     #[tokio::test]
     async fn downloads_ranges_without_corruption_or_overwriting() {
         let (url, server) = fixture("valid").await;
-        let root = std::env::temp_dir().join(format!("noteide-download-test-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-download-test-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         tokio::fs::create_dir_all(&root).await.unwrap();
         let destination = root.join("file.bin");
         tokio::fs::write(&destination, b"existing file").await.unwrap();
@@ -634,7 +634,7 @@ mod tests {
         assert_eq!(result.file_name().unwrap(), "file (1).bin");
         assert_eq!(tokio::fs::read(result).await.unwrap(), (0..8193).map(|n| (n % 251) as u8).collect::<Vec<_>>());
         assert_eq!(count.load(std::sync::atomic::Ordering::Relaxed), 8193);
-        assert!(!root.join(".noteide-success.part").exists());
+        assert!(!root.join(".nexusdesk-success.part").exists());
         server.abort(); tokio::fs::remove_dir_all(root).await.unwrap();
     }
 
@@ -642,7 +642,7 @@ mod tests {
     async fn invalid_responses_never_publish_a_partial_file() {
         for mode in ["ignore", "changed", "wrong", "truncated", "missing", "weak"] {
             let (url, server) = fixture(mode).await;
-            let root = std::env::temp_dir().join(format!("noteide-download-test-{mode}-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+            let root = std::env::temp_dir().join(format!("nexusdesk-download-test-{mode}-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
             tokio::fs::create_dir_all(&root).await.unwrap();
             let result = parallel_download(&url, "session=test".into(), 8193, &root.join("file.bin"), mode, Arc::new(|_, _| {}), Arc::new(tokio::sync::Notify::new())).await;
             assert!(result.is_err(), "{mode}");
@@ -654,7 +654,7 @@ mod tests {
     #[tokio::test]
     async fn cancellation_stops_ranges_and_removes_temporary_file() {
         let (url, server) = fixture("valid").await;
-        let root = std::env::temp_dir().join(format!("noteide-download-cancel-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-download-cancel-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         tokio::fs::create_dir_all(&root).await.unwrap();
         let signal = Arc::new(tokio::sync::Notify::new());
         let cancel = signal.clone();

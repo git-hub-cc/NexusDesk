@@ -9,6 +9,6 @@
     if (!/^(?:Add to Chrome|Add to Chromium|添加至 Chrome|添加到 Chrome|添加至Chrome|添加到Chrome|添加扩展程序|添加扩展|添加拓展)$/i.test(text)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    location.href = 'noteide-extension://install?source=' + encodeURIComponent(location.href);
+    location.href = 'nexusdesk-extension://install?source=' + encodeURIComponent(location.href);
   }, true);
 })();

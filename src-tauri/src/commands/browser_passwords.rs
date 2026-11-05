@@ -6,7 +6,7 @@ static LOCK: Mutex<()> = Mutex::new(());
 pub struct Password { pub name: String, pub url: String, pub username: String, pub password: String, #[serde(default)] pub note: String }
 
 fn path() -> Result<std::path::PathBuf, String> {
-    Ok(dirs::home_dir().ok_or("找不到用户目录")?.join(".note/browser/passwords.bin"))
+    Ok(dirs::home_dir().ok_or("找不到用户目录")?.join(".nexus/browser/passwords.bin"))
 }
 
 #[cfg(windows)]
@@ -152,7 +152,7 @@ pub fn fill(view: &tauri::Webview, url: &tauri::Url) {
 
 // This private navigation is always cancelled; credentials never leave the webview.
 pub fn password_navigation(view: Option<tauri::Webview>, url: &tauri::Url) -> bool {
-    if url.scheme() != "noteide-password" { return false; }
+    if url.scheme() != "nexusdesk-password" { return false; }
     let result = (|| -> Result<(), String> {
         type Pending = std::collections::HashMap<String, (Password, std::time::Instant)>;
         static PENDING: std::sync::OnceLock<Mutex<Pending>> = std::sync::OnceLock::new();

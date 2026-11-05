@@ -1,10 +1,10 @@
 {
   "keys": [
-    "noteide-workspace-storage",
-    "noteide-terminal-profiles",
-    "noteide-browser-history",
-    "noteide.music.libraryTab",
-    "noteide.http.extraction.v1"
+    "nexusdesk-workspace-storage",
+    "nexusdesk-terminal-profiles",
+    "nexusdesk-browser-history",
+    "nexusdesk.music.libraryTab",
+    "nexusdesk.http.extraction.v1"
   ],
-  "prefixes": ["sftp-profile:", "sftp-label:", "noteide-ui:"]
+  "prefixes": ["sftp-profile:", "sftp-label:", "nexusdesk-ui:"]
 }

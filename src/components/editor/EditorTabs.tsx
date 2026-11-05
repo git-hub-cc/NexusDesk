@@ -106,7 +106,7 @@ export const TabUI = forwardRef<HTMLDivElement, {
           {(tab.isVersionControl ?? (tab.diff !== undefined || !!tab.revision)) && <GitBranch size={12} aria-label="版本控制" className="shrink-0" />}
           {!(tab.isTemporary ?? !!tab.reverseTree) && tab.isExternal && <ExternalLink size={12} aria-hidden="true" className="shrink-0 text-amber-400" />}
           {(tab.isTemporary ?? !!tab.reverseTree) && <Clock size={12} aria-label="临时视图" className="shrink-0 text-sky-400" />}
-          {tab.isBrowser && (tab.browser?.url === "noteide:nav" ? <Compass size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MUSIC_HOME ? <Music2 size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MIRROR_HOME ? <Smartphone size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === VIDEO_HOME ? <Video size={12} className="shrink-0 text-sky-400" /> : <Globe size={12} className="shrink-0 text-sky-400" />)}
+          {tab.isBrowser && (tab.browser?.url === "nexusdesk:nav" ? <Compass size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MUSIC_HOME ? <Music2 size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MIRROR_HOME ? <Smartphone size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === VIDEO_HOME ? <Video size={12} className="shrink-0 text-sky-400" /> : <Globe size={12} className="shrink-0 text-sky-400" />)}
           <span className="truncate">{tab.browser?.url === MIRROR_HOME ? "安卓投屏" : tab.title}</span>
         </span>
         {tab.isPinned && <Pin size={12} className="shrink-0 text-gray-400 rotate-45" />}
@@ -308,7 +308,7 @@ export function EditorTabList({ pane }: EditorTabsProps) {
                         {tab.isVersionControl && <GitBranch size={12} aria-label="版本控制" className="shrink-0" />}
                         {!tab.isTemporary && tab.isExternal && <ExternalLink size={12} aria-label="不属于当前项目" className="shrink-0 text-amber-400" />}
                         {tab.isTemporary && <Clock size={12} aria-label="临时视图" className="shrink-0 text-sky-400" />}
-                        {tab.isBrowser && (tab.browser?.url === "noteide:nav" ? <Compass size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MUSIC_HOME ? <Music2 size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MIRROR_HOME ? <Smartphone size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === VIDEO_HOME ? <Video size={12} className="shrink-0 text-sky-400" /> : <Globe size={12} className="shrink-0 text-sky-400" />)}
+                        {tab.isBrowser && (tab.browser?.url === "nexusdesk:nav" ? <Compass size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MUSIC_HOME ? <Music2 size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MIRROR_HOME ? <Smartphone size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === VIDEO_HOME ? <Video size={12} className="shrink-0 text-sky-400" /> : <Globe size={12} className="shrink-0 text-sky-400" />)}
                         <span className="truncate">{tab.browser?.url === MIRROR_HOME ? "安卓投屏" : tab.title}</span>
                       </span>
                       {tab.isPinned && <Pin size={12} className="shrink-0 text-gray-400 rotate-45 mr-1" />}

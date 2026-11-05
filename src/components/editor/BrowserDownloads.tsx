@@ -114,7 +114,7 @@ export function BrowserDownloads({ labels }: { labels: string[] }) {
         <div className="flex items-center gap-2">
           <Download size={14} className="shrink-0 text-ide-accent" />
           <span className="min-w-0 flex-1 truncate" title={item.path}>{item.name}</span>
-          <span role="status" className={item.state === "failed" ? "text-red-400" : "text-gray-400"}>{extensionFailed ? "扩展下载未完成，请使用 NoteIDE 扩展面板安装" : item.message}{downloading && item.connections > 1 ? ` · ${item.connections} 路并发` : ""}</span>
+          <span role="status" className={item.state === "failed" ? "text-red-400" : "text-gray-400"}>{extensionFailed ? "扩展下载未完成，请使用 NexusDesk 扩展面板安装" : item.message}{downloading && item.connections > 1 ? ` · ${item.connections} 路并发` : ""}</span>
           {item.state === "completed" && <button type="button" title="打开所在文件夹" aria-label={`显示 ${item.name} 所在文件夹`} className="rounded p-1 hover:bg-white/10" onClick={() => { void revealItemInDir(item.path).catch(reason => setError(String(reason))); }}><FolderOpen size={14} /></button>}
           <button type="button" disabled={cancelling.includes(item.id)} title={downloading ? "取消下载并关闭" : "关闭下载提示"} aria-label={`${downloading ? "取消下载并关闭" : "关闭下载提示"} ${item.name}`} className="rounded p-1 hover:bg-white/10 disabled:opacity-50" onClick={() => { void close(item); }}><X size={14} /></button>
         </div>
@@ -123,7 +123,7 @@ export function BrowserDownloads({ labels }: { labels: string[] }) {
           <div className={`h-full rounded ${item.state === "failed" ? "bg-red-400" : "bg-ide-accent"} ${downloading && percent === undefined ? "animate-pulse" : ""}`} style={{ width: `${item.state === "completed" ? 100 : percent ?? 25}%` }} />
         </div>
         <div className="flex flex-wrap gap-x-3 text-[11px] text-gray-500">
-          {extensionFailed && <button type="button" className="text-ide-accent hover:underline" onClick={() => window.dispatchEvent(new CustomEvent("noteide-open-extensions", { detail: { label: item.label } }))}>使用 NoteIDE 扩展面板安装</button>}
+          {extensionFailed && <button type="button" className="text-ide-accent hover:underline" onClick={() => window.dispatchEvent(new CustomEvent("nexusdesk-open-extensions", { detail: { label: item.label } }))}>使用 NexusDesk 扩展面板安装</button>}
           <span>{downloadSize(item.received)}{item.total ? ` / ${downloadSize(item.total)}` : " · 大小未知"}</span>
           {downloading && <><span>{percent === undefined ? "正在接收文件…" : `${percent}%`}</span><span>{downloadSize(item.speed)}/s</span>{remaining !== undefined && <span>剩余约 {remaining < 60 ? `${remaining} 秒` : `${Math.ceil(remaining / 60)} 分钟`}</span>}</>}
           {item.state === "completed" && <span className="truncate" title={item.path}>已保存至 {item.path}</span>}

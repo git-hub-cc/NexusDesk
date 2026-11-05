@@ -65,7 +65,7 @@ export function useFileDrop() {
         if (target?.closest("[data-graph-root]")) {
           setIsDragging(false);
           if (payload.type === "drop" && useWorkspaceStore.getState().rootPath) {
-            window.dispatchEvent(new CustomEvent("noteide-graph-drop", { detail: {
+            window.dispatchEvent(new CustomEvent("nexusdesk-graph-drop", { detail: {
               category: target.closest<HTMLElement>("[data-graph-category]")?.dataset.graphCategory,
               paths: payload.paths,
             } }));

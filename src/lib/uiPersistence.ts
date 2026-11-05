@@ -11,14 +11,14 @@ export function projectKey(path: string) {
 }
 
 export function readUI<T>(root: string, category: string): T | undefined {
-  const key = `noteide-ui:${projectKey(root)}:${category}`;
+  const key = `nexusdesk-ui:${projectKey(root)}:${category}`;
   try { return JSON.parse(pending.get(key) ?? settingsStorage.getItem(key) ?? "null") ?? undefined; }
   catch { return undefined; }
 }
 
 export function writeUI(root: string, category: string, value: unknown) {
   if (isSnapshot) return;
-  pending.set(`noteide-ui:${projectKey(root)}:${category}`, JSON.stringify(value));
+  pending.set(`nexusdesk-ui:${projectKey(root)}:${category}`, JSON.stringify(value));
   clearTimeout(timer);
   timer = setTimeout(flushUIState, 300);
   deadline ??= setTimeout(flushUIState, 2000);

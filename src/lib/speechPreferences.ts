@@ -16,7 +16,7 @@ export type SpeechPreferences = {
   minDurationSeconds: number;
   minTextLength: number;
 };
-export const speechPreferencesKey = "noteide-ui:speech-to-text";
+export const speechPreferencesKey = "nexusdesk-ui:speech-to-text";
 
 const defaults = {
   minVolume: 0.018,

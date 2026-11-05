@@ -60,7 +60,7 @@ impl log::Log for Logger {
 }
 
 pub fn init() -> Result<(), Box<dyn std::error::Error>> {
-    let root = dirs::home_dir().ok_or("Cannot find home directory")?.join(".note/logs");
+    let root = dirs::home_dir().ok_or("Cannot find home directory")?.join(".nexus/logs");
     std::fs::create_dir_all(&root)?;
     let output = || Mutex::new(Output { day: String::new(), file: None, bytes: 0, sequence: 0 });
     let logger = LOGGER.get_or_init(|| Logger {
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn separates_sources_and_rotates_without_overwriting() {
-        let root = std::env::temp_dir().join(format!("noteide-logs-{}-{}", std::process::id(), Local::now().timestamp_nanos_opt().unwrap()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-logs-{}-{}", std::process::id(), Local::now().timestamp_nanos_opt().unwrap()));
         let output = || Mutex::new(Output { day: String::new(), file: None, bytes: 0, sequence: 0 });
         let logger = Logger { root: root.clone(), session: "test".into(), rust: output(), console: output() };
         logger.write(false, "INFO", "test", "first").unwrap();

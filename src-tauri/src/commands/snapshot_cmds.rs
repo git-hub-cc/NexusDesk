@@ -43,7 +43,7 @@ pub async fn open_git_snapshot(app: tauri::AppHandle, repo_path: String, commit_
         let token = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos();
         let label = format!("window-snapshot-{}-{token}", std::process::id());
         // A separate directory per window handles repeated commits and different repositories.
-        let base = dirs::home_dir().ok_or("Missing home directory")?.join(".note/worktrees").join(&oid);
+        let base = dirs::home_dir().ok_or("Missing home directory")?.join(".nexus/worktrees").join(&oid);
         std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
         let path = base.join(&label);
         git(&root, &["worktree", "add", "--detach", &path.to_string_lossy(), &oid])?;
@@ -53,7 +53,7 @@ pub async fn open_git_snapshot(app: tauri::AppHandle, repo_path: String, commit_
     url.query_pairs_mut().append_pair("project", &path.to_string_lossy()).append_pair("snapshot", &oid);
     let window = tauri::WebviewWindowBuilder::new(&app, &label,
         tauri::WebviewUrl::App(format!("index.html?{}", url.query().unwrap_or_default()).into()))
-        .title(format!("NoteIDE @{} (read-only)", &oid[..8]))
+        .title(format!("NexusDesk @{} (read-only)", &oid[..8]))
         .data_directory(crate::profiles::data_directory(&app))
         .visible(false).inner_size(1100.0, 760.0).decorations(false).disable_drag_drop_handler()
         .build();
@@ -93,7 +93,7 @@ mod tests {
     use super::*;
     #[test]
     fn detached_snapshot_preserves_source_and_can_be_removed() {
-        let root = std::env::temp_dir().join(format!("noteide-snapshot-test-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-snapshot-test-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let source = root.join("source");
         std::fs::create_dir_all(&source).unwrap();
         let repo = git2::Repository::init(&source).unwrap();

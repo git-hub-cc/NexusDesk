@@ -156,7 +156,7 @@ export function TerminalSession({ session, active, onExit }: { session: SessionI
         }).catch(report);
       }
     };
-    const dragTypes = ['application/x-noteide-files', 'application/x-noteide-file', 'application/x-noteide-logical-file'];
+    const dragTypes = ['application/x-nexusdesk-files', 'application/x-nexusdesk-file', 'application/x-nexusdesk-logical-file'];
     const dragOver = (event: DragEvent) => {
       if (!dragTypes.some(type => event.dataTransfer?.types.includes(type))) return;
       event.preventDefault();

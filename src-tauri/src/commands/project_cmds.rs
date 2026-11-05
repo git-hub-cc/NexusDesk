@@ -59,19 +59,19 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn project_survives_launcher_exit() {
-        const MARKER_ENV: &str = "NOTEIDE_PROJECT_BREAKAWAY_TEST_MARKER";
+        const MARKER_ENV: &str = "NEXUSDESK_PROJECT_BREAKAWAY_TEST_MARKER";
         if let Some(marker) = std::env::var_os(MARKER_ENV) {
             // Reproduce the real host job in an isolated test process so its
             // exit cannot terminate the test runner or other parallel tests.
             let _terminals = crate::commands::terminal_cmds::TerminalState::default();
             let mut command = independent_command(PathBuf::from("powershell.exe"));
             command.args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
-                    "Start-Sleep -Milliseconds 500; [IO.File]::WriteAllText($env:NOTEIDE_PROJECT_BREAKAWAY_TEST_MARKER, 'alive')"])
+                    "Start-Sleep -Milliseconds 500; [IO.File]::WriteAllText($env:NEXUSDESK_PROJECT_BREAKAWAY_TEST_MARKER, 'alive')"])
                 .env(MARKER_ENV, marker);
             command.spawn().unwrap();
             return;
         }
-        let marker = std::env::temp_dir().join(format!("noteide-breakaway-{}.txt", std::process::id()));
+        let marker = std::env::temp_dir().join(format!("nexusdesk-breakaway-{}.txt", std::process::id()));
         let output = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "commands::project_cmds::tests::project_survives_launcher_exit"])
             .env(MARKER_ENV, &marker).output().unwrap();
@@ -87,17 +87,17 @@ mod tests {
     #[test]
     fn startup_path_is_one_literal_argument() {
         let path = PathBuf::from("C:/项目 notes/a & $(test) #?%");
-        let command = project_command(PathBuf::from("NoteIDE.exe"), path.clone());
+        let command = project_command(PathBuf::from("NexusDesk.exe"), path.clone());
         let args: Vec<_> = command.get_args().map(OsString::from).collect();
         assert_eq!(args, vec![OsString::from("--project"), path.clone().into_os_string()]);
-        let mut launch = vec![OsString::from("NoteIDE.exe")];
+        let mut launch = vec![OsString::from("NexusDesk.exe")];
         launch.extend(args);
         assert_eq!(project_argument(launch), Some(path));
     }
 
     #[test]
     fn ordinary_launch_has_no_project_override() {
-        for args in [vec!["NoteIDE.exe"], vec!["NoteIDE.exe", "--project"], vec!["NoteIDE.exe", "--project", ""]] {
+        for args in [vec!["NexusDesk.exe"], vec!["NexusDesk.exe", "--project"], vec!["NexusDesk.exe", "--project", ""]] {
             assert_eq!(project_argument(args.into_iter().map(OsString::from)), None);
         }
     }

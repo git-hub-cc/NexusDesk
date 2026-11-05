@@ -49,7 +49,7 @@ pub async fn music_cover_url(id: String) -> Result<Option<String>, String> {
 }
 
 fn music_dir() -> Result<PathBuf, String> {
-    let directory = dirs::home_dir().ok_or("Cannot find home directory")?.join(".note").join("music");
+    let directory = dirs::home_dir().ok_or("Cannot find home directory")?.join(".nexus").join("music");
     std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
     Ok(directory)
 }
@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn local_metadata_and_artwork_survive_reload() {
-        let directory = std::env::temp_dir().join(format!("noteide-music-{}-{}", std::process::id(), super::signature_time_fallback()));
+        let directory = std::env::temp_dir().join(format!("nexusdesk-music-{}-{}", std::process::id(), super::signature_time_fallback()));
         std::fs::create_dir_all(&directory).unwrap();
         let path = directory.join("123 - Artist - Song.mp3");
         let track = super::MusicTrack { id: "123".into(), title: "Song".into(), artist: "Artist".into(), album: "Album".into(), duration: 123000, path: Some(path.to_string_lossy().into_owned()), cover_path: None };
@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn imported_numeric_filename_keeps_its_local_identity_after_reload() {
-        let directory = std::env::temp_dir().join(format!("noteide-import-metadata-{}-{}", std::process::id(), super::signature_time_fallback()));
+        let directory = std::env::temp_dir().join(format!("nexusdesk-import-metadata-{}-{}", std::process::id(), super::signature_time_fallback()));
         std::fs::create_dir_all(&directory).unwrap();
         let path = directory.join("123 - Artist - Song.mp3");
         std::fs::write(&path, b"audio").unwrap();

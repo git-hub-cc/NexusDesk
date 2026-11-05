@@ -12,10 +12,10 @@ test("music and video pages follow the active browser tab when switching in eith
   }).outputText;
   const React = { createElement: (type, props) => ({ type, props }) };
   const render = new Function("React", "MUSIC_HOME", "VIDEO_HOME", "MusicEditor", "VideoEditor",
-    `${compiled}\nreturn BrowserEditor;`)(React, "noteide:music", "noteide:video", "MusicEditor", "VideoEditor");
+    `${compiled}\nreturn BrowserEditor;`)(React, "nexusdesk:music", "nexusdesk:video", "MusicEditor", "VideoEditor");
   const tabs = [
-    { id: "music", browser: { url: "noteide:music" } },
-    { id: "video", browser: { url: "noteide:video" } },
+    { id: "music", browser: { url: "nexusdesk:music" } },
+    { id: "video", browser: { url: "nexusdesk:video" } },
   ];
   for (const activeId of ["music", "video", "music", "video"]) {
     const pages = tabs.map(tab => render({ tab, active: tab.id === activeId }));
@@ -28,12 +28,12 @@ test("workspace preserves media and browser component identity when opening and 
   const state = {
     isSplitMode: false, activeLeftTabId: "video", activeRightTabId: "right-video",
     leftTabs: [{ id: "video", path: "a.mp4" }, { id: "note", path: "a.md" },
-      { id: "music", path: "browser:music", browser: { url: "noteide:music" } },
+      { id: "music", path: "browser:music", browser: { url: "nexusdesk:music" } },
       { id: "website", path: "browser:website", browser: { url: "https://example.com/" } }],
     rightTabs: [{ id: "right-video", path: "b.mp4" }], setFocusedPane() {},
   };
   const bindings = {
-    MIRROR_HOME: "noteide:mirror", AndroidMirrorWorkspace: "AndroidMirrorWorkspace",
+    MIRROR_HOME: "nexusdesk:mirror", AndroidMirrorWorkspace: "AndroidMirrorWorkspace",
     React: { createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }) },
     useEffect() {}, useLayoutEffect() {}, useRef: () => ({ current: null }), useState: () => [null, () => {}],
     sidebarMaxSize: 80,

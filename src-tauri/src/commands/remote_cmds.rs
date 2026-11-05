@@ -55,7 +55,7 @@ pub async fn connect_remote(config: Connection, id: String, state: State<'_, Rem
         Ok((serde_json::json!({"trusted": true, "home": home, "fingerprint": fingerprint}), Some((ssh, sftp))))
     }).await.map_err(|e| e.to_string())??;
     if let Some((ssh, sftp)) = result.1 {
-        let dir = dirs::config_dir().ok_or("SFTP operation failed; check connection, path and permissions")?.join("NoteIDE").join("sftp-connections");
+        let dir = dirs::config_dir().ok_or("SFTP operation failed; check connection, path and permissions")?.join("NexusDesk").join("sftp-connections");
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         std::fs::write(dir.join(&id), saved_config).map_err(|e| e.to_string())?;
         state.0.lock().map_err(|e| e.to_string())?.insert(id, tx);
@@ -156,7 +156,7 @@ fn worker(ssh: ssh2::Session, sftp: ssh2::Sftp, rx: mpsc::Receiver<Request>) {
                         };
                         // Write a sibling temporary file, then atomically replace to avoid partial saves.
                         let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
-                        let temp = format!("{path}.noteide-{}-{nonce}.tmp", std::process::id());
+                        let temp = format!("{path}.nexusdesk-{}-{nonce}.tmp", std::process::id());
                         let mut created = false;
                         let result = (|| -> Result<_, String> {
                             let stat = sftp.stat(Path::new(&path)).map_err(|e| e.to_string())?;
@@ -236,7 +236,7 @@ fn worker(ssh: ssh2::Session, sftp: ssh2::Sftp, rx: mpsc::Receiver<Request>) {
         }
     }
     for (_, shell) in shells { let _ = shell.events.send(TerminalEvent::Exit); }
-    let _ = ssh.disconnect(None, "NoteIDE disconnected", None);
+    let _ = ssh.disconnect(None, "NexusDesk disconnected", None);
 }
 
 fn sender(state: &RemoteState, id: &str) -> Result<mpsc::Sender<Request>, String> {
@@ -293,7 +293,7 @@ pub fn close_remote(id: String, state: State<'_, RemoteState>) -> Result<(), Str
 pub async fn reconnect_remote(id: String, state: State<'_, RemoteState>) -> Result<serde_json::Value, String> {
     if id.len() != 36 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') { return Err("SFTP operation failed; check connection, path and permissions".into()); }
     if state.0.lock().map_err(|e| e.to_string())?.contains_key(&id) { return Ok(serde_json::json!({"trusted": true})); }
-    let path = dirs::config_dir().ok_or("SFTP operation failed; check connection, path and permissions")?.join("NoteIDE").join("sftp-connections").join(&id);
+    let path = dirs::config_dir().ok_or("SFTP operation failed; check connection, path and permissions")?.join("NexusDesk").join("sftp-connections").join(&id);
     let config = serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     connect_remote(config, id, state).await
 }

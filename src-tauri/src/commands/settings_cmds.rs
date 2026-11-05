@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, fs::OpenOptions, path::{Path, PathBuf}};
 type Settings = BTreeMap<String, String>;
 
 fn settings_path() -> Result<PathBuf, String> {
-    Ok(dirs::home_dir().ok_or("Cannot find home directory")?.join(".note/global_settings.json"))
+    Ok(dirs::home_dir().ok_or("Cannot find home directory")?.join(".nexus/global_settings.json"))
 }
 
 fn allowed(key: &str) -> bool {
@@ -86,10 +86,10 @@ fn update(values: &mut Settings, key: &str, previous: Option<&str>, value: &str)
     let before = previous.map(decode).unwrap_or(Value::Object(Map::new()));
     let current = values.get(key).map(|value| decode(value)).unwrap_or_else(|| before.clone());
     let mut merged = merge(&current, &before, &decode(value));
-    if key == "noteide-workspace-storage" {
+    if key == "nexusdesk-workspace-storage" {
         if let Some(entries) = merged.pointer_mut("/state/recentProjects").and_then(Value::as_array_mut) { entries.truncate(10); }
     }
-    if key == "noteide-browser-history" {
+    if key == "nexusdesk-browser-history" {
         if let Some(entries) = merged.pointer_mut("/state/entries").and_then(Value::as_array_mut) {
             entries.sort_by_key(|entry| std::cmp::Reverse(entry.get("visitedAt").and_then(Value::as_u64).unwrap_or(0)));
             entries.truncate(500);
@@ -148,16 +148,16 @@ mod tests {
 
     #[test]
     fn legacy_migration_preserves_existing_settings_and_only_imports_global_keys() {
-        let mut values = Settings::from([("noteide-terminal-profiles".into(), "new".into())]);
+        let mut values = Settings::from([("nexusdesk-terminal-profiles".into(), "new".into())]);
         import_entries(&mut values, Settings::from([
-            ("noteide-terminal-profiles".into(), "old".into()),
-            ("noteide-workspace-storage".into(), "recent".into()),
+            ("nexusdesk-terminal-profiles".into(), "old".into()),
+            ("nexusdesk-workspace-storage".into(), "recent".into()),
             ("sftp-label:server".into(), "user@server".into()),
-            ("noteide-snapshot-storage".into(), "snapshot".into()),
+            ("nexusdesk-snapshot-storage".into(), "snapshot".into()),
         ]));
         assert_eq!(values.len(), 3);
-        assert_eq!(values["noteide-terminal-profiles"], "new");
-        assert_eq!(values["noteide-workspace-storage"], "recent");
+        assert_eq!(values["nexusdesk-terminal-profiles"], "new");
+        assert_eq!(values["nexusdesk-workspace-storage"], "recent");
     }
 
     #[test]
@@ -186,8 +186,8 @@ mod tests {
 
     #[test]
     fn process_writer() {
-        let Some(path) = std::env::var_os("NOTEIDE_SETTINGS_TEST_PATH") else { return; };
-        let prefix = std::env::var("NOTEIDE_SETTINGS_TEST_PREFIX").unwrap();
+        let Some(path) = std::env::var_os("NEXUSDESK_SETTINGS_TEST_PATH") else { return; };
+        let prefix = std::env::var("NEXUSDESK_SETTINGS_TEST_PREFIX").unwrap();
         for number in 0..12 {
             transaction(Path::new(&path), |values| {
                 values.insert(format!("{prefix}-{number}"), number.to_string());
@@ -198,14 +198,14 @@ mod tests {
 
     #[test]
     fn atomic_settings_writes_are_safe_across_processes() {
-        let root = std::env::temp_dir().join(format!("noteide-settings-test-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-settings-test-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("global_settings.json");
         let executable = std::env::current_exe().unwrap();
         let mut children = ["a", "b"].map(|prefix| {
             let mut command = std::process::Command::new(&executable);
             command.args(["--exact", "commands::settings_cmds::tests::process_writer"])
-                .env("NOTEIDE_SETTINGS_TEST_PATH", &path).env("NOTEIDE_SETTINGS_TEST_PREFIX", prefix);
+                .env("NEXUSDESK_SETTINGS_TEST_PATH", &path).env("NEXUSDESK_SETTINGS_TEST_PREFIX", prefix);
             #[cfg(windows)]
             { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
             command.spawn().unwrap()
@@ -217,7 +217,7 @@ mod tests {
 
     #[test]
     fn malformed_settings_are_preserved_instead_of_overwritten() {
-        let root = std::env::temp_dir().join(format!("noteide-settings-corrupt-test-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-settings-corrupt-test-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("global_settings.json");
         std::fs::write(&path, b"corrupted").unwrap();

@@ -77,7 +77,7 @@ pub fn revert_files(repo_path: &str, paths: &[String]) -> Result<(), String> {
     let repo = open(repo_path)?;
     if repo.state() != git2::RepositoryState::Clean { return Err("请先完成当前合并或变基操作".into()); }
     let snapshots = paths.iter().map(|path| capture(&repo, path)).collect::<Result<Vec<_>, _>>()?;
-    let directory = repo.path().join("noteide-revert-history");
+    let directory = repo.path().join("nexusdesk-revert-history");
     fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
     let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos();
     let record = directory.join(format!("{id:039}.json"));
@@ -97,7 +97,7 @@ pub fn undo_revert(repo_path: &str) -> Result<Vec<String>, String> {
     let _lock = LOCK.lock().map_err(|e| e.to_string())?;
     let repo = open(repo_path)?;
     if repo.state() != git2::RepositoryState::Clean { return Err("请先完成当前合并或变基操作".into()); }
-    let directory = repo.path().join("noteide-revert-history");
+    let directory = repo.path().join("nexusdesk-revert-history");
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),

@@ -31,7 +31,7 @@ export function VideoEditor({ active }: { active: boolean }) {
   }, []);
   useEffect(() => {
     void refresh();
-    void homeDir().then(dir => join(dir, ".note", "video")).then(setDestination).catch(reason => {
+    void homeDir().then(dir => join(dir, ".nexus", "video")).then(setDestination).catch(reason => {
       setMessage(String(reason)); setError(true);
     });
   }, [refresh]);
@@ -131,7 +131,7 @@ export function VideoEditor({ active }: { active: boolean }) {
         </div>
         <div className="music-list-heading flex shrink-0 items-center justify-between gap-2 border-b border-ide-panel-border px-5">
           <div><h2>视频</h2><p>{query ? `找到 ${filtered.length} 个视频` : `${videos.length} 个视频`}</p></div>
-          <button type="button" className="media-import-button" disabled={importing || busy} onClick={() => void importFiles()} title="复制视频到 ~/.note/video">{importing ? <LoaderCircle size={14} className="animate-spin" /> : <Import size={14} />}<span>{importing ? "正在导入…" : "导入视频"}</span></button>
+          <button type="button" className="media-import-button" disabled={importing || busy} onClick={() => void importFiles()} title="复制视频到 ~/.nexus/video">{importing ? <LoaderCircle size={14} className="animate-spin" /> : <Import size={14} />}<span>{importing ? "正在导入…" : "导入视频"}</span></button>
         </div>
         <div className="video-list" ref={listRef} tabIndex={0} aria-label="视频列表">
           <div className="media-virtual-list" style={{ height: videoWindow.totalHeight }}>
@@ -170,7 +170,7 @@ export function VideoEditor({ active }: { active: boolean }) {
           </p>
           {message && <p role={error ? "alert" : "status"} className={`music-message ${error ? "is-error" : ""}`}>{message}</p>}
           <div className="music-storage" title={destination || undefined}>
-            <span className="music-storage-dot" />保存位置<p>~/.note/video</p>
+            <span className="music-storage-dot" />保存位置<p>~/.nexus/video</p>
           </div>
         </footer>
       </aside>

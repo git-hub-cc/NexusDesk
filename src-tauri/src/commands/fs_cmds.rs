@@ -27,7 +27,7 @@ pub async fn prepare_logical_sandbox(project: String, category: String, state: S
             .collect::<Result<std::collections::HashSet<_>, _>>().map_err(|e| e.to_string())?;
         let sources = node.children.as_deref().unwrap_or_default().iter()
             .filter(|entry| !entry.missing && !hidden.contains(&entry.id)).map(|entry| entry.id.clone()).collect::<Vec<_>>();
-        let base = dirs::home_dir().ok_or("无法获取用户目录")?.join(".note/sandboxes");
+        let base = dirs::home_dir().ok_or("无法获取用户目录")?.join(".nexus/sandboxes");
         crate::core::sandbox::prepare(&base, std::path::Path::new(&project), &category, &sources)
             .map(|path| path.to_string_lossy().into_owned())
     }).await.map_err(|e| e.to_string())?
@@ -79,7 +79,7 @@ pub async fn import_asset(note_path: String, target_dir: Option<String>, source_
 mod asset_tests {
     #[tokio::test]
     async fn imports_binary_assets_beside_note_without_overwriting_or_moving_source() {
-        let root = std::env::temp_dir().join(format!("noteide-assets-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-assets-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(root.join("notes")).unwrap();
         let note = root.join("notes/note.md").to_string_lossy().to_string();
         let bytes = vec![0, 255, 128, 0, 10];
@@ -291,7 +291,7 @@ fn update_file_frontmatter_blocking(path: String, new_type: String, state: &AppS
     let guard = project_db(state)?;
     let conn = guard.as_ref().expect("project_db initializes the connection");
     if !std::path::Path::new(&path).exists() { return Err("Source does not exist".into()); }
-    // All entries, including Markdown, store membership in .note/index.db.
+    // All entries, including Markdown, store membership in .nexus/index.db.
     // Explicit references override legacy frontmatter without changing user files.
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM logical_hidden WHERE path=?1 AND category=?2", rusqlite::params![path, new_type]).map_err(|e| e.to_string())?;
@@ -399,7 +399,7 @@ pub async fn stash_entry(path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         crate::core::delete_guard::check_directory(std::path::Path::new(&path))?;
         let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos();
-        let directory = std::env::temp_dir().join(format!("noteide-trash-{}-{stamp}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("nexusdesk-trash-{}-{stamp}", std::process::id()));
         std::fs::create_dir(&directory).map_err(|e| e.to_string())?;
         let source = std::path::Path::new(&path);
         let target = directory.join(source.file_name().ok_or("Invalid entry path")?);
@@ -480,7 +480,7 @@ fn edit_logical_folder_in_db(conn: &rusqlite::Connection, name: &str, new_name: 
 mod logical_folder_tests {
     #[test]
     fn markdown_membership_is_persisted_without_modifying_source() {
-        let root = std::env::temp_dir().join(format!("noteide-membership-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-membership-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(&root).unwrap();
         let file = root.join("note.md");
         // Even malformed frontmatter must not prevent assigning a category.
@@ -506,7 +506,7 @@ mod logical_folder_tests {
 
     #[test]
     fn category_operations_preserve_files_and_survive_reindexing() {
-        let root = std::env::temp_dir().join(format!("noteide-categories-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-categories-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(&root).unwrap();
         let file = root.join("note.md");
         let content = "---\ntype: original\n---\nKeep this content";

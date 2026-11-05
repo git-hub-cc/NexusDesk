@@ -609,12 +609,12 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
             return true;
           },
           dragover: (event) => {
-            if (/\.(md|markdown|mdown|mkd)$/i.test(tabRef.current?.path ?? "") && event.dataTransfer?.types.some(type => ["Files", "application/x-noteide-file", "application/x-noteide-logical-file"].includes(type))) { event.preventDefault(); return true; }
+            if (/\.(md|markdown|mdown|mkd)$/i.test(tabRef.current?.path ?? "") && event.dataTransfer?.types.some(type => ["Files", "application/x-nexusdesk-file", "application/x-nexusdesk-logical-file"].includes(type))) { event.preventDefault(); return true; }
             return false;
           },
           drop: (event) => {
             if (!/\.(md|markdown|mdown|mkd)$/i.test(tabRef.current?.path ?? "")) return false;
-            const path = event.dataTransfer?.getData("application/x-noteide-file") || event.dataTransfer?.getData("application/x-noteide-logical-file");
+            const path = event.dataTransfer?.getData("application/x-nexusdesk-file") || event.dataTransfer?.getData("application/x-nexusdesk-logical-file");
             const files = Array.from(event.dataTransfer?.files ?? []);
             if (!path && !files.length) return false;
             event.preventDefault(); event.stopPropagation();
@@ -757,7 +757,7 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
       if (previousTabId.current === tabRef.current?.id) snapshotLocation();
     };
     view.scrollDOM.addEventListener("scroll", trackLocation, { passive: true });
-    window.addEventListener("noteide-snapshot-ui", snapshotLocation);
+    window.addEventListener("nexusdesk-snapshot-ui", snapshotLocation);
     window.addEventListener("blur", snapshotLocation);
 
     const handleJump = (e: Event) => {
@@ -777,7 +777,7 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
     return () => {
       unsubscribeLocation();
       view.scrollDOM.removeEventListener("scroll", trackLocation);
-      window.removeEventListener("noteide-snapshot-ui", snapshotLocation);
+      window.removeEventListener("nexusdesk-snapshot-ui", snapshotLocation);
       window.removeEventListener("blur", snapshotLocation);
       saveLocation(pane, previousTabId.current, view, locationRoot);
       clearTimeout(compositionTimer);

@@ -41,8 +41,8 @@ function AssetImage({ source, note, alt }: { source: string; note: string; alt?:
 
   useEffect(() => {
     const refresh = () => setVersion(v => Math.max(Date.now(), v + 1));
-    window.addEventListener("noteide:image-saved", refresh);
-    return () => window.removeEventListener("noteide:image-saved", refresh);
+    window.addEventListener("nexusdesk:image-saved", refresh);
+    return () => window.removeEventListener("nexusdesk:image-saved", refresh);
   }, []);
 
   return asset.error || failedUrl === asset.url
@@ -221,11 +221,11 @@ function MarkdownPreviewPane({ pane, tabId, previewRef, className, children }: {
     const snapshot = () => {
       if (root) writeUI(root, `preview:${pane}:${tabId}`, { top: element.scrollTop, left: element.scrollLeft });
     };
-    window.addEventListener("noteide-snapshot-ui", snapshot);
+    window.addEventListener("nexusdesk-snapshot-ui", snapshot);
     return () => {
       // This keyed component cleans up before React removes its scroll container.
       snapshot();
-      window.removeEventListener("noteide-snapshot-ui", snapshot);
+      window.removeEventListener("nexusdesk-snapshot-ui", snapshot);
     };
   }, [pane, tabId, previewRef]);
 

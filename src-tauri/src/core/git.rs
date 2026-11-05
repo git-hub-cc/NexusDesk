@@ -40,7 +40,7 @@ fn token_path(repo: &Repository) -> Result<std::path::PathBuf, String> {
     let base = dirs::config_dir().ok_or("无法定位应用配置目录")?;
     let identity = repo.workdir().unwrap_or(repo.path()).to_string_lossy();
     let hash = format!("{:x}", identity.bytes().fold(2166136261u32, |hash, byte| (hash ^ byte as u32).wrapping_mul(16777619)));
-    Ok(base.join("NoteIDE").join("git-credentials").join(hash))
+    Ok(base.join("NexusDesk").join("git-credentials").join(hash))
 }
 fn load_credentials(repo: &Repository) -> Result<(String, String), String> {
     let path = token_path(repo)?;
@@ -300,7 +300,7 @@ mod push_tests {
                 write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/x-git-receive-pack-{kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
             }
         });
-        let directory = std::env::temp_dir().join(format!("noteide-push-{}-{}", std::process::id(), address.port()));
+        let directory = std::env::temp_dir().join(format!("nexusdesk-push-{}-{}", std::process::id(), address.port()));
         std::fs::create_dir_all(&directory).unwrap();
         let repo = Repository::init(&directory).unwrap();
         repo.set_head("refs/heads/main").unwrap();
@@ -449,7 +449,7 @@ mod tests {
         fn new() -> Self {
             static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!("noteide-git-{}-{}-{serial}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+            let path = std::env::temp_dir().join(format!("nexusdesk-git-{}-{}-{serial}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
             let repo = Repository::init(&path).unwrap();
             let mut config = repo.config().unwrap();
             config.set_str("user.name", "Test").unwrap(); config.set_str("user.email", "test@example.com").unwrap();

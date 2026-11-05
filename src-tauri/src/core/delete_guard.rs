@@ -45,7 +45,7 @@ mod tests {
     #[test]
     fn detects_occupied_root_nested_directory_and_file_without_changing_tree() {
         let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let root = std::env::temp_dir().join(format!("noteide-delete-guard-{}-{stamp}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-delete-guard-{}-{stamp}", std::process::id()));
         let nested = root.join("child").join("grandchild");
         std::fs::create_dir_all(&nested).unwrap();
         let file = nested.join("note.txt");

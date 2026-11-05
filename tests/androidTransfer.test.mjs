@@ -55,7 +55,7 @@ test("ordinary clipboard text does not trigger a download and malformed drag pay
   for (const value of ["{}", "null", "bad json", '{"serial":"phone","paths":["relative"]}', '{"serial":"phone","paths":[null]}']) {
     assert.equal(h.parseAndroidFiles(value), null);
   }
-  const data = { "application/x-noteide-files": JSON.stringify(["C:/a.txt", "C:/folder"]) };
+  const data = { "application/x-nexusdesk-files": JSON.stringify(["C:/a.txt", "C:/folder"]) };
   assert.deepEqual(h.localDropPaths({ getData: type => data[type] ?? "" }), ["C:/a.txt", "C:/folder"]);
   assert.throws(() => h.localDropPaths({ getData: () => "[123]" }), /无效/);
 });
@@ -85,7 +85,7 @@ test("Android rows select on click, activate on double click, and drag the selec
   const actions = { serial: "phone", disabled: false, remove: entries => calls.push(["remove", entries.map(entry => entry.path)]), dragOver: (_event, directory) => calls.push(["over", directory]), drop: (_event, directory) => calls.push(["drop", directory]) };
   const render = new Function("React", "createContext", "useContext", "ContextMenu", "FileIcon", "ChevronRight", "selectTreeNode", "activateTreeFile", "ANDROID_FILE_TYPE",
     `${transpile("../src/components/editor/AndroidFileManager.tsx")}\nreturn AndroidFileNode;`)
-    (React, () => ({}), () => actions, { Root: "menu", Trigger: "trigger", Portal: "portal", Content: "content", Item: "item" }, "FileIcon", "ChevronRight", interaction.selectTreeNode, interaction.activateTreeFile, "application/x-noteide-android-files");
+    (React, () => ({}), () => actions, { Root: "menu", Trigger: "trigger", Portal: "portal", Content: "content", Item: "item" }, "FileIcon", "ChevronRight", interaction.selectTreeNode, interaction.activateTreeFile, "application/x-nexusdesk-android-files");
   const data = { name: "a.txt", path: "/sdcard/folder/a.txt", is_dir: false };
   const node = { id: data.path, data, isLeaf: true, isSelected: true, tree: { props: {}, selectedNodes: [{ data }, { data: { path: "/sdcard/b.txt" } }] }, select: () => calls.push("select"), activate: () => calls.push("activate") };
   const rendered = render({ node, style: {} });
@@ -100,7 +100,7 @@ test("Android rows select on click, activate on double click, and drag the selec
   const dataTransfer = { setData: (type, value) => { dragData[type] = value; } };
   row.props.onDragStart({ ...event, dataTransfer });
   assert.equal(dataTransfer.effectAllowed, "copy");
-  assert.deepEqual(JSON.parse(dragData["application/x-noteide-android-files"]), { serial: "phone", paths: [data.path, "/sdcard/b.txt"] });
+  assert.deepEqual(JSON.parse(dragData["application/x-nexusdesk-android-files"]), { serial: "phone", paths: [data.path, "/sdcard/b.txt"] });
   row.props.onDragOver(event); row.props.onDrop(event);
   assert.deepEqual(calls.slice(-2), [["over", "/sdcard/folder"], ["drop", "/sdcard/folder"]]);
   const deletion = flatten(rendered).find(element => element.type === "item" && element.children.includes("删除 "));

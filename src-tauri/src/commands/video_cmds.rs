@@ -17,7 +17,7 @@ pub struct LocalVideo { pub path: String, pub name: String, pub size: u64, pub m
 
 #[tauri::command]
 pub fn list_local_videos() -> Result<Vec<LocalVideo>, String> {
-    let root = dirs::home_dir().ok_or("无法获取用户目录")?.join(".note").join("video");
+    let root = dirs::home_dir().ok_or("无法获取用户目录")?.join(".nexus").join("video");
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let mut videos = Vec::new();
     for entry in std::fs::read_dir(&root).map_err(|e| e.to_string())? {
@@ -167,7 +167,7 @@ fn douyin_target(input: &reqwest::Url) -> Result<reqwest::Url, String> {
 async fn resolve_douyin(app: &tauri::AppHandle, input: &reqwest::Url) -> Result<(String, String), String> {
     let target = douyin_target(input)?;
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let label = format!("noteide-douyin-{}-{}", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    let label = format!("nexusdesk-douyin-{}-{}", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
     let (tx, rx) = oneshot::channel::<Result<(String, String), String>>();
     let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
     let callback_tx = tx.clone();
@@ -176,7 +176,7 @@ async fn resolve_douyin(app: &tauri::AppHandle, input: &reqwest::Url) -> Result<
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
         .initialization_script(script).inner_size(1.0, 1.0).visible(false).focused(false).skip_taskbar(true)
         .on_navigation(move |url| {
-            if url.scheme() == "noteide-douyin" {
+            if url.scheme() == "nexusdesk-douyin" {
                 let result = (|| { let video = url.query_pairs().find(|(k, _)| k == "url").map(|(_, v)| v.into_owned()).ok_or("抖音没有返回视频地址".to_string())?;
                     let title = url.query_pairs().find(|(k, _)| k == "title").map(|(_, v)| v.into_owned()).unwrap_or_else(|| "抖音视频".into());
                     let video_url = reqwest::Url::parse(&video).map_err(|e| e.to_string())?;

@@ -35,7 +35,7 @@ export function BrowserExtensions({ getLabel, currentUrl, onOpenStore, onInstall
       if (detail.label !== latest.current.getLabel()) return;
       setOpened(true); setError(""); setMessage("");
     };
-    window.addEventListener("noteide-open-extensions", open);
+    window.addEventListener("nexusdesk-open-extensions", open);
     void getCurrentWindow().listen<{ label: string; source: string; state: string; message: string }>("browser-extension-install", event => {
       if (disposed || event.payload.label !== latest.current.getLabel()) return;
       const { state, message } = event.payload;
@@ -44,7 +44,7 @@ export function BrowserExtensions({ getLabel, currentUrl, onOpenStore, onInstall
       setMessage(state === "failed" ? "" : message);
       if (state === "completed") void latest.current.refresh();
     }).then(stop => { if (disposed) stop(); else unlisten = stop; }).catch(reason => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; unlisten?.(); window.removeEventListener("noteide-open-extensions", open); };
+    return () => { disposed = true; unlisten?.(); window.removeEventListener("nexusdesk-open-extensions", open); };
   }, []);
   useEffect(() => { if (opened) void refresh(); }, [opened]);
   if (!navigator.userAgent.includes("Windows")) return null;

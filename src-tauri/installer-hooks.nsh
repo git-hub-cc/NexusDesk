@@ -1,9 +1,9 @@
 ; This include is resolved from the source directory by Tauri.
-!define NOTEIDE_RUNTIME_SCRIPT "${__FILEDIR__}\ensure-vc-runtime.ps1"
+!define NEXUSDESK_RUNTIME_SCRIPT "${__FILEDIR__}\ensure-vc-runtime.ps1"
 
 !macro NSIS_HOOK_PREINSTALL
   InitPluginsDir
-  File /oname=$PLUGINSDIR\ensure-vc-runtime.ps1 "${NOTEIDE_RUNTIME_SCRIPT}"
+  File /oname=$PLUGINSDIR\ensure-vc-runtime.ps1 "${NEXUSDESK_RUNTIME_SCRIPT}"
   DetailPrint "Checking Microsoft Visual C++ runtime (${ARCH})..."
   nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\ensure-vc-runtime.ps1" -Architecture "${ARCH}"'
   Pop $0

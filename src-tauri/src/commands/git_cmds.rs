@@ -56,7 +56,7 @@ pub async fn list_git_repositories(provider: String, token: String) -> Result<Ve
     let token = token.trim();
     if token.is_empty() { return Err("请输入访问 Token".into()); }
     let client = reqwest::Client::builder()
-        .user_agent("NoteIDE")
+        .user_agent("NexusDesk")
         .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(30))
         .build().map_err(|_| "无法创建网络连接".to_string())?;

@@ -19,12 +19,12 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
   useEffect(() => {
     const toggle = () => {
       if (speechOpenRef.current) {
-        window.dispatchEvent(new CustomEvent("noteide-speech-close"));
+        window.dispatchEvent(new CustomEvent("nexusdesk-speech-close"));
         return;
       }
       speechOpenRef.current = true;
       setSpeechOpen(true);
-      window.dispatchEvent(new CustomEvent("noteide-speech-state", { detail: { open: true } }));
+      window.dispatchEvent(new CustomEvent("nexusdesk-speech-state", { detail: { open: true } }));
     };
     const close = () => {
       speechOpenRef.current = false;
@@ -38,17 +38,17 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
     const clearTarget = () => {
       setSpeechTarget(null);
     };
-    window.addEventListener("noteide-speech-toggle", toggle);
-    window.addEventListener("noteide-speech-close", close);
-    window.addEventListener("noteide-speech-state", syncSpeechState);
+    window.addEventListener("nexusdesk-speech-toggle", toggle);
+    window.addEventListener("nexusdesk-speech-close", close);
+    window.addEventListener("nexusdesk-speech-state", syncSpeechState);
     window.addEventListener("blur", clearTarget);
     // 原生全局快捷键通过 Tauri 事件送达，统一转交给现有语音开关。
     let disposed = false;
     let unlisten: (() => void) | undefined;
     if (isTauri()) {
-      void getCurrentWindow().listen<{ stop?: boolean }>("noteide-speech-toggle", event => {
+      void getCurrentWindow().listen<{ stop?: boolean }>("nexusdesk-speech-toggle", event => {
         if (!disposed) window.dispatchEvent(new CustomEvent(
-          event?.payload?.stop ? "noteide-speech-close" : "noteide-speech-toggle",
+          event?.payload?.stop ? "nexusdesk-speech-close" : "nexusdesk-speech-toggle",
         ));
       }).then(stop => {
         if (disposed) stop();
@@ -58,9 +58,9 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
     return () => {
       disposed = true;
       unlisten?.();
-      window.removeEventListener("noteide-speech-toggle", toggle);
-      window.removeEventListener("noteide-speech-close", close);
-      window.removeEventListener("noteide-speech-state", syncSpeechState);
+      window.removeEventListener("nexusdesk-speech-toggle", toggle);
+      window.removeEventListener("nexusdesk-speech-close", close);
+      window.removeEventListener("nexusdesk-speech-state", syncSpeechState);
       window.removeEventListener("blur", clearTarget);
     };
   }, []);
@@ -68,13 +68,13 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
   const closeSpeech = () => {
     speechOpenRef.current = false;
     setSpeechOpen(false);
-    window.dispatchEvent(new CustomEvent("noteide-speech-state", { detail: { open: false } }));
+    window.dispatchEvent(new CustomEvent("nexusdesk-speech-state", { detail: { open: false } }));
   };
 
   const insertSpeech = (text: string, requestId: string) => {
     return invoke<void>("paste_text", { text, requestId }).catch(error => {
       console.error("语音文本粘贴失败", error);
-      window.dispatchEvent(new CustomEvent("noteide-speech-error", {
+      window.dispatchEvent(new CustomEvent("nexusdesk-speech-error", {
         detail: { message: `文本已复制到剪贴板，但自动粘贴失败：${String(error)}` },
       }));
     });
@@ -111,7 +111,7 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
           aria-label="语音转文字"
           aria-pressed={speechOpen}
           title="语音转文字"
-          onClick={() => window.dispatchEvent(new CustomEvent("noteide-speech-toggle"))}
+          onClick={() => window.dispatchEvent(new CustomEvent("nexusdesk-speech-toggle"))}
         >
           <Mic size={20} strokeWidth={1.75} aria-hidden="true" />
         </button>

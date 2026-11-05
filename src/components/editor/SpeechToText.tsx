@@ -302,11 +302,11 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
       const detail = (event as CustomEvent<{ message?: string }>).detail;
       if (detail?.message) setStatus(detail.message);
     };
-    window.addEventListener("noteide-speech-close", close);
-    window.addEventListener("noteide-speech-error", showError);
+    window.addEventListener("nexusdesk-speech-close", close);
+    window.addEventListener("nexusdesk-speech-error", showError);
     return () => {
-      window.removeEventListener("noteide-speech-close", close);
-      window.removeEventListener("noteide-speech-error", showError);
+      window.removeEventListener("nexusdesk-speech-close", close);
+      window.removeEventListener("nexusdesk-speech-error", showError);
     };
   }, []);
   const togglePause = () => {

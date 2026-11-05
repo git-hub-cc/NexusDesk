@@ -390,7 +390,7 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
             }
         })
         .on_navigation(move |url| {
-            if url.scheme() == "noteide-extension" {
+            if url.scheme() == "nexusdesk-extension" {
                 if !is_speculative(&navigation_label) && owner.get_webview(&navigation_label)
                     .and_then(|view| view.url().ok()).is_some_and(|current| current.scheme() == "https" && current.host_str() == Some("chromewebstore.google.com")) {
                     if let Some((_, source)) = url.query_pairs().find(|(key, _)| key == "source") {
@@ -405,7 +405,7 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
                 }
                 return false;
             }
-            if url.scheme() == "noteide-suggestion" {
+            if url.scheme() == "nexusdesk-suggestion" {
                 let _ = owner.emit_to(owner.label(), &format!("browser-suggestion-{navigation_label}"), url.query().unwrap_or(""));
                 return false;
             }
@@ -654,7 +654,7 @@ pub fn browser_action(window: tauri::Window, label: String, action: String, url:
 pub fn browser_suggestions(window: tauri::Window, label: String, payload: serde_json::Value) -> Result<(), String> {
     let view = child(&window, &label)?;
     let data = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
-    view.eval(&format!("window.__noteideSuggestions?.({data})")).map_err(|e| e.to_string())
+    view.eval(&format!("window.__nexusdeskSuggestions?.({data})")).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

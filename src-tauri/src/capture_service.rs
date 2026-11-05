@@ -55,7 +55,7 @@ pub fn is_service() -> bool {
 fn directory() -> PathBuf {
     dirs::home_dir()
         .expect("Cannot find home directory")
-        .join(".note/capture-service")
+        .join(".nexus/capture-service")
 }
 fn send(stream: &mut TcpStream, packet: &Packet) -> Result<(), String> {
     let mut bytes = serde_json::to_vec(packet).map_err(|e| e.to_string())?;
@@ -558,7 +558,7 @@ mod tests {
     #[test]
     fn service_lease_prevents_duplicate_hosts_and_recovers_after_exit() {
         let path =
-            std::env::temp_dir().join(format!("noteide-capture-lease-{}.lock", std::process::id()));
+            std::env::temp_dir().join(format!("nexusdesk-capture-lease-{}.lock", std::process::id()));
         let open = || {
             OpenOptions::new()
                 .create(true)

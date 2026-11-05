@@ -51,7 +51,7 @@ export function BrowserPasswords({ onImported }: { onImported?: () => Promise<vo
         setMessage("");
       } else {
         if (!await confirm("导出的 CSV 文件包含明文账号和密码，任何能读取该文件的人都能查看。是否继续？", { title: "导出密码", kind: "warning" })) return;
-        const file = await save({ title: "导出密码", defaultPath: "NoteIDE Passwords.csv", filters });
+        const file = await save({ title: "导出密码", defaultPath: "NexusDesk Passwords.csv", filters });
         if (!file) return;
         const count = await invoke<number>("browser_export_passwords", { file });
         setMessage(`已导出 ${count} 条密码。`);

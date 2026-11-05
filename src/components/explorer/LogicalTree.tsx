@@ -132,7 +132,7 @@ export const LogicalTree: React.FC = React.memo(() => {
   const handleDragStart = (e: React.DragEvent, node: any) => {
     if (node.data.missing || node.data.id.startsWith("logical_")) { e.preventDefault(); return; }
     e.stopPropagation();
-    e.dataTransfer.setData("application/x-noteide-logical-file", node.data.id);
+    e.dataTransfer.setData("application/x-nexusdesk-logical-file", node.data.id);
     e.dataTransfer.effectAllowed = "copyMove";
     
     const category = logicalTreeData.find(entry => node.id.startsWith(`${entry.id}:`));
@@ -141,12 +141,12 @@ export const LogicalTree: React.FC = React.memo(() => {
 
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
   const handleDragOver = (e: React.DragEvent, node: any) => {
-    if (node.data.id.startsWith("logical_") && e.dataTransfer.types.some(type => ["application/x-noteide-file", "application/x-noteide-files", "application/x-noteide-logical-file"].includes(type))) {
+    if (node.data.id.startsWith("logical_") && e.dataTransfer.types.some(type => ["application/x-nexusdesk-file", "application/x-nexusdesk-files", "application/x-nexusdesk-logical-file"].includes(type))) {
       e.preventDefault();
       e.stopPropagation();
       if (!draggedLogicalRef.current || draggedLogicalRef.current.category !== node.data.name) setDragOverCategory(node.data.name);
       
-      if (e.dataTransfer.types.includes("application/x-noteide-logical-file") && draggedLogicalRef.current) {
+      if (e.dataTransfer.types.includes("application/x-nexusdesk-logical-file") && draggedLogicalRef.current) {
           if (draggedLogicalRef.current.category === node.data.name) {
               setDragOverCategory(null);
               e.dataTransfer.dropEffect = "none";
@@ -154,7 +154,7 @@ export const LogicalTree: React.FC = React.memo(() => {
           }
       }
       
-      e.dataTransfer.dropEffect = (e.dataTransfer.types.includes("application/x-noteide-file") || e.dataTransfer.types.includes("application/x-noteide-files")) ? "link" : "move";
+      e.dataTransfer.dropEffect = (e.dataTransfer.types.includes("application/x-nexusdesk-file") || e.dataTransfer.types.includes("application/x-nexusdesk-files")) ? "link" : "move";
     }
   };
 
@@ -164,9 +164,9 @@ export const LogicalTree: React.FC = React.memo(() => {
     draggedLogicalRef.current = null;
     
     if (!node.data.id.startsWith("logical_")) return;
-    const logical = e.dataTransfer.getData("application/x-noteide-logical-file");
-    const physicalFilesStr = e.dataTransfer.getData("application/x-noteide-files");
-    const physical = e.dataTransfer.getData("application/x-noteide-file");
+    const logical = e.dataTransfer.getData("application/x-nexusdesk-logical-file");
+    const physicalFilesStr = e.dataTransfer.getData("application/x-nexusdesk-files");
+    const physical = e.dataTransfer.getData("application/x-nexusdesk-file");
     
     let pathsToMove: string[] = [];
     if (physicalFilesStr) {

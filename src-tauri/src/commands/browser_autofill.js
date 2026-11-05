@@ -1,5 +1,5 @@
 if (location.origin !== site || window.top !== window) return;
-window.__noteidePasswordCleanup?.();
+window.__nexusdeskPasswordCleanup?.();
 const cleanups = [];
 const visible = el => !el.disabled && !el.readOnly && el.getClientRects().length > 0;
 const set = (el, value) => {
@@ -9,7 +9,7 @@ const set = (el, value) => {
   el.dispatchEvent(new Event('change', { bubbles: true }));
 };
 const installed = new WeakSet();
-const accountKey = '__noteidePasswordAccount';
+const accountKey = '__nexusdeskPasswordAccount';
 let selectedUsername;
 try { selectedUsername = sessionStorage.getItem(accountKey); } catch {}
 const remember = entry => {
@@ -22,7 +22,7 @@ const choose = (anchor, fill) => {
   const select = document.createElement('select');
   select.setAttribute('aria-label', '选择已保存的登录账号');
   select.style.cssText = 'display:block;max-width:100%;margin:6px 0;padding:6px;color:#222;background:#fff;border:1px solid #aaa;border-radius:4px;';
-  select.add(new Option('NoteIDE：选择账号以自动填充', ''));
+  select.add(new Option('NexusDesk：选择账号以自动填充', ''));
   entries.forEach((entry, i) => select.add(new Option(entry.username || '（无用户名）', String(i))));
   select.addEventListener('change', () => { if (select.value !== '') fill(entries[Number(select.value)]); });
   anchor.insertAdjacentElement('afterend', select);
@@ -32,7 +32,7 @@ let successTimer;
 let pendingCapture = false;
 const send = (action, entry) => {
   if (location.origin !== site) return;
-  location.href = `noteide-password://${action}/${entry ? `?data=${encodeURIComponent(JSON.stringify(entry))}` : ''}`;
+  location.href = `nexusdesk-password://${action}/${entry ? `?data=${encodeURIComponent(JSON.stringify(entry))}` : ''}`;
 };
 const capture = event => {
   if (!event.isTrusted || (event.type === 'change' && event.target.type !== 'password')) return;
@@ -119,7 +119,7 @@ const onFocus = event => {
 document.addEventListener('focusin', onFocus);
 const onInteraction = () => scheduleScan();
 document.addEventListener('click', onInteraction, true);
-window.__noteidePasswordCleanup = () => {
+window.__nexusdeskPasswordCleanup = () => {
   observer.disconnect(); clearTimeout(timer);
   document.removeEventListener('focusin', onFocus);
   document.removeEventListener('click', onInteraction, true);

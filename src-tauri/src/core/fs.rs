@@ -329,7 +329,7 @@ mod transfer_tests {
     use super::{transfer_entry_named, TransferOptions};
     #[test]
     fn rename_preserves_contents_and_rejects_overwrite_and_invalid_names() {
-        let root = std::env::temp_dir().join(format!("noteide-rename-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-rename-{}", std::process::id()));
         std::fs::create_dir_all(root.join("folder")).unwrap();
         std::fs::write(root.join("folder/note.md"), "content").unwrap();
         transfer_entry_named(&root.join("folder"), &root, false, Some("renamed"), &TransferOptions::default()).unwrap();
@@ -343,7 +343,7 @@ mod transfer_tests {
 
     #[test]
     fn creating_existing_entries_preserves_contents() {
-        let root = std::env::temp_dir().join(format!("noteide-create-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-create-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir(&root).unwrap();
         let path = root.join("note.txt");
         super::create_empty_file(&path).unwrap();
@@ -356,7 +356,7 @@ mod transfer_tests {
 
     #[test]
     fn listing_shows_root_and_nested_gitignore_but_hides_git_metadata() {
-        let root = std::env::temp_dir().join(format!("noteide-dotfiles-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-dotfiles-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(root.join(".git")).unwrap();
         std::fs::create_dir_all(root.join("docs")).unwrap();
         for path in [".gitignore", "docs/.gitignore", ".env"] {
@@ -372,7 +372,7 @@ mod transfer_tests {
     }
     #[test]
     fn shallow_listing_defers_nested_directories() {
-        let root = std::env::temp_dir().join(format!("noteide-shallow-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-shallow-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(root.join("folder/nested")).unwrap();
         std::fs::write(root.join("folder/nested/note.md"), "content").unwrap();
         std::fs::write(root.join("root.md"), "root").unwrap();
@@ -390,7 +390,7 @@ mod transfer_tests {
 
     #[test]
     fn move_and_copy_preserve_data_and_reject_cycles() {
-        let root = std::env::temp_dir().join(format!("noteide-transfer-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-transfer-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(root.join("source/nested")).unwrap();
         std::fs::create_dir(root.join("destination")).unwrap();
         std::fs::write(root.join("source/nested/note.txt"), "original").unwrap();
@@ -408,7 +408,7 @@ mod transfer_tests {
 
     #[test]
     fn copying_binary_file_in_same_directory_creates_unique_intact_copies() {
-        let root = std::env::temp_dir().join(format!("noteide-binary-copy-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-binary-copy-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir(&root).unwrap();
         let bytes = [0, 255, 128, 10, 13, 0];
         let source = root.join("资源.bin");

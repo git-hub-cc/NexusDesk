@@ -7,7 +7,7 @@ export function FileIcon({ name, directory = false, open = false }: { name: stri
       : ["test", "tests", "__tests__", "spec"].includes(lower) ? [FolderCheck, "#85c88a"]
       : ["assets", "images", "public", "static"].includes(lower) ? [Folder, "#b79ad8"]
       : lower === ".git" ? [FolderGit2, "#dfa082"]
-      : [".idea", ".vscode", ".config", "config", ".note"].includes(lower) ? [FolderCog, "#a8a29e"]
+      : [".idea", ".vscode", ".config", "config", ".nexus"].includes(lower) ? [FolderCog, "#a8a29e"]
       : ["node_modules", "vendor", "target", "dist", "build"].includes(lower) ? [FolderClosed, "#a78b70"]
       : [Folder, "#d9b864"];
     const Icon = open ? FolderOpen : ClosedIcon;

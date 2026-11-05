@@ -27,7 +27,7 @@ function setup(data = detail) {
 }
 function result(context) {
   const url = new URL(context.location.href);
-  assert.equal(url.protocol, 'noteide-douyin:');
+  assert.equal(url.protocol, 'nexusdesk-douyin:');
   assert.equal(url.searchParams.get('url'), 'https://media.example/video.mp4');
   assert.equal(url.searchParams.get('title'), detail.desc);
 }

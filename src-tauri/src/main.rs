@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    noteide_lib::run()
+    nexusdesk_lib::run()
 }

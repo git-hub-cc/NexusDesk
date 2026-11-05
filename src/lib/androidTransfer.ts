@@ -2,8 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { fsApi } from "./api";
 import { isRemotePath } from "./remote";
 
-export const ANDROID_FILE_TYPE = "application/x-noteide-android-files";
-const clipboardPrefix = "noteide:android-files:";
+export const ANDROID_FILE_TYPE = "application/x-nexusdesk-android-files";
+const clipboardPrefix = "nexusdesk:android-files:";
 export type AndroidFiles = { serial: string; paths: string[] };
 
 export function topLevelPaths(paths: string[], local = false): string[] {
@@ -51,13 +51,13 @@ export async function uploadLocalFiles(serial: string, paths: string[], remoteDi
 }
 
 export function localDropPaths(data: DataTransfer): string[] {
-  const multiple = data.getData("application/x-noteide-files");
+  const multiple = data.getData("application/x-nexusdesk-files");
   if (multiple) {
     const paths: unknown = JSON.parse(multiple);
     if (!Array.isArray(paths) || !paths.every(path => typeof path === "string")) throw new Error("无效的文件拖拽数据");
     return paths;
   }
-  const path = data.getData("application/x-noteide-file") || data.getData("application/x-noteide-logical-file");
+  const path = data.getData("application/x-nexusdesk-file") || data.getData("application/x-nexusdesk-logical-file");
   return path ? [path] : [];
 }
 

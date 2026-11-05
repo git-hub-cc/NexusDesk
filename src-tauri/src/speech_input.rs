@@ -1,1 +1,1 @@
-pub const WINDOW_LABEL: &str = "noteide-speech";
+pub const WINDOW_LABEL: &str = "nexusdesk-speech";

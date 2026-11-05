@@ -100,7 +100,7 @@ pub fn paste_text(window: tauri::Window, text: String, request_id: Option<String
             unsafe { GetWindowThreadProcessId(foreground, &mut process_id); }
             if process_id != unsafe { GetCurrentProcessId() } {
                 Some(foreground as isize)
-            } else if window.label() == "noteide-speech" {
+            } else if window.label() == "nexusdesk-speech" {
                 remembered_target
             } else {
                 Some(foreground as isize)

@@ -38,9 +38,9 @@ export interface Tab {
   reverseTree?: ReverseTreeNode;
 }
 
-export const MUSIC_HOME = "noteide:music";
-export const VIDEO_HOME = "noteide:video";
-export const MIRROR_HOME = "noteide:mirror";
+export const MUSIC_HOME = "nexusdesk:music";
+export const VIDEO_HOME = "nexusdesk:video";
+export const MIRROR_HOME = "nexusdesk:mirror";
 
 function persistedPinnedTabs(tabs: Tab[]): Tab[] {
   return tabs.filter(tab => tab.isPinned).map(tab => {
@@ -827,7 +827,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               activeRightTabId: state.activeRightTabId && remap(state.activeRightTabId),
             };
           });
-          window.dispatchEvent(new Event("noteide:files-moved"));
+          window.dispatchEvent(new Event("nexusdesk:files-moved"));
           loadedDirectories.clear();
           await Promise.all([...new Set([parentPath(sourcePath), targetDir])]
             .map(path => get().loadDirectory(path, false, true)));
@@ -1162,7 +1162,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     });
     },
     {
-      name: isSnapshot ? "noteide-snapshot-storage" : "noteide-workspace-storage",
+      name: isSnapshot ? "nexusdesk-snapshot-storage" : "nexusdesk-workspace-storage",
       storage: isSnapshot ? undefined : globalJsonStorage,
       partialize: (state) => ({
         recentProjects: state.recentProjects,

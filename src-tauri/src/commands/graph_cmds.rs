@@ -12,7 +12,7 @@ pub struct GraphCategory {
 }
 
 fn color_db() -> Result<Connection, String> {
-    let folder = dirs::home_dir().ok_or("Cannot find home directory")?.join(".note");
+    let folder = dirs::home_dir().ok_or("Cannot find home directory")?.join(".nexus");
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
     let conn = Connection::open(folder.join("graph-colors.db")).map_err(|e| e.to_string())?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS colors (category TEXT PRIMARY KEY COLLATE NOCASE, color TEXT NOT NULL);").map_err(|e| e.to_string())?;
@@ -156,7 +156,7 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         super::schema(&conn).unwrap();
         conn.execute("INSERT INTO graph_categories(name) VALUES ('分类')", []).unwrap();
-        let folder = std::env::temp_dir().join(format!("noteide-graph-{}", std::process::id()));
+        let folder = std::env::temp_dir().join(format!("nexusdesk-graph-{}", std::process::id()));
         std::fs::create_dir_all(&folder).unwrap();
         let path = folder.join("sample.tree");
         std::fs::write(&path, "根节点\n  子节点").unwrap();

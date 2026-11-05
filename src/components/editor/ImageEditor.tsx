@@ -213,7 +213,7 @@ export function ImageEditor({ path, sourceContent, sourceUrl }: { path: string; 
       const mime = /\.jpe?g$/i.test(target) ? "image/jpeg" : /\.webp$/i.test(target) ? "image/webp" : "image/png";
       const blob = await new Promise<Blob>((resolve, reject) => canvasRef.current!.toBlob(b => b ? resolve(b) : reject(new Error("图片编码失败")), mime, 0.95));
       await fsApi.writeBinaryFile(target, Array.from(new Uint8Array(await blob.arrayBuffer())));
-      window.dispatchEvent(new Event("noteide:image-saved"));
+      window.dispatchEvent(new Event("nexusdesk:image-saved"));
       await useWorkspaceStore.getState().loadDirectory(target.replace(/[/\\][^/\\]+$/, ""), false, true);
       if (target === path) {
         setDirty(false);

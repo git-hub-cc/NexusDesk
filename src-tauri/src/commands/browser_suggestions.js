@@ -3,9 +3,9 @@
   let host, root, request;
   const close = () => { host?.remove(); host = root = null; };
   const send = (id, value = '') => {
-    location.href = 'noteide-suggestion://action?' + new URLSearchParams({ request, id, value });
+    location.href = 'nexusdesk-suggestion://action?' + new URLSearchParams({ request, id, value });
   };
-  Object.defineProperty(window, '__noteideSuggestions', { value: data => {
+  Object.defineProperty(window, '__nexusdeskSuggestions', { value: data => {
     if (!data.html) { if (request === data.request) close(); return; }
     request = data.request;
     if (!host) {

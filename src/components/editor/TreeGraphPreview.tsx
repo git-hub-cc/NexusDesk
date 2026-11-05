@@ -75,8 +75,8 @@ export function TreeGraphPreview({ content, path, pane, previewOnly, reverseTree
       } catch(cause) { if (live) setError(String(cause)); }
     };
     void refresh();
-    window.addEventListener("noteide:graph-colors", refresh);
-    return () => { live = false; window.removeEventListener("noteide:graph-colors", refresh); };
+    window.addEventListener("nexusdesk:graph-colors", refresh);
+    return () => { live = false; window.removeEventListener("nexusdesk:graph-colors", refresh); };
   }, [root]);
   const normalize = (value: string) => value.replace(/\\/g, "/").toLocaleLowerCase();
   const color = categories.find(category => category.files.some(file => normalize(file) === normalize(path)))?.color ?? "#60a5fa";

@@ -281,7 +281,7 @@ mod tests {
     #[test]
     fn parallel_search_keeps_deterministic_top_50() {
         let root = std::env::temp_dir().join(format!(
-            "noteide-search-top50-{}",
+            "nexusdesk-search-top50-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn ignores_filters_and_cancels() {
         let root = std::env::temp_dir().join(format!(
-            "noteide-search-{}",
+            "nexusdesk-search-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()

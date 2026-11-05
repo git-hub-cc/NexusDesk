@@ -73,7 +73,7 @@ export const useTerminalStore = create<TerminalState>()(persist(
     setActiveSessionId: (id) => set({ activeSessionId: id }),
   }),
   {
-    name: "noteide-terminal-profiles",
+    name: "nexusdesk-terminal-profiles",
     storage: globalJsonStorage,
     version: 1,
     migrate: (persistedState) => {

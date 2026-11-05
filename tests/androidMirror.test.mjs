@@ -12,7 +12,7 @@ const flatten = node => Array.isArray(node) ? node.flatMap(flatten)
   : node && typeof node === "object" ? [node, ...flatten(node.children)] : [];
 
 test("moving the mirror tab across panes preserves its React key and inactive tabs stay mounted", () => {
-  const tab = { id: "noteide:mirror", browser: { url: "noteide:mirror" } };
+  const tab = { id: "nexusdesk:mirror", browser: { url: "nexusdesk:mirror" } };
   const state = { leftTabs: [], rightTabs: [tab], activeLeftTabId: null, activeRightTabId: tab.id, isSplitMode: true };
   const render = new Function("React", "useShallow", "useWorkspaceStore", "MIRROR_HOME", `${compile("../src/components/editor/AndroidMirrorWorkspace.tsx")}\nreturn AndroidMirrorWorkspace;`)
     (React, x => x, selector => selector(state), tab.id);

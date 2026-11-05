@@ -11,7 +11,7 @@ import { useDeleteConfirmation } from "@/components/explorer/useDeleteConfirmati
 import { matchTreeName, useNameSpeedSearch } from "@/components/explorer/useTreeSpeedSearch";
 
 const filename = (path: string) => path.split(/[\\/]/).pop() || path;
-const dragTypes = ["application/x-noteide-file", "application/x-noteide-files", "application/x-noteide-logical-file"];
+const dragTypes = ["application/x-nexusdesk-file", "application/x-nexusdesk-files", "application/x-nexusdesk-logical-file"];
 const categoryColors = [
   { name: "蓝色", value: "#60a5fa" },
   { name: "绿色", value: "#4ade80" },
@@ -198,8 +198,8 @@ export function GraphView() {
   useEffect(() => {
     const receive = () => { if (root) void refresh().catch(cause => setError(String(cause))); };
     receive();
-    window.addEventListener("noteide:files-moved", receive);
-    return () => window.removeEventListener("noteide:files-moved", receive);
+    window.addEventListener("nexusdesk:files-moved", receive);
+    return () => window.removeEventListener("nexusdesk:files-moved", receive);
   }, [root, revision]);
 
   const link = async (name: string, paths: string[]) => {
@@ -215,8 +215,8 @@ export function GraphView() {
   const drop = (event: DragEvent, name: string) => {
     event.preventDefault(); event.stopPropagation(); setHovered(null);
     try {
-      const multiple = event.dataTransfer.getData("application/x-noteide-files");
-      const single = event.dataTransfer.getData("application/x-noteide-file") || event.dataTransfer.getData("application/x-noteide-logical-file");
+      const multiple = event.dataTransfer.getData("application/x-nexusdesk-files");
+      const single = event.dataTransfer.getData("application/x-nexusdesk-file") || event.dataTransfer.getData("application/x-nexusdesk-logical-file");
       const paths: unknown = multiple ? JSON.parse(multiple) : single ? [single] : [];
       if (!Array.isArray(paths) || !paths.every(path => typeof path === "string")) throw new Error("无效的文件拖拽数据");
       void link(name, paths);
@@ -229,12 +229,12 @@ export function GraphView() {
       if (category) void link(category, paths);
       else setError("请将 .tree 文件拖入图谱分类，不能放在根目录。");
     };
-    window.addEventListener("noteide-graph-drop", receive);
-    return () => window.removeEventListener("noteide-graph-drop", receive);
+    window.addEventListener("nexusdesk-graph-drop", receive);
+    return () => window.removeEventListener("nexusdesk-graph-drop", receive);
   }, [root]);
 
   const setCategoryColor = (name: string, color: string) => {
-    void fsApi.setGraphCategoryColor(name, color).then(async () => { await refresh(); window.dispatchEvent(new Event("noteide:graph-colors")); }).catch(cause => setError(String(cause)));
+    void fsApi.setGraphCategoryColor(name, color).then(async () => { await refresh(); window.dispatchEvent(new Event("nexusdesk:graph-colors")); }).catch(cause => setError(String(cause)));
   };
 
   const openReverseTree = (name: string) => {
@@ -318,7 +318,7 @@ export function GraphView() {
         await fsApi.editGraphCategory(rename.name, name);
         setCollapsed(previous => { const next = new Set(previous); if (next.delete(rename.name)) next.add(name); return next; });
         await refresh();
-        window.dispatchEvent(new Event("noteide:graph-colors"));
+        window.dispatchEvent(new Event("nexusdesk:graph-colors"));
       }} onClose={() => setRename(null)} />}
     {creating && root && <CreateNameDialog key={root} title="新建图谱分类" description="在当前项目中创建图谱分类，拖入 .tree 文件建立关联。" label="分类名称" validate={name => categories.some(category => category.name.toLocaleLowerCase() === name.toLocaleLowerCase()) ? "该分类已存在。" : undefined} onCreate={async name => { await fsApi.createGraphCategory(name); await refresh(); }} onClose={() => setCreating(false)} />}
   </ContextMenu.Root>;

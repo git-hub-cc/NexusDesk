@@ -8,14 +8,14 @@ use crate::core::fs::FileNode;
 mod tests {
     #[test]
     fn wal_readers_can_read_during_an_uncommitted_write() {
-        let root = std::env::temp_dir().join(format!("noteide-wal-{}-{}", std::process::id(),
+        let root = std::env::temp_dir().join(format!("nexusdesk-wal-{}-{}", std::process::id(),
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let conn = super::init_db(Some(root.to_str().unwrap())).unwrap();
         let mode: String = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
         let synchronous: i64 = conn.query_row("PRAGMA synchronous", [], |r| r.get(0)).unwrap();
         assert_eq!(mode, "wal");
         assert_eq!(synchronous, 1);
-        let reader = rusqlite::Connection::open(root.join(".note/index.db")).unwrap();
+        let reader = rusqlite::Connection::open(root.join(".nexus/index.db")).unwrap();
         reader.busy_timeout(std::time::Duration::ZERO).unwrap();
         let tx = conn.unchecked_transaction().unwrap();
         super::upsert_file_meta(&tx, "note.md", Some("note"), None, 1).unwrap();
@@ -31,7 +31,7 @@ mod tests {
 
     #[test]
     fn collected_index_can_be_applied_without_source_files() {
-        let root = std::env::temp_dir().join(format!("noteide-snapshot-{}-{}", std::process::id(),
+        let root = std::env::temp_dir().join(format!("nexusdesk-snapshot-{}-{}", std::process::id(),
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(root.join("nested")).unwrap();
         let path = root.join("nested/note.md");
@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn index_path_conflict_returns_error_without_panicking() {
         let root = std::env::temp_dir().join(format!(
-            "noteide-index-test-{}-{}",
+            "nexusdesk-index-test-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
@@ -96,7 +96,7 @@ mod tests {
         assert_eq!(count, 3);
         let category: String = conn.query_row("SELECT logical_type FROM file_meta WHERE logical_type IS NOT NULL", [], |row| row.get(0)).unwrap();
         assert_eq!(category, "tool");
-        std::fs::write(root.join(".note"), "existing file").unwrap();
+        std::fs::write(root.join(".nexus"), "existing file").unwrap();
         let result = super::init_db(Some(root.to_str().unwrap()));
         assert!(result.is_err());
         drop(result);
@@ -109,7 +109,7 @@ pub fn init_db(custom_path: Option<&str>) -> std::result::Result<Connection, Box
         Some(p) => PathBuf::from(p),
         None => dirs::home_dir().ok_or("Cannot find home directory")?,
     };
-    db_path.push(".note");
+    db_path.push(".nexus");
 
     if !db_path.exists() {
         fs::create_dir_all(&db_path)?;
@@ -268,7 +268,7 @@ pub fn get_logical_tree(conn: &Connection) -> Result<Vec<FileNode>> {
 mod reference_tests {
     #[test]
     fn missing_references_remain_visible_and_recover_when_restored() {
-        let root = std::env::temp_dir().join(format!("noteide-missing-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-missing-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("linked.tree");
         let conn = super::init_db(Some(root.to_str().unwrap())).unwrap();
@@ -287,7 +287,7 @@ mod reference_tests {
 
     #[test]
     fn references_include_directories_and_leave_source_unchanged() {
-        let root = std::env::temp_dir().join(format!("noteide-reference-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-reference-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(root.join("folder")).unwrap();
         let file = root.join("folder/note.txt");
         std::fs::write(&file, "same file").unwrap();
@@ -314,9 +314,9 @@ pub fn touch_file(conn: &Connection, path: &str) -> Result<()> {
 mod recent_tests {
     #[test]
     fn migrates_legacy_database_and_indexing_preserves_access() {
-        let root = std::env::temp_dir().join(format!("noteide-recent-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
-        std::fs::create_dir_all(root.join(".note")).unwrap();
-        let legacy = rusqlite::Connection::open(root.join(".note/index.db")).unwrap();
+        let root = std::env::temp_dir().join(format!("nexusdesk-recent-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(root.join(".nexus")).unwrap();
+        let legacy = rusqlite::Connection::open(root.join(".nexus/index.db")).unwrap();
         legacy.execute_batch("CREATE TABLE file_meta(path TEXT UNIQUE, logical_type TEXT, tags TEXT, last_modified INTEGER);").unwrap();
         drop(legacy);
         let conn = super::init_db(Some(root.to_str().unwrap())).unwrap();

@@ -29,7 +29,7 @@ function titleBar({ rootPath = null, exists = async () => true, confirmed = fals
     DropdownMenu: Object.fromEntries(['Root', 'Trigger', 'Portal', 'Content', 'Item', 'Separator', 'CheckboxItem', 'ItemIndicator'].map(key => [key, `Menu.${key}`])),
     Dialog: Object.fromEntries(['Root', 'Portal', 'Overlay', 'Content', 'Title', 'Close'].map(key => [key, `Dialog.${key}`])),
     ...Object.fromEntries(['Check', 'FolderTree', 'Link', 'PanelBottom', 'Minus', 'Square', 'X', 'ChevronDown'].map(key => [key, key])),
-    noteideIcon: '', console,
+    nexusdeskIcon: '', console,
   });
   function render() {
     cursor = 0;
@@ -61,9 +61,9 @@ test('recent projects refresh missing colors and clear them when a directory ret
 
 test('project badge shows two letters or one Chinese character and retains the full name', () => {
   for (const [rootPath, shortName, fullName] of [
-    ['C:/NoteIDE', 'NO', 'NoteIDE'],
+    ['C:/NexusDesk', 'NO', 'NexusDesk'],
     ['C:/笔记项目', '笔', '笔记项目'],
-    [null, 'NO', 'NoteIDE'],
+    [null, 'NO', 'NexusDesk'],
   ]) {
     const badge = titleBar({ rootPath }).render().find(node => node.props.className === 'project-badge');
     assert.equal(badge.props.children, shortName);

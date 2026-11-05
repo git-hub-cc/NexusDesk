@@ -44,16 +44,16 @@ function popup() {
 test('native popup routes actions and color values without exposing callbacks to the popup', () => {
   const { handlers, location } = popup();
   handlers.click({ target: { closest: selector => selector.includes('submenu') ? null : { dataset: { action: '12' }, disabled: false } } });
-  assert.equal(location.href, 'noteide-menu://action/12?request=null');
+  assert.equal(location.href, 'nexusdesk-menu://action/12?request=null');
   handlers.change({ target: { matches: () => true, dataset: { action: '14' }, value: '#60a5fa' } });
-  assert.equal(location.href, 'noteide-menu://action/14?value=%2360a5fa&request=null');
+  assert.equal(location.href, 'nexusdesk-menu://action/14?value=%2360a5fa&request=null');
 });
 test('disabled items do not dispatch and Escape dismisses the popup', () => {
   const { handlers, location } = popup();
   handlers.click({ target: { closest: selector => selector.includes('submenu') ? null : { dataset: { action: '0' }, disabled: true } } });
   assert.equal(location.href, '');
   handlers.keydown({ key: 'Escape' });
-  assert.equal(location.href, 'noteide-menu://action/close?request=null');
+  assert.equal(location.href, 'nexusdesk-menu://action/close?request=null');
 });
 test('submenus expand inside the native popup without dispatching an action', () => {
   const { handlers, location } = popup();
@@ -67,7 +67,7 @@ test('submenus expand inside the native popup without dispatching an action', ()
 test('passive suggestions update in place without showing or resizing the window again', () => {
   const view = popup();
   view.window.__setMenu('first', 'suggestions', true);
-  assert.deepEqual(view.navigations, ['noteide-menu://ready/120?request=suggestions']);
+  assert.deepEqual(view.navigations, ['nexusdesk-menu://ready/120?request=suggestions']);
   assert.equal(view.stats.focused, 0);
   view.menu.scrollTop = 35;
 
@@ -90,7 +90,7 @@ test('a new menu session still shows the popup and focuses ordinary menu items',
   const view = popup();
   view.window.__setMenu('suggestions', 'first', true);
   view.window.__setMenu('ordinary menu', 'second');
-  assert.equal(view.location.href, 'noteide-menu://ready/120?request=second');
+  assert.equal(view.location.href, 'nexusdesk-menu://ready/120?request=second');
   assert.equal(view.stats.focused, 1);
 });
 
@@ -103,7 +103,7 @@ test('suggestion viewport changes never start a native resize feedback loop', ()
     view.setHeight(height);
     view.resize();
   }
-  assert.deepEqual(view.navigations, ['noteide-menu://ready/120?request=passive-session']);
+  assert.deepEqual(view.navigations, ['nexusdesk-menu://ready/120?request=passive-session']);
   assert.equal(view.stats.observing, false);
   assert.equal(view.stats.focused, 0);
 });
@@ -115,7 +115,7 @@ test('ordinary menus still observe content size and can expand submenus', () => 
   view.setHeight(210);
   view.resize();
   view.tick();
-  assert.equal(view.location.href, 'noteide-menu://resize/210?request=ordinary-session');
+  assert.equal(view.location.href, 'nexusdesk-menu://resize/210?request=ordinary-session');
   view.resize();
   assert.equal(view.navigations.length, 2);
 });
@@ -126,13 +126,13 @@ test('resize bursts send only the latest height and cancel across sessions', () 
   for (const height of [140, 180, 210]) { view.setHeight(height); view.resize(); }
   assert.equal(view.navigations.length, 1);
   view.tick();
-  assert.equal(view.location.href, 'noteide-menu://resize/210?request=first');
+  assert.equal(view.location.href, 'nexusdesk-menu://resize/210?request=first');
   view.setHeight(250);
   view.window.__setMenu('updated menu', 'first');
   view.setHeight(270);
   view.resize();
   view.tick();
-  assert.equal(view.location.href, 'noteide-menu://resize/270?request=first');
+  assert.equal(view.location.href, 'nexusdesk-menu://resize/270?request=first');
   view.setHeight(300);
   view.resize();
   view.window.__setMenu('suggestions', 'second', true);

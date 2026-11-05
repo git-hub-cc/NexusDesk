@@ -1,6 +1,6 @@
 import { snapshotCommit } from "@/lib/snapshot";
 import React, { useEffect, useState } from "react";
-import noteideIcon from "@/assets/noteide.svg";
+import nexusdeskIcon from "@/assets/nexusdesk.svg";
 import * as DropdownMenu from "@/lib/nativeDropdownMenu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -17,8 +17,8 @@ import { confirmAction, showError } from "@/lib/dialogs";
 export const TitleBar: React.FC<{ expanded?: boolean }> = ({ expanded = false } = {}) => {
   const appWindow = getCurrentWindow();
   const { setProject, closeProject, recentProjects, rootPath, remoteLabel, disconnectRemote } = useWorkspaceStore();
-  const projectName = snapshotCommit ? `项目快照 @${snapshotCommit.slice(0, 8)} · 只读` : remoteLabel ? `SFTP · ${remoteLabel}` : rootPath ? rootPath.split(/[/\\]/).filter(Boolean).pop() || rootPath : "NoteIDE";
-  const badgeName = remoteLabel || (rootPath ? rootPath.split(/[/\\]/).filter(Boolean).pop() : null) || "NoteIDE";
+  const projectName = snapshotCommit ? `项目快照 @${snapshotCommit.slice(0, 8)} · 只读` : remoteLabel ? `SFTP · ${remoteLabel}` : rootPath ? rootPath.split(/[/\\]/).filter(Boolean).pop() || rootPath : "NexusDesk";
+  const badgeName = remoteLabel || (rootPath ? rootPath.split(/[/\\]/).filter(Boolean).pop() : null) || "NexusDesk";
   const firstCharacter = Array.from(badgeName)[0];
   const projectInitials = /\p{Script=Han}/u.test(firstCharacter) ? firstCharacter : Array.from(badgeName).slice(0, 2).join("").toUpperCase();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -127,7 +127,7 @@ export const TitleBar: React.FC<{ expanded?: boolean }> = ({ expanded = false } 
             <DropdownMenu.Trigger asChild onBeforeOpen={refreshRecentProjects}>
               <button type="button" aria-label={`项目：${projectName}`} title={projectName} className={`no-drag-region ${expanded ? "project-name-button" : "project-badge"}`}>
                 {expanded ? <>
-                  <img src={noteideIcon} alt="" className="w-5 h-5 shrink-0" />
+                  <img src={nexusdeskIcon} alt="" className="w-5 h-5 shrink-0" />
                   <span className="min-w-0 flex-1 truncate text-left">{projectName}</span>
                   <ChevronDown size={14} className="shrink-0" aria-hidden="true" />
                 </> : projectInitials}

@@ -432,8 +432,8 @@ export const PhysicalTree: React.FC = React.memo(() => {
         const isSelected = selection.some(s => s.path === node.data.id);
         const paths = isSelected ? selection.map(s => s.path) : [node.data.id];
         
-        e.dataTransfer.setData("application/x-noteide-file", node.data.id);
-        e.dataTransfer.setData("application/x-noteide-files", JSON.stringify(paths));
+        e.dataTransfer.setData("application/x-nexusdesk-file", node.data.id);
+        e.dataTransfer.setData("application/x-nexusdesk-files", JSON.stringify(paths));
         e.dataTransfer.effectAllowed = "all";
         draggedPhysicalRef.current = node.data.id;
     };
@@ -445,7 +445,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
             if (!remote && !isSnapshot) setDragOverPath(node ? (node.isLeaf ? parent(node.data.id) : node.data.id) : rootPath);
             return;
         }
-        if (e.dataTransfer.types.some(type => ["Files", "application/x-noteide-file", "application/x-noteide-files", "application/x-noteide-logical-file"].includes(type))) {
+        if (e.dataTransfer.types.some(type => ["Files", "application/x-nexusdesk-file", "application/x-nexusdesk-files", "application/x-nexusdesk-logical-file"].includes(type))) {
             e.preventDefault();
             e.stopPropagation();
 
@@ -453,7 +453,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
             const dragged = draggedPhysicalRef.current;
             let invalidTarget = false;
 
-            if (dragged && target && (e.dataTransfer.types.includes("application/x-noteide-file") || e.dataTransfer.types.includes("application/x-noteide-files"))) {
+            if (dragged && target && (e.dataTransfer.types.includes("application/x-nexusdesk-file") || e.dataTransfer.types.includes("application/x-nexusdesk-files"))) {
                 const d = dragged.replace(/\\/g, "/");
                 const t = target.replace(/\\/g, "/");
                 const p = parent(d).replace(/\\/g, "/");
@@ -465,7 +465,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
             }
             if (!invalidTarget) setDragOverPath(target);
 
-            e.dataTransfer.dropEffect = e.dataTransfer.types.includes("application/x-noteide-logical-file") ? "copy" : "move";
+            e.dataTransfer.dropEffect = e.dataTransfer.types.includes("application/x-nexusdesk-logical-file") ? "copy" : "move";
         }
     };
 
@@ -481,9 +481,9 @@ export const PhysicalTree: React.FC = React.memo(() => {
             void receiveAndroidFiles(android, target);
             return;
         }
-        const logical = e.dataTransfer.getData("application/x-noteide-logical-file");
-        const physicalFilesStr = e.dataTransfer.getData("application/x-noteide-files");
-        const physical = e.dataTransfer.getData("application/x-noteide-file");
+        const logical = e.dataTransfer.getData("application/x-nexusdesk-logical-file");
+        const physicalFilesStr = e.dataTransfer.getData("application/x-nexusdesk-files");
+        const physical = e.dataTransfer.getData("application/x-nexusdesk-file");
         const files = Array.from(e.dataTransfer.files);
         
         if (target && !logical && !physical && !physicalFilesStr && files.length) {

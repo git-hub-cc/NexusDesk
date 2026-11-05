@@ -72,7 +72,7 @@ impl ConversionDirectory {
         loop {
             let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                 .map_err(|e| e.to_string())?.as_nanos();
-            let path = std::env::temp_dir().join(format!("noteide-office-{}-{stamp}", std::process::id()));
+            let path = std::env::temp_dir().join(format!("nexusdesk-office-{}-{stamp}", std::process::id()));
             match std::fs::create_dir(&path) {
                 Ok(()) => return Ok(Self(path)),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,

@@ -54,13 +54,13 @@ function wrappedBuffer(text, cols) {
 
 test('recovers local ConPTY bundle paths when a repaint loses soft wrap flags', async () => {
   const { Terminal } = require('@xterm/xterm');
-  const first = String.raw`        C:\Users\user\Desktop\NoteIDETmp\src-tauri\target\release\bun`;
-  const tail = String.raw`dle\nsis\NoteIDE_0.1.0_x64-setup.exe`;
+  const first = String.raw`        C:\Users\user\Desktop\NexusDeskTmp\src-tauri\target\release\bun`;
+  const tail = String.raw`dle\nsis\NexusDesk_0.1.0_x64-setup.exe`;
   const path = first.trimStart() + tail;
   const terminal = new Terminal({ cols: first.length, rows: 12, allowProposedApi: true });
   try {
     await new Promise(resolve => terminal.write(
-      `    Finished 1 bundle at:\r\n${first}\r\n${tail} (33.13 MiB)\r\n\r\nPS C:\\Users\\user\\Desktop\\NoteIDETmp> `, resolve));
+      `    Finished 1 bundle at:\r\n${first}\r\n${tail} (33.13 MiB)\r\n\r\nPS C:\\Users\\user\\Desktop\\NexusDeskTmp> `, resolve));
     assert.equal(terminal.buffer.active.getLine(2).isWrapped, false);
     for (const row of [2, 3]) {
       const links = context.exports.terminalBufferFileLinks(terminal.buffer.active, row, terminal.cols, true);

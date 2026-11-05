@@ -22,8 +22,8 @@ function setup({ native = true, pending = false, target = null } = {}) {
   const refs = [];
   let toggles = 0;
   let closes = 0;
-  window.addEventListener("noteide-speech-toggle", () => { toggles++; });
-  window.addEventListener("noteide-speech-close", () => { closes++; speechOpen = false; });
+  window.addEventListener("nexusdesk-speech-toggle", () => { toggles++; });
+  window.addEventListener("nexusdesk-speech-close", () => { closes++; speechOpen = false; });
   const context = {
     React, window, CustomEvent, console,
     FolderTree: "FolderTree", PanelRight: "PanelRight", PanelBottom: "PanelBottom",
@@ -37,7 +37,7 @@ function setup({ native = true, pending = false, target = null } = {}) {
     isTauri: () => native,
     getCurrentWindow: () => ({
       listen: (name, handler) => {
-        assert.equal(name, "noteide-speech-toggle");
+        assert.equal(name, "nexusdesk-speech-toggle");
         registrations++;
         callback = handler;
         const subscription = new Promise(done => { resolve = () => done(() => { stops++; }); });
@@ -96,7 +96,7 @@ test("external dictation stops the workspace session without toggling it open", 
 test("browser preview handles shortcut events without registering a native listener", () => {
   const env = setup({ native: false });
   assert.equal(env.registrations, 0);
-  env.window.dispatchEvent(new CustomEvent("noteide-speech-toggle"));
+  env.window.dispatchEvent(new CustomEvent("nexusdesk-speech-toggle"));
   assert.equal(env.open, true);
   env.cleanup();
 });
@@ -104,7 +104,7 @@ test("browser preview handles shortcut events without registering a native liste
 test("workspace handles Git speech while editor and terminal retain their own panels", () => {
   for (const [target, opens] of [[{ kind: "git" }, true], [{ kind: "editor", pane: "left" }, false], [{ kind: "terminal" }, false]]) {
     const env = setup({ native: false, target });
-    env.window.dispatchEvent(new CustomEvent("noteide-speech-toggle"));
+    env.window.dispatchEvent(new CustomEvent("nexusdesk-speech-toggle"));
     assert.equal(env.open, opens);
     env.cleanup();
   }

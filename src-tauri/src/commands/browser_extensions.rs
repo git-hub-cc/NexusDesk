@@ -303,7 +303,7 @@ mod windows_impl {
 
         #[test]
         fn discovers_pages_for_new_and_existing_installations() {
-            let root = std::env::temp_dir().join(format!("noteide-extension-pages-{}-{}", std::process::id(), chrono::Utc::now().timestamp_nanos_opt().unwrap()));
+            let root = std::env::temp_dir().join(format!("nexusdesk-extension-pages-{}-{}", std::process::id(), chrono::Utc::now().timestamp_nanos_opt().unwrap()));
             let directory = root.join("browser-extensions/package/unpacked");
             std::fs::create_dir_all(&directory).unwrap();
             std::fs::write(directory.join("manifest.json"), br#"{"options_page":"options.html"}"#).unwrap();
@@ -364,7 +364,7 @@ mod windows_impl {
                 bytes.extend(archive);
                 bytes
             }
-            let root = std::env::temp_dir().join(format!("noteide-extension-test-{}-{}", std::process::id(), chrono::Utc::now().timestamp_nanos_opt().unwrap()));
+            let root = std::env::temp_dir().join(format!("nexusdesk-extension-test-{}-{}", std::process::id(), chrono::Utc::now().timestamp_nanos_opt().unwrap()));
             std::fs::create_dir(&root).unwrap();
             let manifest = br#"{"manifest_version":3,"name":"Test","version":"1.0"}"#;
             extract(&package("manifest.json", manifest), &root).unwrap();
@@ -406,7 +406,7 @@ pub async fn browser_install_extension(window: tauri::Window, label: String, sou
         let result = windows_impl::install(window.clone(), label.clone(), source.clone()).await;
         match &result {
             Ok(_) => emit("completed", "扩展已安装并保存在当前项目中，请刷新需要使用扩展的网页。"),
-            Err(error) => emit("failed", &format!("扩展安装失败：{error}。可在 NoteIDE 扩展面板重试。")),
+            Err(error) => emit("failed", &format!("扩展安装失败：{error}。可在 NexusDesk 扩展面板重试。")),
         }
         result
     }

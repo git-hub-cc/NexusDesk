@@ -67,7 +67,7 @@ mod tests {
 
     #[test]
     fn simultaneous_instances_never_share_a_profile() {
-        let root = std::env::temp_dir().join(format!("noteide-profile-test-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("nexusdesk-profile-test-{}", std::process::id()));
         let first = allocate(&root, None).unwrap();
         let second = allocate(&root, None).unwrap();
         assert_ne!(first.directory, second.directory);

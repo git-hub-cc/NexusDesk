@@ -112,7 +112,7 @@ fn import_files(paths: Vec<String>, destination: &Path, music: bool) -> Result<I
 #[tauri::command]
 pub async fn import_media_files(paths: Vec<String>, kind: String) -> Result<ImportResult, String> {
     if !matches!(kind.as_str(), "music" | "video") { return Err("无效的媒体类型".into()); }
-    let destination = dirs::home_dir().ok_or("无法获取用户目录")?.join(".note").join(&kind);
+    let destination = dirs::home_dir().ok_or("无法获取用户目录")?.join(".nexus").join(&kind);
     tauri::async_runtime::spawn_blocking(move || import_files(paths, &destination, kind == "music"))
         .await.map_err(|e| e.to_string())?
 }
@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn import_copies_music_and_case_insensitive_cover_without_overwriting() {
-        let root = std::env::temp_dir().join(format!("noteide-import-{}-{}", std::process::id(),
+        let root = std::env::temp_dir().join(format!("nexusdesk-import-{}-{}", std::process::id(),
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let source = root.join("source");
         let library = root.join("library");
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn video_import_continues_after_invalid_files_and_preserves_collisions() {
-        let root = std::env::temp_dir().join(format!("noteide-video-import-{}-{}", std::process::id(),
+        let root = std::env::temp_dir().join(format!("nexusdesk-video-import-{}-{}", std::process::id(),
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let source = root.join("source");
         let library = root.join("library");

@@ -151,7 +151,7 @@ function RepositoryPanel({ root }: { root: string }) {
         let alive = true;
         fsApi.isDirectory(`${root}/.git`).then(isRepo => {
             if (!isRepo) return;
-            return fsApi.readFile(`${root}/.git/noteide_commit_msg.txt`).then(content => {
+            return fsApi.readFile(`${root}/.git/nexusdesk_commit_msg.txt`).then(content => {
                 if (alive) setMessage(getCommitDraft(root) ?? content);
             }).catch(() => {});
         }).catch(() => {}).finally(() => { if (alive) setMsgLoaded(true); });
@@ -161,7 +161,7 @@ function RepositoryPanel({ root }: { root: string }) {
     useEffect(() => {
         if (!msgLoaded) return;
         let alive = true;
-        const msgPath = `${root}/.git/noteide_commit_msg.txt`;
+        const msgPath = `${root}/.git/nexusdesk_commit_msg.txt`;
         const timer = setTimeout(() => {
             fsApi.isDirectory(`${root}/.git`).then(isRepo => {
                 if (alive && isRepo) return fsApi.writeFile(msgPath, message);

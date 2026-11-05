@@ -12,7 +12,7 @@ import { importMedia, importSummary } from "@/lib/mediaImport";
 import { useVirtualList } from "@/hooks/useVirtualList";
 
 type LibraryTab = "online" | "local" | `playlist:${string}`;
-const LIBRARY_TAB_KEY = "noteide.music.libraryTab";
+const LIBRARY_TAB_KEY = "nexusdesk.music.libraryTab";
 const PLAYBACK_MODES = [
   { id: "list", label: "列表循环", Icon: Repeat },
   { id: "single", label: "单曲循环", Icon: Repeat1 },
@@ -355,7 +355,7 @@ export function MusicEditor({ active }: { active: boolean }) {
         <button type="button" className={`music-nav-item ${tab === "local" ? "is-active" : ""}`} onClick={() => setTab("local")}><ListMusic size={15} /><span>本地音乐</span><span className="music-count">{localTracks.length}</span></button>
         <div className="music-section-label pl-2 mt-5 flex items-center justify-between">歌单 <button type="button" title="新建歌单" aria-label="新建歌单" className="px-2 py-1 ml-auto shrink-0 hover:bg-white/10 rounded-sm flex items-center justify-center" onClick={() => setPlaylistDialogOpen(true)}><Plus size={14} /></button></div>
         {playlists.map(playlist => <ContextMenu.Root key={playlist.id}><ContextMenu.Trigger asChild><button type="button" className={`music-nav-item ${tab === `playlist:${playlist.id}` ? "is-active" : ""}`} onClick={() => { setTab(`playlist:${playlist.id}`); setQuery(""); }}><ListMusic size={15} /><span className="truncate">{playlist.name}</span><span className="music-count">{playlist.trackIds.length}</span></button></ContextMenu.Trigger><ContextMenu.Portal><ContextMenu.Content className="music-context-menu"><ContextMenu.Item className="music-context-item is-danger" onSelect={() => setConfirmDialog({ kind: "playlist", playlist })}><Trash2 size={14} />删除歌单</ContextMenu.Item></ContextMenu.Content></ContextMenu.Portal></ContextMenu.Root>)}
-        <div className="music-storage"><span className="music-storage-dot" />保存位置<p>~/.note/music</p></div>
+        <div className="music-storage"><span className="music-storage-dot" />保存位置<p>~/.nexus/music</p></div>
       </aside>
 
       <section className="music-results flex min-h-0 min-w-0 flex-1 flex-col">

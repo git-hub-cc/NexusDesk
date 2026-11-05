@@ -149,7 +149,7 @@ export function AndroidFileManager({ serial, onClose }: { serial: string; onClos
     }
   }); };
   const dragOver = (event: DragEvent, directory: string) => {
-    if (!event.dataTransfer.types.some(type => ["application/x-noteide-file", "application/x-noteide-files", "application/x-noteide-logical-file"].includes(type))) return;
+    if (!event.dataTransfer.types.some(type => ["application/x-nexusdesk-file", "application/x-nexusdesk-files", "application/x-nexusdesk-logical-file"].includes(type))) return;
     event.preventDefault(); event.stopPropagation();
     event.dataTransfer.dropEffect = disabled ? "none" : "copy";
     if (!disabled) setDropTarget(directory);

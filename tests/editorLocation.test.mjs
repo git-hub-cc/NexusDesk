@@ -118,7 +118,7 @@ function textTabHarness() {
     { id: "image", path: "image.png" }, { id: "web", path: "browser", browser: {} });
   const context = {
     React: { createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }) },
-    MIRROR_HOME: "noteide:mirror",
+    MIRROR_HOME: "nexusdesk:mirror",
     MarkdownEditor: "MarkdownEditor", HttpEditor: "HttpEditor", BrowserEditor: "BrowserEditor",
     VideoTabPreview: "VideoTabPreview", ImageEditor: "ImageEditor",
     useRef: value => {

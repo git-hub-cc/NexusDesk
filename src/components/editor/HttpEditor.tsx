@@ -126,7 +126,7 @@ const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: s
   const [saving, setSaving] = useState(false);
   const [responseTab, setResponseTab] = useState<"body" | "extract" | "urls" | "base64">("body");
   const [templates, setTemplates] = useState<Record<string, string>>(() => {
-    try { const saved = JSON.parse(settingsStorage.getItem("noteide.http.extraction.v1") || "{}"); return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {}; } catch { return {}; }
+    try { const saved = JSON.parse(settingsStorage.getItem("nexusdesk.http.extraction.v1") || "{}"); return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {}; } catch { return {}; }
   });
   const [storageError, setStorageError] = useState("");
   const [activeReqId, setActiveReqId] = useState<string | null>(null);
@@ -156,8 +156,8 @@ const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: s
     const next = { ...templates, [key]: value };
     setTemplates(next);
     try {
-      const saved = JSON.parse(settingsStorage.getItem("noteide.http.extraction.v1") || "{}");
-      settingsStorage.setItem("noteide.http.extraction.v1", JSON.stringify({ ...saved, [key]: value }));
+      const saved = JSON.parse(settingsStorage.getItem("nexusdesk.http.extraction.v1") || "{}");
+      settingsStorage.setItem("nexusdesk.http.extraction.v1", JSON.stringify({ ...saved, [key]: value }));
       setStorageError("");
     } catch { setStorageError("本地缓存不可用，模板仅在当前页面保留。"); }
   };

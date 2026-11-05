@@ -63,8 +63,8 @@ export const EditorGroupPanel: React.FC<EditorGroupPanelProps> = ({ groupId }) =
         {!activeTabId && (
           <div className="absolute inset-0 flex items-center justify-center text-gray-500 bg-ide-bg">
             <div className="text-center">
-              <div className="text-4xl mb-4">NoteIDE</div>
-              <div className="text-sm">欢迎使用 NoteIDE... 请在左上角打开项目或页面。</div>
+              <div className="text-4xl mb-4">NexusDesk</div>
+              <div className="text-sm">欢迎使用 NexusDesk... 请在左上角打开项目或页面。</div>
             </div>
           </div>
         )}

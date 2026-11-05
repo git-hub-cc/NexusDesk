@@ -3692,6 +3692,57 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
+name = "nexusdesk"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "arboard",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "dirs 5.0.1",
+ "flate2",
+ "futures-util",
+ "git2",
+ "gray_matter",
+ "ignore",
+ "image 0.25.10",
+ "imageproc",
+ "libc",
+ "log",
+ "notify",
+ "ort",
+ "portable-pty",
+ "raw-window-handle",
+ "regex",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "screenshots",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sherpa-onnx",
+ "sherpa-onnx-sys",
+ "softbuffer",
+ "ssh2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-opener",
+ "tauri-plugin-window-state",
+ "tokio",
+ "toml 0.8.2",
+ "webview2-com",
+ "windows 0.62.2",
+ "windows-sys 0.61.2",
+ "winit",
+ "zip 2.6.1",
+ "zstd 0.13.3",
+]
+
+[[package]]
 name = "nix"
 version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3751,57 +3802,6 @@ name = "noop_proc_macro"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0676bb32a98c1a483ce53e500a81ad9c3d5b3f7c920c28c24e9cb0980d0b5bc8"
-
-[[package]]
-name = "noteide"
-version = "0.1.0"
-dependencies = [
- "ab_glyph",
- "arboard",
- "axum",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "dirs 5.0.1",
- "flate2",
- "futures-util",
- "git2",
- "gray_matter",
- "ignore",
- "image 0.25.10",
- "imageproc",
- "libc",
- "log",
- "notify",
- "ort",
- "portable-pty",
- "raw-window-handle",
- "regex",
- "reqwest 0.12.28",
- "rusqlite",
- "screenshots",
- "serde",
- "serde_json",
- "serde_yaml",
- "sherpa-onnx",
- "sherpa-onnx-sys",
- "softbuffer",
- "ssh2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-opener",
- "tauri-plugin-window-state",
- "tokio",
- "toml 0.8.2",
- "webview2-com",
- "windows 0.62.2",
- "windows-sys 0.61.2",
- "winit",
- "zip 2.6.1",
- "zstd 0.13.3",
-]
 
 [[package]]
 name = "notify"
