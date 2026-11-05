@@ -11,6 +11,8 @@ interface BrowserDownload {
   message: string; revision: number;
 }
 
+const DIRECTORY_REVEAL_WINDOW_MS = 5 * 60 * 1000;
+
 export function downloadSize(bytes: number): string {
   if (bytes < 1024) return `${Math.max(0, bytes).toFixed(0)} B`;
   const units = ["KB", "MB", "GB", "TB"];
@@ -34,7 +36,21 @@ export function BrowserDownloads({ labels }: { labels: string[] }) {
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [error, setError] = useState("");
   const dismissTimers = useRef(new Map<string, number>());
+  const observedStates = useRef(new Map<string, BrowserDownload["state"]>());
+  const revealedDownloads = useRef(new Set<string>());
+  const lastDirectoryRevealAt = useRef(0);
   const [cancelling, setCancelling] = useState<string[]>([]);
+  const handleDownload = (next: BrowserDownload) => {
+    const previousState = observedStates.current.get(next.id);
+    observedStates.current.set(next.id, next.state);
+    const now = Date.now();
+    if (next.state === "completed" && previousState === "downloading" && next.path &&
+      !revealedDownloads.current.has(next.id) && now - lastDirectoryRevealAt.current >= DIRECTORY_REVEAL_WINDOW_MS) {
+      revealedDownloads.current.add(next.id);
+      lastDirectoryRevealAt.current = now;
+      void revealItemInDir(next.path).catch(reason => setError(String(reason)));
+    }
+  };
   const close = async (item: BrowserDownload) => {
     if (cancelling.includes(item.id)) return;
     setCancelling(ids => [...ids, item.id]);
@@ -53,7 +69,10 @@ export function BrowserDownloads({ labels }: { labels: string[] }) {
       polling = true;
       try {
         const snapshot = await invoke<BrowserDownload[]>("browser_downloads");
-        if (!disposed) setItems(items => snapshot.reduce(mergeDownload, items));
+        if (!disposed) {
+          snapshot.forEach(handleDownload);
+          setItems(items => snapshot.reduce(mergeDownload, items));
+        }
       } finally { polling = false; }
     };
     // A terminal event can arrive while this tab is mounting or moving panes.
@@ -61,7 +80,10 @@ export function BrowserDownloads({ labels }: { labels: string[] }) {
     const poll = window.setInterval(() => { void synchronize().catch(() => {}); }, 500);
     void (async () => {
       unlisten = await getCurrentWindow().listen<BrowserDownload>("browser-download", event => {
-        if (!disposed) setItems(items => mergeDownload(items, event.payload));
+        if (!disposed) {
+          handleDownload(event.payload);
+          setItems(items => mergeDownload(items, event.payload));
+        }
       });
       if (disposed) { unlisten(); return; }
       await synchronize();
