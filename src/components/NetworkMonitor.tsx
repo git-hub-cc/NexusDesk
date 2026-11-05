@@ -8,6 +8,12 @@ import { CodexProxyControls } from "./CodexProxyControls";
 
 const size = (value: number) => value < 1024 ? `${value} B` : value < 1024 * 1024 ? `${(value / 1024).toFixed(1)} KB` : `${(value / 1048576).toFixed(1)} MB`;
 
+const statusColor = (item: NetworkRequest) => {
+  if (item.inFlight) return "text-ide-accent";
+  if (item.failed || (item.status !== null && item.status >= 400)) return "text-red-400";
+  return "text-green-400";
+};
+
 export const NetworkMonitor: React.FC = () => {
   const [items, setItems] = useState<NetworkRequest[]>([]);
   const [paused, setPaused] = useState(false);
@@ -37,7 +43,7 @@ export const NetworkMonitor: React.FC = () => {
     <div className="flex-1 min-h-0 overflow-auto text-[11px]">
       <div className="grid min-w-[470px] whitespace-nowrap grid-cols-[42px_minmax(100px,1fr)_42px_80px_72px_72px] gap-1 px-2 py-2 text-gray-500 sticky top-0 bg-ide-panel-bg"><span>方法</span><span>URL</span><span>状态</span><span>耗时</span><span>请求</span><span>响应</span></div>
       {visible.map(item => <button type="button" key={item.id} title={item.url} onClick={() => { setSelected(item); setCopyStatus(""); }} aria-label={`查看请求详情 ${item.method} ${item.url}`} className={`grid w-full text-left min-w-[470px] whitespace-nowrap grid-cols-[42px_minmax(100px,1fr)_42px_80px_72px_72px] gap-1 items-center px-2 py-2 border-0 transition-colors hover:bg-ide-tab-hover focus-visible:outline focus-visible:outline-ide-accent ${selected?.id === item.id ? "bg-ide-selection" : ""}`}>
-        <span className="text-blue-300">{item.method}</span><span className="truncate text-gray-300">{item.url}</span><span className={item.failed ? "text-red-400" : item.status && item.status >= 400 ? "text-amber-400" : "text-green-400"}>{item.status ?? (item.inFlight ? "…" : "ERR")}</span><span className="text-gray-400">{item.metricsUnavailable ? "--" : `${item.timeMs}ms`}</span><span className="text-gray-500">{item.metricsUnavailable ? "--" : size(item.requestBytes)}</span><span className="text-gray-500">{item.metricsUnavailable ? "--" : size(item.responseBytes)}</span>
+        <span className="text-blue-300">{item.method}</span><span className="truncate text-gray-300">{item.url}</span><span className={statusColor(item)}>{item.status ?? (item.inFlight ? "…" : "ERR")}</span><span className="text-gray-400">{item.metricsUnavailable ? "--" : `${item.timeMs}ms`}</span><span className="text-gray-500">{item.metricsUnavailable ? "--" : size(item.requestBytes)}</span><span className="text-gray-500">{item.metricsUnavailable ? "--" : size(item.responseBytes)}</span>
       </button>)}
       {!visible.length && <div className="space-y-1 p-4 text-center text-gray-500">
         <p>{paused ? "列表更新已暂停" : proxyInfo?.running ? "等待捕获会话中的请求" : "尚未启动捕获会话"}</p>
