@@ -6,7 +6,15 @@ use tauri::Manager;
 /// 读取内置浏览器指定地址的会话 Cookie，供需要登录态的后台请求复用。
 pub fn cookies_for_url(app: &tauri::AppHandle, url: &str) -> Result<String, String> {
     let target = tauri::Url::parse(url).map_err(|e| e.to_string())?;
-    for view in app.webview_windows().into_values() {
+    // 浏览器页面通过 `add_child` 创建，必须遍历 WebView；`webview_windows`
+    // 只包含顶层 WebviewWindow，无法读取内置浏览器子页面的会话状态。
+    // 先按稳定的标签排序，并排除菜单、迁移页等非浏览器 WebView，避免
+    // HashMap 遍历顺序造成结果不确定或无关页面被命中。
+    let mut views = app.webviews().into_iter()
+        .filter(|(label, _)| label.contains("-browser-"))
+        .collect::<Vec<_>>();
+    views.sort_by(|(left, _), (right, _)| left.cmp(right));
+    for (_, view) in views {
         if let Ok(cookies) = view.cookies_for_url(target.clone()) {
             if !cookies.is_empty() {
                 return Ok(cookies.iter().map(|cookie| format!("{}={}", cookie.name(), cookie.value())).collect::<Vec<_>>().join("; "));
