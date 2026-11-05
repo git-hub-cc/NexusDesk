@@ -901,54 +901,6 @@ pub fn restore_revision_file(repo_path: &str, commit_id: &str, path: &str) -> Re
 }
 */
 
-fn remove_directory_contents(path: &Path) -> Result<bool, String> {
-    let entries = match std::fs::read_dir(path) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.to_string()),
-    };
-    let mut contains_git_metadata = false;
-    for entry in entries {
-        let entry = entry.map_err(|e| e.to_string())?;
-        if entry.file_name() == ".git" {
-            contains_git_metadata = true;
-            continue;
-        }
-        let path = entry.path();
-        let metadata = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
-        if metadata.file_type().is_dir() {
-            if remove_directory_contents(&path)? {
-                contains_git_metadata = true;
-            } else {
-                std::fs::remove_dir(path).map_err(|e| e.to_string())?;
-            }
-        } else {
-            std::fs::remove_file(path).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(contains_git_metadata)
-}
-
-fn write_revision_tree(repo: &Repository, tree: &git2::Tree<'_>, target: &Path) -> Result<(), String> {
-    for entry in tree.iter() {
-        let name = entry.name().ok_or("提交中包含无效文件名")?;
-        let destination = target.join(name);
-        match entry.kind() {
-            Some(git2::ObjectType::Tree) => {
-                std::fs::create_dir_all(&destination).map_err(|e| e.to_string())?;
-                let child = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
-                write_revision_tree(repo, &child, &destination)?;
-            }
-            Some(git2::ObjectType::Blob) => {
-                let blob = repo.find_blob(entry.id()).map_err(|e| e.to_string())?;
-                std::fs::write(destination, blob.content()).map_err(|e| e.to_string())?;
-            }
-            _ => return Err("提交目录包含不支持的文件类型".into()),
-        }
-    }
-    Ok(())
-}
-
 /*
 pub fn restore_revision_directory(repo_path: &str, commit_id: &str, path: &str) -> Result<(), String> {
     valid_path(path)?;
