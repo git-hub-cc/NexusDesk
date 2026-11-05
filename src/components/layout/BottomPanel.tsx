@@ -3,12 +3,13 @@ import { PanelMinimizeButton } from "./PanelMinimizeButton";
 import { isSnapshot } from "@/lib/snapshot";
 import { useEffect, useRef, useState } from "react";
 import { gitApi } from "@/lib/api";
-import { GitBranch, Settings, Terminal, X, CircleDot } from "lucide-react";
+import { ClipboardCheck, GitBranch, Settings, Terminal, X, CircleDot } from "lucide-react";
 import openaiIcon from "@/assets/openai.svg";
 import { useLayoutStore } from "@/store/layoutStore";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { isRemotePath } from "@/lib/remote";
 import { settingsStorage } from "@/lib/globalSettings";
+import { AUTO_REVIEW_PROMPT_KEY, DEFAULT_AUTO_REVIEW_PROMPT } from "@/lib/codexReview";
 import { useTerminalStore, type TerminalProfile } from "@/store/terminalStore";
 import { GitPanel } from "@/components/git/GitPanel";
 import { TerminalSettings } from "./TerminalSettings";
@@ -20,7 +21,15 @@ export function BottomPanel() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [gitInstalled, setGitInstalled] = useState<boolean | null>(null);
   const [exitedSessions, setExitedSessions] = useState<Record<string, boolean>>({});
-  const autoReviewingSessions = useRef(new Set<string>());
+  const [autoReviewEnabled, setAutoReviewEnabled] = useState(() => settingsStorage.getItem("nexusdesk.codex.autoReview") === "true");
+  const [reviewing, setReviewing] = useState(false);
+  const autoReviewing = useRef(false);
+
+  useEffect(() => {
+    const updateAutoReview = () => setAutoReviewEnabled(settingsStorage.getItem("nexusdesk.codex.autoReview") === "true");
+    window.addEventListener("global-settings-changed", updateAutoReview);
+    return () => window.removeEventListener("global-settings-changed", updateAutoReview);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,20 +56,20 @@ export function BottomPanel() {
       setBottomPanelTab("terminal");
     }
   };
-  const handleCodexCompleted = async (session: { id: string; command: string; name: string }) => {
-    if (session.name === "Codex 自动审核") return;
-    if (!/\bcodex\b/i.test(session.command) && !/codex/i.test(session.name)) return;
-    if (autoReviewingSessions.current.has(session.id)) return;
-    autoReviewingSessions.current.add(session.id);
+  const runCodexReview = async () => {
+    if (autoReviewing.current) return;
+    autoReviewing.current = true;
+    setReviewing(true);
     try {
-      if (settingsStorage.getItem("nexusdesk.codex.autoReview") !== "true") return;
       const root = useWorkspaceStore.getState().rootPath;
       if (!root || isRemotePath(root)) throw new Error("自动审核仅支持本地 Git 仓库");
       const changes = await gitApi.status(root);
       if (!changes.length) return;
       for (const change of changes) await gitApi.stage(root, change.path, true);
       const commitId = await gitApi.commit(root, "自动审核：提交 Codex 变更");
-      const reviewCommand = `codex '${commitId}变更集修改是否引入新问题'`;
+      const prompt = settingsStorage.getItem(AUTO_REVIEW_PROMPT_KEY)?.trim() || DEFAULT_AUTO_REVIEW_PROMPT;
+      const reviewText = `${commitId}${prompt}`.replace(/[\r\n]+/g, " ").replace(/'/g, "''");
+      const reviewCommand = `codex '${reviewText}'`;
       const reviewProfile = { id: "codex-auto-review", name: "Codex 自动审核", command: reviewCommand };
       if (await createSession(reviewProfile, root)) {
         const id = useTerminalStore.getState().activeSessionId;
@@ -71,7 +80,8 @@ export function BottomPanel() {
       useTerminalStore.setState({ launchError: `自动审核失败：${String(error)}` });
       setBottomPanelTab("terminal");
     } finally {
-      autoReviewingSessions.current.delete(session.id);
+      autoReviewing.current = false;
+      setReviewing(false);
     }
   };
   const terminalProfile = profiles.find(profile => profile.id === "shell") ?? { id: "shell", name: "终端", command: "" };
@@ -109,6 +119,9 @@ export function BottomPanel() {
         <button type="button" title="启动 Codex" aria-label="启动 Codex" onClick={() => void addSession(codexProfile)} className="group flex h-full shrink-0 items-center gap-1.5 px-3 text-gray-400 hover:bg-ide-tab-hover hover:text-white">
           <img src={openaiIcon} alt="" className="h-3.5 w-3.5 shrink-0 opacity-70 group-hover:opacity-100" />
         </button>
+        {autoReviewEnabled && <button type="button" title="审核 Codex 变更" aria-label="审核 Codex 变更" disabled={reviewing} onClick={() => void runCodexReview()} className="flex h-full shrink-0 items-center gap-1.5 px-3 text-gray-400 hover:bg-ide-tab-hover hover:text-white disabled:cursor-wait disabled:opacity-50">
+          <ClipboardCheck size={14} />
+        </button>}
       </div>
       <div className="flex gap-1 shrink-0">
         <button title="命令行工具设置" aria-label="命令行工具设置" onClick={() => setSettingsOpen(true)} className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-white/10 hover:text-white active:bg-white/15 opacity-0 group-hover/panel:opacity-100 transition-opacity"><Settings size={14} /></button>
@@ -122,7 +135,7 @@ export function BottomPanel() {
     </div>}
     <div className="flex-1 min-h-0 overflow-hidden">
       {gitInstalled && activeTab === "git" && <GitPanel />}
-      {sessions.map(session => <TerminalSession key={session.id} session={session} active={activeTab === "terminal" && activeSessionId === session.id} onExit={handleExit} onCodexCompleted={() => void handleCodexCompleted(session)} />)}
+      {sessions.map(session => <TerminalSession key={session.id} session={session} active={activeTab === "terminal" && activeSessionId === session.id} onExit={handleExit} />)}
     </div>
     {settingsOpen && <TerminalSettings onClose={() => setSettingsOpen(false)} />}
   </div>;

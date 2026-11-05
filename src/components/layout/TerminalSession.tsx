@@ -16,11 +16,10 @@ import { matchTerminalHistory, terminalPromptInput } from "@/lib/terminalHistory
 import { codexComposerInput, fillCodexCommitMessage } from "@/lib/codexCommitMessage";
 import { codexProxyLaunchCommand, getCodexProxyStatus } from "@/lib/codexProxy";
 
-export function TerminalSession({ session, active, onExit, onCodexCompleted }: {
+export function TerminalSession({ session, active, onExit }: {
   session: SessionInfo;
   active: boolean;
   onExit?: (id: string) => void;
-  onCodexCompleted?: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [history, setHistory] = useState<string[]>([]);
@@ -35,15 +34,10 @@ export function TerminalSession({ session, active, onExit, onCodexCompleted }: {
   const matches = matchTerminalHistory(history, query);
   const fitRef = useRef<() => void>(() => {});
   const onExitRef = useRef(onExit);
-  const onCodexCompletedRef = useRef(onCodexCompleted);
 
   useEffect(() => {
     onExitRef.current = onExit;
   }, [onExit]);
-
-  useEffect(() => {
-    onCodexCompletedRef.current = onCodexCompleted;
-  }, [onCodexCompleted]);
 
   useEffect(() => {
     clearScrollbackAfterCommand.current = false;
@@ -51,7 +45,6 @@ export function TerminalSession({ session, active, onExit, onCodexCompleted }: {
     let focusAfterComposition = false;
     let historyReady = false;
     let historySubmission = false;
-    let lastCodexCompletion = "";
     const readCommand = () => {
       if (terminal.buffer.active.type !== 'normal' || composing) return undefined;
       const buffer = terminal.buffer.active;
@@ -125,24 +118,6 @@ export function TerminalSession({ session, active, onExit, onCodexCompleted }: {
         clearScrollbackAfterCommand.current = false;
         // xterm 没有公开清理滚动缓冲的方法，使用标准的 CSI 3 J 擦除滚动缓冲。
         terminal.write("\x1b[3J");
-      }
-      if (/\bcodex\b/i.test(session.command) && terminal.buffer.active.type === "normal") {
-        const buffer = terminal.buffer.active;
-        const lastRow = buffer.baseY + buffer.cursorY;
-        const firstRow = Math.max(buffer.baseY, lastRow - 20);
-        let completion: string | undefined;
-        for (let row = lastRow; row >= firstRow; row--) {
-          const line = buffer.getLine(row)?.translateToString(true).trim();
-          if (line && /^Worked for\s+\d+(?:h|m|s)(?:\s+\d+(?:h|m|s))*\s+[•·]\s+\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(line)) {
-            completion = `${row}:${line}`;
-            break;
-          }
-        }
-        if (!completion) lastCodexCompletion = "";
-        else if (completion !== lastCodexCompletion) {
-          lastCodexCompletion = completion;
-          onCodexCompletedRef.current?.();
-        }
       }
       setQuery(historyReady ? readCommand() ?? '' : '');
     });

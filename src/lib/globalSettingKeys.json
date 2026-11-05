@@ -5,7 +5,8 @@
     "nexusdesk-browser-history",
     "nexusdesk.music.libraryTab",
     "nexusdesk.http.extraction.v1",
-    "nexusdesk.codex.autoReview"
+    "nexusdesk.codex.autoReview",
+    "nexusdesk.codex.autoReviewPrompt"
   ],
   "prefixes": ["sftp-profile:", "sftp-label:", "nexusdesk-ui:"]
 }

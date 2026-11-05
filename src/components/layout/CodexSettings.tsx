@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { codexSettingsApi } from "@/lib/api";
 import { settingsStorage } from "@/lib/globalSettings";
+import { AUTO_REVIEW_PROMPT_KEY, DEFAULT_AUTO_REVIEW_PROMPT } from "@/lib/codexReview";
 
 export function CodexSettings() {
   const [model, setModel] = useState("");
@@ -9,6 +10,7 @@ export function CodexSettings() {
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
   const [trustMode, setTrustMode] = useState(false);
   const [autoReview, setAutoReview] = useState(settingsStorage.getItem("nexusdesk.codex.autoReview") === "true");
+  const [autoReviewPrompt, setAutoReviewPrompt] = useState(settingsStorage.getItem(AUTO_REVIEW_PROMPT_KEY) ?? DEFAULT_AUTO_REVIEW_PROMPT);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const loaded = useRef(false);
@@ -50,7 +52,9 @@ export function CodexSettings() {
 
   useEffect(() => {
     settingsStorage.setItem("nexusdesk.codex.autoReview", String(autoReview));
-  }, [autoReview]);
+    settingsStorage.setItem(AUTO_REVIEW_PROMPT_KEY, autoReviewPrompt);
+    window.dispatchEvent(new Event("global-settings-changed"));
+  }, [autoReview, autoReviewPrompt]);
 
   return <div className="mx-auto w-full max-w-3xl p-8" onKeyDown={event => event.stopPropagation()}>
     <header className="mb-6 border-b border-ide-panel-border pb-4">
@@ -67,8 +71,11 @@ export function CodexSettings() {
       </label>
       <label className="flex items-start gap-2">
         <input type="checkbox" className="mt-0.5 accent-ide-accent" checked={autoReview} onChange={event => setAutoReview(event.target.checked)} />
-        <span><span className="block">自动审核模式</span><span className="mt-0.5 block text-xs text-gray-400">Codex 退出后，提交未忽略的变更并启动一次 Codex 变更审核。</span></span>
+        <span><span className="block">自动审核模式</span><span className="mt-0.5 block text-xs text-gray-400">开启后，在底部面板点击审核按钮，提交未忽略的变更并启动一次 Codex 变更审核。</span></span>
       </label>
+      {autoReview && <label className="ml-6 grid gap-1 border-l-2 border-ide-panel-border pl-3">自动审核提示词<textarea className={`${inputClass} min-h-20 resize-y`} value={autoReviewPrompt} onChange={event => setAutoReviewPrompt(event.target.value)} placeholder={DEFAULT_AUTO_REVIEW_PROMPT} spellCheck={false} />
+          <span className="text-xs text-gray-400">提交编号会自动附加在提示词前。</span>
+        </label>}
       {error && <p role="alert" className="break-all text-red-400">{error}</p>}
       {busy && <p className="text-xs text-gray-400" role="status">正在保存…</p>}
     </div>
