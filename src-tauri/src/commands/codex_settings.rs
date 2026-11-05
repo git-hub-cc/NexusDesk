@@ -29,6 +29,64 @@ fn codex_dir() -> Result<PathBuf, String> {
         .ok_or_else(|| "找不到 Codex 配置目录".into())
 }
 
+pub(super) struct ApiConfig {
+    pub model: String,
+    pub base_url: String,
+    pub api_key: Option<String>,
+    pub wire_api: String,
+}
+
+pub(super) fn api_config() -> Result<ApiConfig, String> {
+    let dir = codex_dir()?;
+    let config = read_config(&dir.join("config.toml"))?;
+    let provider = config
+        .get("model_provider")
+        .and_then(toml::Value::as_str)
+        .unwrap_or("");
+    let model = config
+        .get("model")
+        .and_then(toml::Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_owned();
+    if model.is_empty() {
+        return Err("请先在 Codex 设置中配置模型".into());
+    }
+    let base_url = config
+        .get("model_providers")
+        .and_then(|providers| providers.get(provider))
+        .and_then(|item| item.get("base_url"))
+        .and_then(toml::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("https://api.openai.com/v1")
+        .trim()
+        .trim_end_matches('/')
+        .to_owned();
+    let wire_api = config
+        .get("model_providers")
+        .and_then(|providers| providers.get(provider))
+        .and_then(|item| item.get("wire_api"))
+        .and_then(toml::Value::as_str)
+        .unwrap_or("responses")
+        .to_owned();
+    let auth = read_json(&dir.join("auth.json"))?;
+    let api_key = std::env::var("OPENAI_API_KEY")
+        .ok()
+        .filter(|key| !key.trim().is_empty())
+        .or_else(|| {
+            auth.get("OPENAI_API_KEY")
+                .and_then(JsonValue::as_str)
+                .filter(|key| !key.trim().is_empty())
+                .map(str::to_owned)
+        });
+    Ok(ApiConfig {
+        model,
+        base_url,
+        api_key,
+        wire_api,
+    })
+}
+
 fn read_json(path: &PathBuf) -> Result<JsonValue, String> {
     match fs::read(path) {
         Ok(bytes) => {

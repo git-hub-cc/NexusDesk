@@ -40,6 +40,7 @@ export interface Tab {
 
 export const MUSIC_HOME = "nexusdesk:music";
 export const VIDEO_HOME = "nexusdesk:video";
+export const CHAT_HOME = "nexusdesk:chat";
 export const MIRROR_HOME = "nexusdesk:mirror";
 
 function persistedPinnedTabs(tabs: Tab[]): Tab[] {

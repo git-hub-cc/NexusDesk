@@ -65,6 +65,38 @@
 .video-list-empty { display: flex; align-items: center; flex-direction: column; gap: 8px; padding: 48px 16px; color: #666b76; text-align: center; }
 .video-list-empty strong { color: #b6bac2; font-size: 11px; font-weight: 500; }
 .video-list-empty span { font-size: 10px; line-height: 1.6; }
+.chat-page { min-height: 0; overflow: hidden; }
+.chat-header { display: flex; flex: 0 0 58px; align-items: center; justify-content: space-between; gap: 12px; padding: 0 20px; border-bottom: 1px solid var(--ide-panel-border); }
+.chat-heading, .chat-header-actions { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.chat-heading > svg { color: #8bb9ff; }
+.chat-heading h2 { color: #e0e2e6; font-size: 13px; font-weight: 600; }
+.chat-heading p { overflow: hidden; max-width: min(46vw, 420px); margin-top: 3px; color: #858a94; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.chat-config-state { display: inline-flex; align-items: center; gap: 6px; color: #858a94; font-size: 10px; white-space: nowrap; }
+.chat-config-state > span { width: 6px; height: 6px; border-radius: 50%; background: #858a94; }
+.chat-config-state.is-ready > span { background: #84b99a; }
+.chat-icon-button { display: grid; place-items: center; width: 30px; height: 30px; color: #9298a4; border-radius: 4px; }
+.chat-icon-button:hover:not(:disabled) { color: #fff; background: #ffffff12; }
+.chat-icon-button:disabled { opacity: .4; }
+.chat-conversation { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 18px; overflow-y: auto; padding: 28px max(20px, calc((100% - 820px) / 2)); }
+.chat-empty { display: flex; flex: 1; align-items: center; justify-content: center; flex-direction: column; gap: 10px; color: #737984; text-align: center; }
+.chat-empty > svg { color: #8bb9ff; }
+.chat-empty h3 { color: #d7d9de; font-size: 14px; font-weight: 600; }
+.chat-empty p { max-width: 320px; font-size: 11px; line-height: 1.7; }
+.chat-message { max-width: min(88%, 760px); padding: 12px 14px; border: 1px solid #373a40; border-radius: 6px; }
+.chat-message.is-user { align-self: flex-end; background: #303b4d; border-color: #46556c; }
+.chat-message.is-assistant { align-self: flex-start; background: #24262a; }
+.chat-message-label { margin-bottom: 7px; color: #9eb1d0; font-size: 10px; font-weight: 600; }
+.chat-message p { color: #d8dae0; font-size: 12px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.chat-working { display: flex; align-items: center; gap: 8px; align-self: flex-start; color: #9298a4; font-size: 11px; }
+.chat-error { align-self: flex-start; color: #f08a8a; font-size: 11px; overflow-wrap: anywhere; }
+.chat-composer { width: min(100% - 32px, 860px); flex: 0 0 auto; align-self: center; margin-bottom: 18px; padding: 10px 12px 8px; background: #25272b; border: 1px solid #40434a; border-radius: 6px; }
+.chat-composer:focus-within { border-color: #7184a5; }
+.chat-composer textarea { display: block; width: 100%; min-height: 58px; max-height: 180px; resize: vertical; color: #dfe1e5; background: transparent; outline: none; font-size: 12px; line-height: 1.6; user-select: text; }
+.chat-composer textarea::placeholder { color: #737780; }
+.chat-composer-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; color: #737780; font-size: 10px; }
+.chat-composer-footer button { display: grid; place-items: center; width: 30px; height: 28px; color: #dce7fa; background: #344259; border: 1px solid #536785; border-radius: 4px; }
+.chat-composer-footer button:hover:not(:disabled) { background: #415372; }
+.chat-composer-footer button:disabled { opacity: .45; }
 @media (max-width: 760px) { .video-library-layout { grid-template-columns: minmax(210px, 38%) minmax(0, 1fr); } }
 .music-cover { display: grid; place-items: center; flex: 0 0 50px; height: 50px; overflow: hidden; color: #b8c8e8; background: linear-gradient(145deg,#334157,#282d35 55%,#3d3438); border: 1px solid #41464f; border-radius: 9px; box-shadow: 0 3px 12px #0005, inset 0 0 14px #b9d1ff18; }
 .music-icon-button { display: grid; place-items: center; width: 30px; height: 30px; color: #92969e; border-radius: 4px; }

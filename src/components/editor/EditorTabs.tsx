@@ -4,9 +4,9 @@ import { useShallow } from "zustand/react/shallow";
 import React, { useState, useEffect, forwardRef, useRef } from "react";
 import * as ContextMenu from "@/lib/nativeMenu";
 import * as DropdownMenu from "@/lib/nativeDropdownMenu";
-import { X, ChevronDown, Pin, ExternalLink, GitBranch, Clock, Globe, Compass, Music2, Video, Smartphone } from "lucide-react";
+import { X, ChevronDown, Pin, ExternalLink, GitBranch, Clock, Globe, Compass, Music2, Video, Smartphone, MessageCircle } from "lucide-react";
 import { useBrowserHistoryStore } from "@/store/browserHistoryStore";
-import { MUSIC_HOME, VIDEO_HOME, MIRROR_HOME, retryFileSave, useWorkspaceStore, type Tab } from "@/store/workspaceStore";
+import { MUSIC_HOME, VIDEO_HOME, CHAT_HOME, MIRROR_HOME, retryFileSave, useWorkspaceStore, type Tab } from "@/store/workspaceStore";
 import { openContextMenuFromKeyboard } from "@/lib/contextMenu";
 import { confirmAction } from "@/lib/dialogs";
 import { setSpeechTarget } from "@/lib/speechTarget";
@@ -19,7 +19,7 @@ interface EditorTabsProps {
 }
 
 const NewTabButtons = ({ pane }: EditorTabsProps) => {
-  const open = (kind: "web" | "music" | "video" | "mirror") => {
+  const open = (kind: "web" | "music" | "video" | "chat" | "mirror") => {
     const state = useWorkspaceStore.getState();
     state.setFocusedPane(pane);
     const root = state.rootPath ?? "";
@@ -30,6 +30,8 @@ const NewTabButtons = ({ pane }: EditorTabsProps) => {
       state.openTab({ id: MIRROR_HOME, path: MIRROR_HOME, title: "安卓投屏", browser: { root, url: MIRROR_HOME } });
     } else if (kind === "music") {
       state.openTab({ id: "browser:music", path: "browser:music", title: "音乐", browser: { root, url: MUSIC_HOME } });
+    } else if (kind === "chat") {
+      state.openTab({ id: "browser:chat", path: "browser:chat", title: "对话", browser: { root, url: CHAT_HOME } });
     } else {
       state.openTab({ id: "browser:video", path: "browser:video", title: "视频", browser: { root, url: VIDEO_HOME } });
     }
@@ -44,6 +46,9 @@ const NewTabButtons = ({ pane }: EditorTabsProps) => {
       </button>
       <button type="button" aria-label="打开视频" title="视频" onClick={() => open("video")} className="flex h-9 shrink-0 items-center gap-1.5 px-2 text-xs text-gray-400 outline-none hover:bg-ide-tab-hover hover:text-white">
         <Video size={14} />
+      </button>
+      <button type="button" aria-label="打开对话" title="对话" onClick={() => open("chat")} className="flex h-9 shrink-0 items-center gap-1.5 px-2 text-xs text-gray-400 outline-none hover:bg-ide-tab-hover hover:text-white">
+        <MessageCircle size={14} />
       </button>
       <button type="button" aria-label="打开安卓投屏" title="安卓投屏" onClick={() => open("mirror")} className="flex h-9 shrink-0 items-center gap-1.5 px-2 text-xs text-gray-400 outline-none hover:bg-ide-tab-hover hover:text-white">
         <Smartphone size={14} />
@@ -106,7 +111,7 @@ export const TabUI = forwardRef<HTMLDivElement, {
           {(tab.isVersionControl ?? (tab.diff !== undefined || !!tab.revision)) && <GitBranch size={12} aria-label="版本控制" className="shrink-0" />}
           {!(tab.isTemporary ?? !!tab.reverseTree) && tab.isExternal && <ExternalLink size={12} aria-hidden="true" className="shrink-0 text-amber-400" />}
           {(tab.isTemporary ?? !!tab.reverseTree) && <Clock size={12} aria-label="临时视图" className="shrink-0 text-sky-400" />}
-          {tab.isBrowser && (tab.browser?.url === "nexusdesk:nav" ? <Compass size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MUSIC_HOME ? <Music2 size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MIRROR_HOME ? <Smartphone size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === VIDEO_HOME ? <Video size={12} className="shrink-0 text-sky-400" /> : <Globe size={12} className="shrink-0 text-sky-400" />)}
+          {tab.isBrowser && (tab.browser?.url === "nexusdesk:nav" ? <Compass size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MUSIC_HOME ? <Music2 size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MIRROR_HOME ? <Smartphone size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === VIDEO_HOME ? <Video size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === CHAT_HOME ? <MessageCircle size={12} className="shrink-0 text-sky-400" /> : <Globe size={12} className="shrink-0 text-sky-400" />)}
           <span className="truncate">{tab.browser?.url === MIRROR_HOME ? "安卓投屏" : tab.title}</span>
         </span>
         {tab.isPinned && <Pin size={12} className="shrink-0 text-gray-400 rotate-45" />}
@@ -308,7 +313,7 @@ export function EditorTabList({ pane }: EditorTabsProps) {
                         {tab.isVersionControl && <GitBranch size={12} aria-label="版本控制" className="shrink-0" />}
                         {!tab.isTemporary && tab.isExternal && <ExternalLink size={12} aria-label="不属于当前项目" className="shrink-0 text-amber-400" />}
                         {tab.isTemporary && <Clock size={12} aria-label="临时视图" className="shrink-0 text-sky-400" />}
-                        {tab.isBrowser && (tab.browser?.url === "nexusdesk:nav" ? <Compass size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MUSIC_HOME ? <Music2 size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MIRROR_HOME ? <Smartphone size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === VIDEO_HOME ? <Video size={12} className="shrink-0 text-sky-400" /> : <Globe size={12} className="shrink-0 text-sky-400" />)}
+                        {tab.isBrowser && (tab.browser?.url === "nexusdesk:nav" ? <Compass size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MUSIC_HOME ? <Music2 size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === MIRROR_HOME ? <Smartphone size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === VIDEO_HOME ? <Video size={12} className="shrink-0 text-sky-400" /> : tab.browser?.url === CHAT_HOME ? <MessageCircle size={12} className="shrink-0 text-sky-400" /> : <Globe size={12} className="shrink-0 text-sky-400" />)}
                         <span className="truncate">{tab.browser?.url === MIRROR_HOME ? "安卓投屏" : tab.title}</span>
                       </span>
                       {tab.isPinned && <Pin size={12} className="shrink-0 text-gray-400 rotate-45 mr-1" />}

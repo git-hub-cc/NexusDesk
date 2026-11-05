@@ -6,9 +6,10 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ArrowLeft, ArrowRight, RotateCw, House, Globe, X } from "lucide-react";
 import { useWorkspaceStore, type Tab } from "@/store/workspaceStore";
-import { MUSIC_HOME, VIDEO_HOME } from "@/store/workspaceStore";
+import { MUSIC_HOME, VIDEO_HOME, CHAT_HOME } from "@/store/workspaceStore";
 import { MusicEditor } from "@/components/music/MusicEditor";
 import { VideoEditor } from "@/components/video/VideoEditor";
+import { ChatEditor } from "@/components/chat/ChatEditor";
 import { searchHistory, useBrowserHistoryStore } from "@/store/browserHistoryStore";
 import { BrowserSuggestionPopup } from "./BrowserSuggestionPopup";
 import { BrowserPasswords } from "./BrowserPasswords";
@@ -29,6 +30,7 @@ function updateBrowserTabs(tabs: Tab[], id: string, url: string, title?: string)
 export function BrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
   if (tab.browser?.url === MUSIC_HOME) return <MusicEditor active={active} />;
   if (tab.browser?.url === VIDEO_HOME) return <VideoEditor active={active} />;
+  if (tab.browser?.url === CHAT_HOME) return <ChatEditor active={active} />;
   return tab.browser?.url === BROWSER_HOME ? <NavigationEditor tab={tab} active={active} /> : <NativeBrowserEditor tab={tab} active={active} />;
 }
 

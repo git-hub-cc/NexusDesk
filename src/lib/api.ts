@@ -170,3 +170,6 @@ export const codexSettingsApi = {
     read: (): Promise<CodexSettings> => invoke("codex_settings_read"),
     save: (input: { model: string; proxyUrl: string; apiKey?: string; trustMode: boolean }): Promise<void> => invoke("codex_settings_save", { input }),
 };
+export const chatApi = {
+    complete: (messages: { role: "user" | "assistant"; content: string }[]): Promise<string> => invoke("chat_completion", { messages }),
+};
