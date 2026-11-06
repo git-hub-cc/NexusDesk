@@ -277,7 +277,7 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({ pane }) => {
                 scrollContainerRef.current = node;
               }}
               data-tabs-container={pane}
-              className={`min-w-0 flex-1 relative flex overflow-x-auto overflow-y-hidden hide-scroll ${isFocused ? '' : 'opacity-80'}`}
+              className={`w-max min-w-0 flex-[0_1_auto] relative flex overflow-x-auto overflow-y-hidden hide-scroll ${isFocused ? '' : 'opacity-80'}`}
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', scrollBehavior: 'smooth' }}
               onClick={() => { setFocusedPane(pane); setSpeechTarget({ kind: "editor", pane }); }}
           >
@@ -286,12 +286,12 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({ pane }) => {
                   <SortableTab key={tab.id} tab={tab} pane={pane} isActive={tab.id === activeTabId} closeImages={closeImages} tabs={tabs} />
               ))}
             </SortableContext>
-            <div data-tauri-drag-region className="drag-region h-full min-w-0 flex-1" />
           </div>
           <div className="flex h-full shrink-0 items-center no-drag-region">
             <EditorTabList pane={pane} />
             <NewTabButtons pane={pane} />
           </div>
+          <div data-tauri-drag-region className="drag-region h-full min-w-0 flex-1" />
 
         </div>
       </>

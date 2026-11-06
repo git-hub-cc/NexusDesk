@@ -163,7 +163,7 @@ export function BottomPanel() {
     <div className="flex items-center justify-between pl-0 pr-2 h-8 shrink-0 border-b border-ide-panel-border bg-ide-panel-bg text-xs">
       <div className="flex h-full min-w-0 flex-1 items-stretch">
         {gitInstalled && <button className={`${tabClass(activeTab === "git")} min-w-[120px] max-w-[200px] border-r border-ide-panel-border`} onClick={() => setBottomPanelTab("git")}><GitBranch size={14} />版本控制</button>}
-        <div ref={tabsRef} className="flex h-full min-w-0 flex-1 items-stretch overflow-hidden">
+        <div ref={tabsRef} className="flex h-full w-max min-w-0 flex-[0_1_auto] items-stretch overflow-hidden">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSessionDragEnd}>
           <SortableContext items={sessions.map(session => session.id)} strategy={sessionSortingStrategy}>
           {sessions.map(session => {
@@ -217,6 +217,7 @@ export function BottomPanel() {
         {autoReviewEnabled && <button type="button" title="审核 Codex 变更" aria-label="审核 Codex 变更" disabled={reviewing} onClick={() => void runCodexReview()} className="flex h-full shrink-0 items-center gap-1.5 px-3 text-gray-400 hover:bg-ide-tab-hover hover:text-white disabled:cursor-wait disabled:opacity-50">
           <ClipboardCheck size={14} />
         </button>}
+        <div data-tauri-drag-region className="drag-region h-full min-w-0 flex-1" />
       </div>
       <div className="flex gap-1 shrink-0">
         <button title="命令行工具设置" aria-label="命令行工具设置" onClick={() => setSettingsOpen(true)} className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-white/10 hover:text-white active:bg-white/15 opacity-0 group-hover/panel:opacity-100 transition-opacity"><Settings size={14} /></button>
