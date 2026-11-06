@@ -155,6 +155,7 @@ export function BottomPanel() {
     || /\bcodex\b/i.test(profile.command)
     || profile.name.toLowerCase() === "codex")
     ?? { id: "codex", name: "Codex", command: "codex" };
+  const toolProfiles = profiles.filter(profile => profile.id !== terminalProfile.id && profile !== codexProfile);
   const tabClass = (selected: boolean) => `group flex shrink-0 items-center gap-1 px-3 h-full text-gray-400 ${selected ? "bg-ide-tab-active-bg text-white hover:bg-ide-tab-active-bg" : "hover:bg-ide-tab-hover hover:text-white"}`;
 
   if (isSnapshot) return <div className="flex flex-col h-full"><div className="flex items-center justify-between px-3 h-8 shrink-0 border-b border-ide-panel-border text-xs"><span>历史快照 · 只读（终端已禁用）</span><PanelMinimizeButton panel="bottom" /></div><div className="flex-1 min-h-0"><GitPanel /></div></div>;
@@ -214,6 +215,9 @@ export function BottomPanel() {
         <button type="button" title="启动 Codex" aria-label="启动 Codex" onClick={() => void addSession(codexProfile)} className="group flex h-full shrink-0 items-center gap-1.5 px-3 text-gray-400 hover:bg-ide-tab-hover hover:text-white">
           <img src={openaiIcon} alt="" className="h-3.5 w-3.5 shrink-0 opacity-70 group-hover:opacity-100" />
         </button>
+        {toolProfiles.map(profile => <button key={profile.id} type="button" title={`启动 ${profile.name}`} aria-label={`启动 ${profile.name}`} onClick={() => void addSession(profile)} className="flex h-full shrink-0 items-center gap-1.5 px-3 text-gray-400 hover:bg-ide-tab-hover hover:text-white">
+          <Terminal size={14} />
+        </button>)}
         {autoReviewEnabled && <button type="button" title="审核 Codex 变更" aria-label="审核 Codex 变更" disabled={reviewing} onClick={() => void runCodexReview()} className="flex h-full shrink-0 items-center gap-1.5 px-3 text-gray-400 hover:bg-ide-tab-hover hover:text-white disabled:cursor-wait disabled:opacity-50">
           <ClipboardCheck size={14} />
         </button>}
