@@ -1,4 +1,4 @@
-import { createWriteStream, existsSync, mkdirSync, renameSync, statSync, copyFileSync, readdirSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, renameSync, statSync, copyFileSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(import.meta.url);
 const tauriCli = require.resolve("@tauri-apps/cli/tauri.js");
+const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 const noSttModel = process.argv.includes("--no-stt-model");
 const revision = "2365baeacb507f821a0c8120fcee3d484dba7a07";
 const modelDirectory = join(root, "src-tauri", "resources", "stt-model");
@@ -57,7 +58,7 @@ function copyInstaller(label) {
     .sort((left, right) => statSync(join(bundleDirectory, right)).mtimeMs - statSync(join(bundleDirectory, left)).mtimeMs)[0];
   if (!installer) throw new Error("没有找到 Tauri NSIS 安装包");
   mkdirSync(outputDirectory, { recursive: true });
-  const destination = join(outputDirectory, `NexusDesk-${label}.exe`);
+  const destination = join(outputDirectory, `NexusDesk-${version}-${label}.exe`);
   const source = join(bundleDirectory, installer);
   copyFileSync(source, destination);
   console.log(`已生成 ${destination}`);

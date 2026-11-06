@@ -211,7 +211,7 @@ export function markdownTable(rows: unknown[][]): string {
 }
 
 export async function convertExcelToMd(arrayBuffer: ArrayBuffer, csv = false): Promise<string> {
-    const { read, utils } = await import("xlsx");
+    const { read, utils } = await import("@e965/xlsx");
     // Decode CSV explicitly so UTF-8 Chinese text is not interpreted as a legacy code page.
     const workbook = csv
         ? read(new TextDecoder().decode(arrayBuffer), { type: "string" })

@@ -1,6 +1,14 @@
-# Windows text encoding
+# Windows PowerShell compatibility
 
-When reading or writing UTF-8 text from PowerShell, specify `-Encoding UTF8` explicitly. This is required for Windows PowerShell 5.1, whose default text encoding can corrupt Chinese text.
+Windows PowerShell 5.1 does not support `&&` as a command separator. Run commands separately or use `;` to separate them.
+
+In PowerShell, backslash (`\`) does not escape quote characters. For regular expressions containing both single and double quotes, use a single-quoted PowerShell string and double embedded single quotes. For example:
+
+```powershell
+rg -n 'from [''"]xlsx|require\([''"]xlsx|xlsx\.' src package.json
+```
+
+When command output contains garbled Chinese characters, check that the console code page and PowerShell input/output encodings are compatible. For UTF-8 output, use `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8` and `chcp 65001` as needed.
 
 # UI consistency
 

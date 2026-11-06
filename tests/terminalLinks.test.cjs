@@ -55,7 +55,7 @@ function wrappedBuffer(text, cols) {
 test('recovers local ConPTY bundle paths when a repaint loses soft wrap flags', async () => {
   const { Terminal } = require('@xterm/xterm');
   const first = String.raw`        C:\Users\user\Desktop\NexusDeskTmp\src-tauri\target\release\bun`;
-  const tail = String.raw`dle\nsis\NexusDesk_0.1.0_x64-setup.exe`;
+  const tail = String.raw`dle\nsis\NexusDesk_0.1.1_x64-setup.exe`;
   const path = first.trimStart() + tail;
   const terminal = new Terminal({ cols: first.length, rows: 12, allowProposedApi: true });
   try {

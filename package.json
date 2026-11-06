@@ -1,7 +1,7 @@
 {
   "name": "nexusdesk",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -24,6 +24,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@e965/xlsx": "^0.20.3",
     "@lezer/highlight": "^1.2.5",
     "@radix-ui/react-context-menu": "^2.4.1",
     "@radix-ui/react-dialog": "^1.3.1",
@@ -58,7 +59,6 @@
     "tailwind-merge": "^3.0.1",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2",
-    "xlsx": "^0.18.5",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
