@@ -221,7 +221,7 @@ export function BottomPanel() {
         {autoReviewEnabled && <button type="button" title="审核 Codex 变更" aria-label="审核 Codex 变更" disabled={reviewing} onClick={() => void runCodexReview()} className="flex h-full shrink-0 items-center gap-1.5 px-3 text-gray-400 hover:bg-ide-tab-hover hover:text-white disabled:cursor-wait disabled:opacity-50">
           <ClipboardCheck size={14} />
         </button>}
-        <div data-tauri-drag-region className="drag-region h-full min-w-0 flex-1" />
+        <div className="h-full min-w-0 flex-1" />
       </div>
       <div className="flex gap-1 shrink-0">
         <button title="命令行工具设置" aria-label="命令行工具设置" onClick={() => setSettingsOpen(true)} className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-white/10 hover:text-white active:bg-white/15 opacity-0 group-hover/panel:opacity-100 transition-opacity"><Settings size={14} /></button>
