@@ -162,8 +162,8 @@ export function BottomPanel() {
   return <div className="group/panel flex flex-col h-full">
     <div className="flex items-center justify-between pl-0 pr-2 h-8 shrink-0 border-b border-ide-panel-border bg-ide-panel-bg text-xs">
       <div className="flex h-full min-w-0 flex-1 items-stretch">
-        <div ref={tabsRef} className="flex h-full min-w-0 shrink items-stretch overflow-hidden">
         {gitInstalled && <button className={`${tabClass(activeTab === "git")} min-w-[120px] max-w-[200px] border-r border-ide-panel-border`} onClick={() => setBottomPanelTab("git")}><GitBranch size={14} />版本控制</button>}
+        <div ref={tabsRef} className="flex h-full min-w-0 flex-1 items-stretch overflow-hidden">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSessionDragEnd}>
           <SortableContext items={sessions.map(session => session.id)} strategy={sessionSortingStrategy}>
           {sessions.map(session => {
