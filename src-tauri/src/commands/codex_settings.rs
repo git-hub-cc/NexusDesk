@@ -11,6 +11,7 @@ pub struct CodexSettings {
     proxy_url: String,
     api_key_configured: bool,
     trust_mode: bool,
+    show_tooltips: bool,
 }
 
 #[derive(Deserialize)]
@@ -20,6 +21,7 @@ pub struct CodexSettingsInput {
     proxy_url: String,
     api_key: Option<String>,
     trust_mode: bool,
+    show_tooltips: bool,
 }
 
 fn codex_dir() -> Result<PathBuf, String> {
@@ -152,6 +154,7 @@ fn update_base_url(config: &mut toml::Value, value: &str) -> Result<(), String> 
             .or_insert_with(|| toml::Value::Table(Default::default()))
             .as_table_mut()
             .ok_or("当前 Codex 模型提供方配置必须是表")?;
+        provider.insert("name".into(), toml::Value::String("NexusDesk".into()));
         provider.insert("base_url".into(), toml::Value::String(value.into()));
         return Ok(());
     }
@@ -164,6 +167,13 @@ fn update_base_url(config: &mut toml::Value, value: &str) -> Result<(), String> 
             let provider = provider
                 .as_table_mut()
                 .ok_or("当前 Codex 模型提供方配置必须是表")?;
+            let name_missing = provider
+                .get("name")
+                .and_then(toml::Value::as_str)
+                .is_none_or(|name| name.trim().is_empty());
+            if name_missing {
+                provider.insert("name".into(), toml::Value::String(provider_id.clone()));
+            }
             provider.insert("base_url".into(), toml::Value::String(value.into()));
         }
         (Some(provider), true) => {
@@ -244,6 +254,11 @@ pub fn codex_settings_read() -> Result<CodexSettings, String> {
             .get("sandbox_mode")
             .and_then(toml::Value::as_str)
             == Some("danger-full-access"),
+        show_tooltips: config
+            .get("tui")
+            .and_then(|tui| tui.get("show_tooltips"))
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(true),
     })
 }
 
@@ -286,6 +301,13 @@ pub fn codex_settings_save(input: CodexSettingsInput) -> Result<(), String> {
     } else {
         table.remove("sandbox_mode");
     }
+
+    let tui = table
+        .entry("tui")
+        .or_insert_with(|| toml::Value::Table(Default::default()))
+        .as_table_mut()
+        .ok_or("tui 必须是表")?;
+    tui.insert("show_tooltips".into(), toml::Value::Boolean(input.show_tooltips));
 
     let proxy_url = input.proxy_url.trim();
     if !proxy_url.is_empty() {
@@ -362,6 +384,28 @@ base_url = "https://old.example/v1"
         assert_eq!(
             config["model_providers"]["nexusdesk"]["base_url"].as_str(),
             Some("https://api.example/v1")
+        );
+        assert_eq!(
+            config["model_providers"]["nexusdesk"]["name"].as_str(),
+            Some("NexusDesk")
+        );
+    }
+
+    #[test]
+    fn proxy_update_repairs_empty_provider_name() {
+        let mut config: toml::Value = r#"
+model_provider = "custom"
+
+[model_providers.custom]
+name = ""
+"#
+        .parse()
+        .unwrap();
+
+        update_base_url(&mut config, "https://api.example/v1").unwrap();
+        assert_eq!(
+            config["model_providers"]["custom"]["name"].as_str(),
+            Some("custom")
         );
     }
 }

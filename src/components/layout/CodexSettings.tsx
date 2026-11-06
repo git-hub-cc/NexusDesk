@@ -9,6 +9,7 @@ export function CodexSettings() {
   const [apiKey, setApiKey] = useState("");
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
   const [trustMode, setTrustMode] = useState(false);
+  const [showTooltips, setShowTooltips] = useState(true);
   const [autoReview, setAutoReview] = useState(settingsStorage.getItem("nexusdesk.codex.autoReview") === "true");
   const [autoReviewPrompt, setAutoReviewPrompt] = useState(settingsStorage.getItem(AUTO_REVIEW_PROMPT_KEY) ?? DEFAULT_AUTO_REVIEW_PROMPT);
   const [busy, setBusy] = useState(false);
@@ -25,6 +26,7 @@ export function CodexSettings() {
       setProxyUrl(settings.proxyUrl);
       setApiKeyConfigured(settings.apiKeyConfigured);
       setTrustMode(settings.trustMode);
+      setShowTooltips(settings.showTooltips);
       loaded.current = true;
     }).catch(reason => setError(String(reason)));
   }, []);
@@ -35,7 +37,7 @@ export function CodexSettings() {
       const version = ++saveVersion.current;
       setBusy(true);
       setError("");
-      const save = () => codexSettingsApi.save({ model, proxyUrl, apiKey: apiKey || undefined, trustMode });
+      const save = () => codexSettingsApi.save({ model, proxyUrl, apiKey: apiKey || undefined, trustMode, showTooltips });
       const currentSave = saveQueue.current.catch(() => {}).then(save);
       saveQueue.current = currentSave;
       void currentSave.then(() => {
@@ -48,7 +50,7 @@ export function CodexSettings() {
       });
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [model, proxyUrl, apiKey, trustMode]);
+  }, [model, proxyUrl, apiKey, trustMode, showTooltips]);
 
   useEffect(() => {
     settingsStorage.setItem("nexusdesk.codex.autoReview", String(autoReview));
@@ -76,6 +78,10 @@ export function CodexSettings() {
       {autoReview && <label className="ml-6 grid gap-1 border-l border-ide-panel-border pl-3"><textarea aria-label="自动审核提示词" className={`${inputClass} min-h-20 resize-y`} value={autoReviewPrompt} onChange={event => setAutoReviewPrompt(event.target.value)} placeholder={DEFAULT_AUTO_REVIEW_PROMPT} spellCheck={false} />
           <span className="text-xs text-gray-400">提交编号会自动附加在提示词前。</span>
         </label>}
+      <label className="flex items-start gap-2">
+        <input type="checkbox" className="mt-0.5 accent-ide-accent" checked={showTooltips} onChange={event => setShowTooltips(event.target.checked)} />
+        <span><span className="block">显示提示信息</span><span className="mt-0.5 block text-xs text-gray-400">控制 Codex TUI 是否显示提示信息。</span></span>
+      </label>
       {error && <p role="alert" className="break-all text-red-400">{error}</p>}
       {busy && <p className="text-xs text-gray-400" role="status">正在保存…</p>}
     </div>

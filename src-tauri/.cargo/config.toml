@@ -1,4 +1,0 @@
-﻿# 使用 LLVM 的 lld-link 加速 Windows MSVC 链接速度
-[target.x86_64-pc-windows-msvc]
-linker = "C:\\Program Files\\LLVM\\bin\\lld-link.exe"
-rustflags = ["-C", "link-arg=/INCREMENTAL:NO"]

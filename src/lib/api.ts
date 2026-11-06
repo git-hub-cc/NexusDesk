@@ -132,7 +132,7 @@ export interface GitFileStatus { path: string; worktreePath: string; staged: boo
 export interface GitLogEntry { id: string; parents: string[]; message: string; author: string; time: number; refs: string[]; pushed: boolean; isHead: boolean }
 export interface GitRevisionChange { path: string; status: string }
 export interface GitSettings { remote: string; proxy: string; username: string; token: string }
-export interface CodexSettings { model: string; proxyUrl: string; apiKeyConfigured: boolean; trustMode: boolean }
+export interface CodexSettings { model: string; proxyUrl: string; apiKeyConfigured: boolean; trustMode: boolean; showTooltips: boolean }
 export type GitProvider = "github" | "gitlab" | "gitee";
 export interface GitRepository { name: string; fullName: string; cloneUrl: string; private: boolean }
 export interface GitCloneAuth { token: string; provider: GitProvider }
@@ -168,7 +168,7 @@ export const gitApi = {
 
 export const codexSettingsApi = {
     read: (): Promise<CodexSettings> => invoke("codex_settings_read"),
-    save: (input: { model: string; proxyUrl: string; apiKey?: string; trustMode: boolean }): Promise<void> => invoke("codex_settings_save", { input }),
+    save: (input: { model: string; proxyUrl: string; apiKey?: string; trustMode: boolean; showTooltips: boolean }): Promise<void> => invoke("codex_settings_save", { input }),
 };
 export const chatApi = {
     complete: (messages: { role: "user" | "assistant"; content: string }[]): Promise<string> => invoke("chat_completion", { messages }),

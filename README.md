@@ -91,3 +91,16 @@ Write-Host "WinGet 安装全部完成！" -ForegroundColor Green
 ## 隐私与数据
 
 语音识别在本地运行，录音和识别结果不会因识别流程自动上传到云端；但浏览器、音乐、视频、Git 和导航功能会按目标服务的规则发起网络请求。使用 GitHub Token、代理或其他凭据时，请只在可信环境中保存，并避免将凭据提交到项目文件或日志中。
+
+
+## 终端无法使用已安装软件
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+## winget只有一个软件源还无法自动安装
+```powershell
+winget source remove --name msstore
+```
+
+
