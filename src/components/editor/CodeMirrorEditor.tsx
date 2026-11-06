@@ -21,6 +21,7 @@ import { formatCode } from "./formatCode";
 import { countTreeGraphNames } from "@/lib/treeGraph";
 import { readUI, writeUI, projectKey } from "@/lib/uiPersistence";
 import { getSpeechTarget, setSpeechTarget } from "@/lib/speechTarget";
+import { curlToHttp } from "@/lib/curlToHttp";
 
 class SharedNodeCountWidget extends WidgetType {
   constructor(readonly count: number) { super(); }
@@ -611,6 +612,14 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
             }
           },
           paste: (event) => {
+            if (/\.(http|rest)$/i.test(tabRef.current?.path ?? "")) {
+              const converted = curlToHttp(event.clipboardData?.getData("text/plain") ?? "");
+              if (converted !== null && viewRef.current && !viewRef.current.state.readOnly) {
+                event.preventDefault();
+                viewRef.current.dispatch({ ...viewRef.current.state.replaceSelection(converted), userEvent: "input.paste", scrollIntoView: true });
+                return true;
+              }
+            }
             if (!/\.(md|markdown|mdown|mkd)$/i.test(tabRef.current?.path ?? "")) return false;
             const files = Array.from(event.clipboardData?.files ?? []);
             if (files.length) { event.preventDefault(); void importFiles(files); return true; }

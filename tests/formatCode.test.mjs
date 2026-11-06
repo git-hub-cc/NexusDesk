@@ -46,3 +46,26 @@ test("does not overwrite edits, switched tabs, read-only documents or invalid co
   await assert.rejects(formatCode(invalid, "test.json", () => true));
   assert.equal(invalid.state.doc.toString(), '{"a":');
 });
+
+test("formats JSON bodies in HTTP requests and preserves other content", async () => {
+  const input = '### first\nPOST https://example.com\nContent-Type: application/json\n\n{"a":1,"b":[2,3]}\n\n### second\nPOST https://example.com\n\nnot json\n';
+  const view = editor(input);
+  await formatCode(view, "test.http", () => true);
+  assert.equal(view.state.doc.toString(), '### first\nPOST https://example.com\nContent-Type: application/json\n\n{\n  "a": 1,\n  "b": [\n    2,\n    3\n  ]\n}\n\n### second\nPOST https://example.com\n\nnot json\n');
+  assert.equal(undo(view), true);
+  assert.equal(view.state.doc.toString(), input);
+});
+
+test("formats only the selected REST request body", async () => {
+  const input = 'POST https://a\n\n{"a":1}\n### next\nPOST https://b\n\n{"b":2}';
+  const view = editor(input, { anchor: 15, head: 20 });
+  await formatCode(view, "test.rest", () => true);
+  assert.equal(view.state.doc.toString(), 'POST https://a\n\n{\n  "a": 1\n}\n### next\nPOST https://b\n\n{"b":2}');
+});
+
+test("formats consecutive HTTP requests without separators", async () => {
+  const input = 'POST https://a\nContent-Type: application/json\n\n{"a":1}\n\nPOST https://b\n\n{"b":2}';
+  const view = editor(input);
+  await formatCode(view, "test.http", () => true);
+  assert.equal(view.state.doc.toString(), 'POST https://a\nContent-Type: application/json\n\n{\n  "a": 1\n}\n\nPOST https://b\n\n{\n  "b": 2\n}');
+});

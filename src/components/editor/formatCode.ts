@@ -22,15 +22,40 @@ async function loadFormatter() {
   return { prettier, plugins: plugins.map(plugin => plugin.default) };
 }
 
+async function formatHttp(source: string, selection: { from: number; to: number; empty: boolean }, prettier: typeof import("prettier/standalone"), plugins: object[]) {
+  const boundaries = [0, ...Array.from(source.matchAll(/^(?:###.*|(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE)\s+https?:\/\/\S+[^\r\n]*)$/gim), match => match.index!), source.length];
+  let result = "";
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    const start = boundaries[i], end = boundaries[i + 1];
+    const block = source.slice(start, end);
+    const request = /^(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE)\s+\S+.*$/im.exec(block);
+    if (!request) { result += block; continue; }
+    const afterRequest = request.index + request[0].length;
+    const separator = /\r?\n[\t ]*\r?\n/.exec(block.slice(afterRequest));
+    if (!separator) { result += block; continue; }
+    const bodyStart = afterRequest + separator.index + separator[0].length;
+    const body = block.slice(bodyStart);
+    const match = /^(\s*)([\s\S]*?)(\s*)$/.exec(body)!;
+    if (!match[2] || (!selection.empty && (selection.to <= start + bodyStart || selection.from >= end))) { result += block; continue; }
+    try {
+      const formatted = await prettier.format(match[2], { parser: "json-stringify", plugins, tabWidth: 2, endOfLine: source.includes("\r\n") ? "crlf" : "lf" });
+      result += block.slice(0, bodyStart) + match[1] + formatted.replace(/\r?\n$/, "") + match[3];
+    } catch { result += block; }
+  }
+  return result;
+}
+
 export async function formatCode(view: EditorView, path: string, isCurrent: () => boolean) {
   const original = view.state;
   if (original.readOnly || view.composing) return;
-  const parser = parsers[path.split(".").pop()?.toLowerCase() ?? ""];
-  if (!parser) throw new Error("当前文件类型暂不支持格式化");
+  const extension = path.split(".").pop()?.toLowerCase() ?? "";
+  const parser = parsers[extension];
+  const isHttp = extension === "http" || extension === "rest";
+  if (!parser && !isHttp) throw new Error("当前文件类型暂不支持格式化");
   const { prettier, plugins } = await loadFormatter();
   const source = original.doc.toString();
   const selection = original.selection.main;
-  const formatted = await prettier.format(source, {
+  const formatted = isHttp ? await formatHttp(source, selection, prettier, plugins) : await prettier.format(source, {
     parser, plugins, tabWidth: 2, endOfLine: "lf", proseWrap: "preserve",
     ...(!selection.empty ? { rangeStart: selection.from, rangeEnd: selection.to } : {}),
   });
