@@ -96,30 +96,15 @@ export function TreeGraphPreview({ content, path, pane, previewOnly, reverseTree
     const container = containerRef.current;
     if (!container || !flow) return;
     let frame = 0;
-    let panelDragging = false;
-    const fitSelection = () => {
-      const node = flow.getNodes().find(item => item.selected);
-      if (node) void flow.fitView({ nodes: [{ id: node.id }], duration: 0, minZoom: 0.8, maxZoom: 1.2, padding: 0.5 });
-    };
     const observer = new ResizeObserver(() => {
-      if (panelDragging) return;
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(fitSelection);
+      frame = requestAnimationFrame(() => {
+        const node = flow.getNodes().find(item => item.selected);
+        if (node) void flow.fitView({ nodes: [{ id: node.id }], duration: 0, minZoom: 0.8, maxZoom: 1.2, padding: 0.5 });
+      });
     });
-    const onPanelDrag = (event: Event) => {
-      panelDragging = (event as CustomEvent<boolean>).detail;
-      if (!panelDragging) {
-        cancelAnimationFrame(frame);
-        frame = requestAnimationFrame(fitSelection);
-      }
-    };
     observer.observe(container);
-    window.addEventListener("terminal-panel-drag", onPanelDrag);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("terminal-panel-drag", onPanelDrag);
-      cancelAnimationFrame(frame);
-    };
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
   }, [flow]);
   const userMoving = useRef(false);
   useEffect(() => {
