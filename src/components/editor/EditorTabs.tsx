@@ -1,7 +1,7 @@
 import { isImage } from "@/lib/assets";
 import { shallow } from "zustand/vanilla/shallow";
 import { useShallow } from "zustand/react/shallow";
-import React, { useState, useEffect, forwardRef, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, forwardRef, useRef } from "react";
 import * as ContextMenu from "@/lib/nativeMenu";
 import * as DropdownMenu from "@/lib/nativeDropdownMenu";
 import { X, ChevronDown, Pin, ExternalLink, GitBranch, Clock, Globe, Compass, Music2, Video, Smartphone, MessageCircle } from "lucide-react";
@@ -235,11 +235,12 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({ pane }) => {
   });
 
   // 自动滚动逻辑：当激活的 Tab 改变时，确保其在可视区域内
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!activeTabId || !scrollContainerRef.current) return;
     const container = scrollContainerRef.current;
-    const safeId = activeTabId.replace(/"/g, '\\"');
-    const activeEl = container.querySelector(`[data-tab-id="${safeId}"]`) as HTMLElement;
+    const activeEl = Array.from(container.querySelectorAll<HTMLElement>("[data-tab-id]")).find(
+      element => element.dataset.tabId === activeTabId,
+    );
 
     if (activeEl) {
       const containerRect = container.getBoundingClientRect();
