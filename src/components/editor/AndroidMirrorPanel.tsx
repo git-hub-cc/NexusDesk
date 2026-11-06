@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { createPortal } from "react-dom";
 import { ArrowLeft, House, Square, Power, RefreshCw, Smartphone, Maximize, Minimize, FolderOpen } from "lucide-react";
 import { MirrorAudio } from "./mirrorAudio";
 import { AndroidFileManager } from "./AndroidFileManager";
@@ -366,8 +367,9 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
     pointer.current = null;
   };
   const connected = status === "connected";
-  return <div ref={panel} data-mirror-fullscreen={fullscreen ? "true" : undefined}
+  const content = <div ref={panel} data-mirror-fullscreen={fullscreen ? "true" : undefined}
     className={`${fullscreen ? "fixed z-[10000] bg-black" : "absolute bg-ide-bg"} inset-0 flex flex-col ${active ? "" : "hidden"}`}
+    style={fullscreen ? { inset: 0 } : undefined}
     onKeyDownCapture={e => {
       if (e.key === "Escape" && fullscreenRequested.current) {
         e.preventDefault(); e.stopPropagation(); setMirrorFullscreen(false);
@@ -463,4 +465,5 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       {audioStatus && ` · ${audioStatus}`}
     </div>
   </div>;
+  return fullscreen ? createPortal(content, document.body) : content;
 }
