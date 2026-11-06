@@ -6,10 +6,10 @@
 .ide-content-surface:focus,
 .ide-content-surface:focus-visible { outline: none; }
 
-/* Keep the full drag target while painting only a centered 1px divider. */
+/* 让底部面板的纵向分割条与激活标签连续。 */
 .ide-resize-handle { flex-shrink: 0; background: linear-gradient(var(--ide-panel-border), var(--ide-panel-border)) center / var(--divider-size) no-repeat; touch-action: none; user-select: none; }
 .ide-resize-handle-x { --divider-size: 1px 100%; width: 4px; cursor: ew-resize; }
-.ide-resize-handle-y { --divider-size: 100% 1px; height: 4px; cursor: ns-resize; }
+.ide-resize-handle-y { height: 1px; background: var(--ide-panel-border); cursor: ns-resize; }
 .ide-resize-handle[role="separator"]:focus-visible { outline: 1px solid var(--ide-accent); outline-offset: -1px; }
 
 .activity-bar { display: flex; flex: 0 0 44px; flex-direction: column; gap: 8px; align-items: center; padding: 6px 0; border-right: 1px solid var(--ide-panel-border); background: var(--ide-panel-bg); user-select: none; }

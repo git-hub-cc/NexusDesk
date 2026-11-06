@@ -155,15 +155,15 @@ export function BottomPanel() {
     || /\bcodex\b/i.test(profile.command)
     || profile.name.toLowerCase() === "codex")
     ?? { id: "codex", name: "Codex", command: "codex" };
-  const tabClass = (selected: boolean) => `group flex shrink-0 items-center gap-1 px-3 h-full border-b-2 text-gray-400 hover:bg-ide-tab-hover hover:text-white ${selected ? "border-ide-accent text-white" : "border-transparent"}`;
+  const tabClass = (selected: boolean) => `group flex shrink-0 items-center gap-1 px-3 h-full text-gray-400 ${selected ? "bg-ide-tab-active-bg text-white hover:bg-ide-tab-active-bg" : "hover:bg-ide-tab-hover hover:text-white"}`;
 
   if (isSnapshot) return <div className="flex flex-col h-full"><div className="flex items-center justify-between px-3 h-8 shrink-0 border-b border-ide-panel-border text-xs"><span>历史快照 · 只读（终端已禁用）</span><PanelMinimizeButton panel="bottom" /></div><div className="flex-1 min-h-0"><GitPanel /></div></div>;
 
   return <div className="group/panel flex flex-col h-full">
-    <div className="flex items-center justify-between px-2 h-8 shrink-0 border-b border-ide-panel-border bg-ide-panel-bg text-xs">
-      <div className="flex min-w-0 flex-1 items-center">
-        <div ref={tabsRef} className="flex h-full min-w-0 shrink items-center overflow-hidden">
-        {gitInstalled && <button className={`${tabClass(activeTab === "git")} shrink-0`} onClick={() => setBottomPanelTab("git")}><GitBranch size={14} />版本控制</button>}
+    <div className="flex items-center justify-between pl-0 pr-2 h-8 shrink-0 border-b border-ide-panel-border bg-ide-panel-bg text-xs">
+      <div className="flex h-full min-w-0 flex-1 items-stretch">
+        <div ref={tabsRef} className="flex h-full min-w-0 shrink items-stretch overflow-hidden">
+        {gitInstalled && <button className={`${tabClass(activeTab === "git")} min-w-[120px] max-w-[200px] border-r border-ide-panel-border`} onClick={() => setBottomPanelTab("git")}><GitBranch size={14} />版本控制</button>}
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSessionDragEnd}>
           <SortableContext items={sessions.map(session => session.id)} strategy={sessionSortingStrategy}>
           {sessions.map(session => {
@@ -172,11 +172,11 @@ export function BottomPanel() {
 
           const sessionLabel = getSessionLabel(session.cwd, session.name);
           return <ContextMenu.Root key={session.id}><SessionTab id={session.id} pinned={!!session.isPinned}><ContextMenu.Trigger asChild>
-            <div data-session-id={session.id} title={session.cwd || session.name} className="group flex items-center shrink-0 h-full">
-            <button className={`${tabClass(activeTab === "terminal" && activeSessionId === session.id)} ${session.isPinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"}`} onClick={() => { setActiveSessionId(session.id); setBottomPanelTab("terminal"); }}>
+            <div data-session-id={session.id} title={session.cwd || session.name} className={`group flex items-center shrink-0 h-full min-w-[120px] max-w-[200px] border-r border-ide-panel-border ${activeTab === "terminal" && activeSessionId === session.id ? "bg-ide-tab-active-bg hover:bg-ide-tab-active-bg" : "hover:bg-ide-tab-hover"}`}>
+            <button className={`${tabClass(false)} min-w-0 flex-1 hover:bg-transparent ${activeTab === "terminal" && activeSessionId === session.id ? "text-white" : ""} ${session.isPinned ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}`} onClick={() => { setActiveSessionId(session.id); setBottomPanelTab("terminal"); }}>
               {isExited ? <CircleDot size={14} className="text-gray-500" /> : isCodex ? <img src={openaiIcon} alt="" className="h-3.5 w-3.5 shrink-0 opacity-70 group-hover:opacity-100" /> : <Terminal size={14} />}
+              <span className="truncate">{sessionLabel}</span>
               {session.isPinned && <Pin size={12} className="shrink-0 text-gray-400 rotate-45" />}
-              {sessionLabel}
             </button>
             <button aria-label={`关闭 ${sessionLabel} 会话`} title={`关闭 ${sessionLabel} 会话`} className="flex h-5 w-5 items-center justify-center rounded text-gray-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/15 hover:text-white active:bg-white/20" onClick={() => {
               removeSession(session.id);
