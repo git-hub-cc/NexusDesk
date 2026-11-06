@@ -51,14 +51,13 @@ async function boot() {
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<GlobalSpeechInput />);
     return;
   }
-  const [{ default: App }, { CaptureResult }, { useWorkspaceStore }, { useTerminalStore }, { useBrowserHistoryStore }] = await Promise.all([
+  const [{ default: App }, { CaptureResult }, { useWorkspaceStore }, { useTerminalStore }] = await Promise.all([
     import("./App"), import("./components/CaptureResult"), import("./store/workspaceStore"),
-    import("./store/terminalStore"), import("./store/browserHistoryStore"),
+    import("./store/terminalStore"),
   ]);
   window.addEventListener("global-settings-changed", () => {
     void useWorkspaceStore.persist?.rehydrate();
     void useTerminalStore.persist.rehydrate();
-    void useBrowserHistoryStore.persist.rehydrate();
   });
   const snapshotUI = () => {
     window.dispatchEvent(new Event("nexusdesk-snapshot-ui"));

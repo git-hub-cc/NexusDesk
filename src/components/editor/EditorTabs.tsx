@@ -5,7 +5,7 @@ import React, { useState, useEffect, forwardRef, useRef } from "react";
 import * as ContextMenu from "@/lib/nativeMenu";
 import * as DropdownMenu from "@/lib/nativeDropdownMenu";
 import { X, ChevronDown, Pin, ExternalLink, GitBranch, Clock, Globe, Compass, Music2, Video, Smartphone, MessageCircle } from "lucide-react";
-import { useBrowserHistoryStore } from "@/store/browserHistoryStore";
+import { BROWSER_HOME } from "./BrowserEditor";
 import { MUSIC_HOME, VIDEO_HOME, CHAT_HOME, MIRROR_HOME, retryFileSave, useWorkspaceStore, type Tab } from "@/store/workspaceStore";
 import { openContextMenuFromKeyboard } from "@/lib/contextMenu";
 import { confirmAction } from "@/lib/dialogs";
@@ -19,13 +19,12 @@ interface EditorTabsProps {
 }
 
 const NewTabButtons = ({ pane }: EditorTabsProps) => {
-  const open = (kind: "web" | "music" | "video" | "chat" | "mirror") => {
+  const open = (kind: "navigation" | "music" | "video" | "chat" | "mirror") => {
     const state = useWorkspaceStore.getState();
     state.setFocusedPane(pane);
     const root = state.rootPath ?? "";
-    if (kind === "web") {
-      const id = `browser:${crypto.randomUUID()}`;
-      state.openTab({ id, path: id, title: "网页", browser: { root, url: useBrowserHistoryStore.getState().entries[0]?.url ?? "about:blank" } });
+    if (kind === "navigation") {
+      state.openTab({ id: "browser:navigation", path: "browser:navigation", title: "导航", browser: { root, url: BROWSER_HOME } });
     } else if (kind === "mirror") {
       state.openTab({ id: MIRROR_HOME, path: MIRROR_HOME, title: "安卓投屏", browser: { root, url: MIRROR_HOME } });
     } else if (kind === "music") {
@@ -38,8 +37,8 @@ const NewTabButtons = ({ pane }: EditorTabsProps) => {
   };
   return (
     <div className="flex h-full shrink-0 items-center">
-      <button type="button" aria-label="打开网页" title="网页" onClick={() => open("web")} className="flex h-9 shrink-0 items-center gap-1.5 px-2 text-xs text-gray-400 outline-none hover:bg-ide-tab-hover hover:text-white">
-        <Globe size={14} />
+      <button type="button" aria-label="打开导航" title="导航" onClick={() => open("navigation")} className="flex h-9 shrink-0 items-center gap-1.5 px-2 text-xs text-gray-400 outline-none hover:bg-ide-tab-hover hover:text-white">
+        <Compass size={14} />
       </button>
       <button type="button" aria-label="打开音乐" title="音乐" onClick={() => open("music")} className="flex h-9 shrink-0 items-center gap-1.5 px-2 text-xs text-gray-400 outline-none hover:bg-ide-tab-hover hover:text-white">
         <Music2 size={14} />

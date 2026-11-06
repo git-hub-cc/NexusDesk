@@ -10,7 +10,6 @@ import { MUSIC_HOME, VIDEO_HOME, CHAT_HOME } from "@/store/workspaceStore";
 import { MusicEditor } from "@/components/music/MusicEditor";
 import { VideoEditor } from "@/components/video/VideoEditor";
 import { ChatEditor } from "@/components/chat/ChatEditor";
-import { useBrowserHistoryStore } from "@/store/browserHistoryStore";
 import { BrowserPasswords } from "./BrowserPasswords";
 import { BrowserDownloads } from "./BrowserDownloads";
 import { BrowserExtensions, CHROME_EXTENSION_STORE_URL } from "./BrowserExtensions";
@@ -128,7 +127,6 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
         if (disposed) return;
         currentUrl.current = url;
         if (!editingRef.current) setAddress(url === "about:blank" ? "" : url);
-        if (title === undefined) useBrowserHistoryStore.getState().visit(url);
         useWorkspaceStore.setState(state => ({
           leftTabs: updateBrowserTabs(state.leftTabs, tab.id, url, title),
           rightTabs: updateBrowserTabs(state.rightTabs, tab.id, url, title),
