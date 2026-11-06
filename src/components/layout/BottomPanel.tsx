@@ -3,7 +3,12 @@ import { PanelMinimizeButton } from "./PanelMinimizeButton";
 import { isSnapshot } from "@/lib/snapshot";
 import { useEffect, useRef, useState } from "react";
 import { gitApi } from "@/lib/api";
-import { ClipboardCheck, GitBranch, Settings, Terminal, X, CircleDot } from "lucide-react";
+import { ClipboardCheck, GitBranch, Settings, Terminal, X, CircleDot, ChevronDown } from "lucide-react";
+import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import * as DropdownMenu from "@/lib/nativeDropdownMenu";
+import * as ContextMenu from "@/lib/nativeMenu";
 import openaiIcon from "@/assets/openai.svg";
 import { useLayoutStore } from "@/store/layoutStore";
 import { useWorkspaceStore } from "@/store/workspaceStore";
@@ -15,15 +20,64 @@ import { GitPanel } from "@/components/git/GitPanel";
 import { TerminalSettings } from "./TerminalSettings";
 import { TerminalSession } from "./TerminalSession";
 
+function SessionTab({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.35 : undefined }} {...attributes} {...listeners} className="flex h-full shrink-0 items-center">
+    {children}
+  </div>;
+}
+
+function getSessionLabel(cwd: string | null, fallback: string) {
+  const directory = cwd?.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
+  return directory || fallback;
+}
+
 export function BottomPanel() {
   const { bottomPanelTab: activeTab, setBottomPanelTab } = useLayoutStore();
-  const { profiles, sessions, activeSessionId, createSession, removeSession, setActiveSessionId, launchError, clearLaunchError } = useTerminalStore();
+  const { profiles, sessions, activeSessionId, createSession, removeSession, setActiveSessionId, reorderSessions, toggleSessionPin, launchError, clearLaunchError } = useTerminalStore();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [gitInstalled, setGitInstalled] = useState<boolean | null>(null);
   const [exitedSessions, setExitedSessions] = useState<Record<string, boolean>>({});
   const [autoReviewEnabled, setAutoReviewEnabled] = useState(() => settingsStorage.getItem("nexusdesk.codex.autoReview") === "true");
   const [reviewing, setReviewing] = useState(false);
   const autoReviewing = useRef(false);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const [hasTabOverflow, setHasTabOverflow] = useState(false);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  useEffect(() => {
+    const container = tabsRef.current;
+    if (!container) return;
+    const updateOverflow = () => setHasTabOverflow(container.scrollWidth > container.clientWidth + 1);
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(container);
+    if (container.parentElement) observer.observe(container.parentElement);
+    updateOverflow();
+    return () => observer.disconnect();
+  }, [sessions, gitInstalled, activeTab, autoReviewEnabled]);
+
+  useEffect(() => {
+    const container = tabsRef.current;
+    const active = container?.querySelector<HTMLElement>(`[data-session-id="${activeSessionId}"]`);
+    if (!container || !active) return;
+    const parent = container.getBoundingClientRect();
+    const item = active.getBoundingClientRect();
+    if (item.left < parent.left) container.scrollLeft -= parent.left - item.left;
+    else if (item.right > parent.right) container.scrollLeft += item.right - parent.right;
+  }, [activeSessionId, sessions]);
+
+  const handleSessionDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    reorderSessions(sessions.findIndex(session => session.id === active.id), sessions.findIndex(session => session.id === over.id));
+  };
+
+  const closeSessions = (ids: string[]) => {
+    ids.forEach(id => {
+      removeSession(id);
+      setExitedSessions(prev => { const next = { ...prev }; delete next[id]; return next; });
+    });
+    if (ids.length === sessions.length && gitInstalled) setBottomPanelTab("git");
+  };
 
   useEffect(() => {
     const updateAutoReview = () => setAutoReviewEnabled(settingsStorage.getItem("nexusdesk.codex.autoReview") === "true");
@@ -101,24 +155,52 @@ export function BottomPanel() {
 
   return <div className="group/panel flex flex-col h-full">
     <div className="flex items-center justify-between px-2 h-8 shrink-0 border-b border-ide-panel-border bg-ide-panel-bg text-xs">
-      <div className="flex items-center h-full min-w-0 overflow-x-auto">
-        {gitInstalled && <button className={tabClass(activeTab === "git")} onClick={() => setBottomPanelTab("git")}><GitBranch size={14} />版本控制</button>}
-        {sessions.map(session => {
+      <div className="flex min-w-0 flex-1 items-center">
+        <div ref={tabsRef} className="flex h-full min-w-0 shrink items-center overflow-hidden">
+        {gitInstalled && <button className={`${tabClass(activeTab === "git")} shrink-0`} onClick={() => setBottomPanelTab("git")}><GitBranch size={14} />版本控制</button>}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSessionDragEnd}>
+          <SortableContext items={sessions.map(session => session.id)} strategy={horizontalListSortingStrategy}>
+          {sessions.map(session => {
           const isCodex = session.command.toLowerCase().includes("codex") || session.name.toLowerCase().includes("codex");
           const isExited = exitedSessions[session.id];
 
-          return <div key={session.id} className="flex items-center shrink-0 h-full">
-            <button className={tabClass(activeTab === "terminal" && activeSessionId === session.id)} onClick={() => { setActiveSessionId(session.id); setBottomPanelTab("terminal"); }}>
+          const sessionLabel = getSessionLabel(session.cwd, session.name);
+          return <ContextMenu.Root key={session.id}><SessionTab id={session.id}><ContextMenu.Trigger asChild>
+            <div data-session-id={session.id} title={session.cwd || session.name} className="group flex items-center shrink-0 h-full">
+            <button className={`${tabClass(activeTab === "terminal" && activeSessionId === session.id)} cursor-grab active:cursor-grabbing`} onClick={() => { setActiveSessionId(session.id); setBottomPanelTab("terminal"); }}>
               {isExited ? <CircleDot size={14} className="text-gray-500" /> : isCodex ? <img src={openaiIcon} alt="" className="h-3.5 w-3.5 shrink-0 opacity-70 group-hover:opacity-100" /> : <Terminal size={14} />}
-              {session.name}
+              {sessionLabel}
             </button>
-            <button aria-label={`关闭 ${session.name} 会话`} className="flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-white/15 hover:text-white active:bg-white/20" onClick={() => {
+            <button aria-label={`关闭 ${sessionLabel} 会话`} title={`关闭 ${sessionLabel} 会话`} className="flex h-5 w-5 items-center justify-center rounded text-gray-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/15 hover:text-white active:bg-white/20" onClick={() => {
               removeSession(session.id);
               setExitedSessions(prev => { const next = { ...prev }; delete next[session.id]; return next; });
               if (sessions.length === 1 && gitInstalled) setBottomPanelTab("git");
             }}><X size={12} /></button>
-          </div>
+            </div>
+          </ContextMenu.Trigger></SessionTab>
+          <ContextMenu.Portal>
+            <ContextMenu.Content aria-label="终端标签操作" className="ide-menu w-48 text-sm" onClick={event => event.stopPropagation()}>
+              <ContextMenu.Item className="ide-menu-item" onSelect={() => toggleSessionPin(session.id)}>{session.isPinned ? "取消固定" : "固定"}</ContextMenu.Item>
+              <ContextMenu.Separator className="h-px bg-[#4b5054] my-1 mx-2" />
+              <ContextMenu.Item className="ide-menu-item" onSelect={() => closeSessions(sessions.filter(item => item.id !== session.id && !item.isPinned).map(item => item.id))}>关闭其他</ContextMenu.Item>
+              <ContextMenu.Item className="ide-menu-item" onSelect={() => closeSessions(sessions.slice(0, sessions.indexOf(session)).filter(item => !item.isPinned).map(item => item.id))}>关闭左侧</ContextMenu.Item>
+              <ContextMenu.Item className="ide-menu-item" onSelect={() => closeSessions(sessions.slice(sessions.indexOf(session) + 1).filter(item => !item.isPinned).map(item => item.id))}>关闭右侧</ContextMenu.Item>
+            </ContextMenu.Content>
+          </ContextMenu.Portal>
+          </ContextMenu.Root>
         })}
+          </SortableContext>
+        </DndContext>
+        </div>
+        {hasTabOverflow && <DropdownMenu.Root>
+          <DropdownMenu.Trigger className="flex h-8 w-8 shrink-0 items-center justify-center text-gray-400 hover:bg-ide-tab-hover hover:text-white" aria-label="显示所有面板标签" title="显示所有面板标签"><ChevronDown size={14} /></DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content align="end" sideOffset={4} className="ide-menu w-64 max-h-[50vh] overflow-y-auto z-50">
+              {gitInstalled && <DropdownMenu.Item className={`ide-menu-item ${activeTab === "git" ? "bg-ide-selection/30 text-white" : ""}`} onSelect={() => setBottomPanelTab("git")}>版本控制</DropdownMenu.Item>}
+              {sessions.map(session => <DropdownMenu.Item key={session.id} title={session.cwd || session.name} className={`ide-menu-item ${activeTab === "terminal" && activeSessionId === session.id ? "bg-ide-selection/30 text-white" : ""}`} onSelect={() => { setActiveSessionId(session.id); setBottomPanelTab("terminal"); }}>{getSessionLabel(session.cwd, session.name)}</DropdownMenu.Item>)}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>}
         <button type="button" title="新建终端" aria-label="新建终端" onClick={() => void addSession(terminalProfile)} className="flex h-full shrink-0 items-center gap-1.5 px-3 text-gray-400 hover:bg-ide-tab-hover hover:text-white">
           <Terminal size={14} />
         </button>

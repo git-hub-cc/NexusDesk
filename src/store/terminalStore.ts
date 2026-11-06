@@ -16,6 +16,7 @@ export interface SessionInfo {
   name: string;
   command: string;
   cwd: string | null;
+  isPinned?: boolean;
 }
 
 interface TerminalState {
@@ -29,6 +30,8 @@ interface TerminalState {
   createSession: (profile: TerminalProfile, cwd: string | null) => Promise<boolean>;
   removeSession: (id: string) => void;
   setActiveSessionId: (id: string) => void;
+  reorderSessions: (oldIndex: number, newIndex: number) => void;
+  toggleSessionPin: (id: string) => void;
 }
 
 export const useTerminalStore = create<TerminalState>()(persist(
@@ -71,6 +74,17 @@ export const useTerminalStore = create<TerminalState>()(persist(
       });
     },
     setActiveSessionId: (id) => set({ activeSessionId: id }),
+    reorderSessions: (oldIndex, newIndex) => set(state => {
+      if (oldIndex < 0 || newIndex < 0 || oldIndex >= state.sessions.length || newIndex >= state.sessions.length || oldIndex === newIndex) return state;
+      const sessions = [...state.sessions];
+      const [session] = sessions.splice(oldIndex, 1);
+      sessions.splice(newIndex, 0, session);
+      return { sessions: [...sessions.filter(item => item.isPinned), ...sessions.filter(item => !item.isPinned)] };
+    }),
+    toggleSessionPin: (id) => set(state => {
+      const sessions = state.sessions.map(session => session.id === id ? { ...session, isPinned: !session.isPinned } : session);
+      return { sessions: [...sessions.filter(item => item.isPinned), ...sessions.filter(item => !item.isPinned)] };
+    }),
   }),
   {
     name: "nexusdesk-terminal-profiles",
