@@ -101,6 +101,19 @@ test("browser preview handles shortcut events without registering a native liste
   env.cleanup();
 });
 
+test("Win+Space toggles speech and prevents the browser default", () => {
+  const env = setup({ native: false });
+  const event = new Event("keydown", { cancelable: true });
+  Object.defineProperties(event, {
+    ctrlKey: { value: false }, altKey: { value: false }, shiftKey: { value: false },
+    metaKey: { value: true }, code: { value: "Space" }, isComposing: { value: false },
+  });
+  env.window.dispatchEvent(event);
+  assert.equal(env.open, true);
+  assert.equal(event.defaultPrevented, true);
+  env.cleanup();
+});
+
 test("workspace handles Git speech while editor and terminal retain their own panels", () => {
   for (const [target, opens] of [[{ kind: "git" }, true], [{ kind: "editor", pane: "left" }, false], [{ kind: "terminal" }, false]]) {
     const env = setup({ native: false, target });

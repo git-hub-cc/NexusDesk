@@ -38,10 +38,18 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
     const clearTarget = () => {
       setSpeechTarget(null);
     };
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+        && event.code === "Space" && !event.isComposing) {
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent("nexusdesk-speech-toggle"));
+      }
+    };
     window.addEventListener("nexusdesk-speech-toggle", toggle);
     window.addEventListener("nexusdesk-speech-close", close);
     window.addEventListener("nexusdesk-speech-state", syncSpeechState);
     window.addEventListener("blur", clearTarget);
+    window.addEventListener("keydown", handleShortcut);
     // 原生全局快捷键通过 Tauri 事件送达，统一转交给现有语音开关。
     let disposed = false;
     let unlisten: (() => void) | undefined;
@@ -62,6 +70,7 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
       window.removeEventListener("nexusdesk-speech-close", close);
       window.removeEventListener("nexusdesk-speech-state", syncSpeechState);
       window.removeEventListener("blur", clearTarget);
+      window.removeEventListener("keydown", handleShortcut);
     };
   }, []);
 
@@ -110,7 +119,7 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
           className="activity-bar-button no-drag-region"
           aria-label="语音转文字"
           aria-pressed={speechOpen}
-          title="语音转文字"
+          title="语音转文字 (Win+空格)"
           onClick={() => window.dispatchEvent(new CustomEvent("nexusdesk-speech-toggle"))}
         >
           <Mic size={20} strokeWidth={1.75} aria-hidden="true" />
