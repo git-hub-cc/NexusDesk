@@ -73,7 +73,7 @@ export function CodexSettings() {
         <input type="checkbox" className="mt-0.5 accent-ide-accent" checked={autoReview} onChange={event => setAutoReview(event.target.checked)} />
         <span><span className="block">自动审核模式</span><span className="mt-0.5 block text-xs text-gray-400">开启后，在底部面板点击审核按钮，提交未忽略的变更并启动一次 Codex 变更审核。</span></span>
       </label>
-      {autoReview && <label className="ml-6 grid gap-1 border-l-2 border-ide-panel-border pl-3">自动审核提示词<textarea className={`${inputClass} min-h-20 resize-y`} value={autoReviewPrompt} onChange={event => setAutoReviewPrompt(event.target.value)} placeholder={DEFAULT_AUTO_REVIEW_PROMPT} spellCheck={false} />
+      {autoReview && <label className="ml-6 grid gap-1 border-l border-ide-panel-border pl-3"><textarea aria-label="自动审核提示词" className={`${inputClass} min-h-20 resize-y`} value={autoReviewPrompt} onChange={event => setAutoReviewPrompt(event.target.value)} placeholder={DEFAULT_AUTO_REVIEW_PROMPT} spellCheck={false} />
           <span className="text-xs text-gray-400">提交编号会自动附加在提示词前。</span>
         </label>}
       {error && <p role="alert" className="break-all text-red-400">{error}</p>}
