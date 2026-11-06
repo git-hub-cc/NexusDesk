@@ -72,16 +72,54 @@ fn trace_browser_result<T, E: std::fmt::Display>(label: &str, operation: &str, r
 // WebView2 otherwise drops session cookies when its last browser process exits.
 // Keep Wry's default arguments when overriding its browser arguments.
 #[cfg(target_os = "windows")]
-const BROWSER_ARGS: &str = concat!(
+const BROWSER_BASE_ARGS: &str = concat!(
     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,IntensiveWakeUpThrottling ",
     // Tauri restores tabs itself; do not also restore Chromium's previous
     // browser session (which may have ended in an authentication transition).
     "--persist-session-cookies ",
-    "--disable-quic --proxy-auto-detect=false ",
+    "--disable-quic ",
     "--disable-background-timer-throttling --disable-backgrounding-occluded-windows ",
     "--disable-renderer-backgrounding --enable-gpu-rasterization --ignore-gpu-blocklist ",
     "--disk-cache-size=1073741824"
 );
+
+#[cfg(target_os = "windows")]
+fn browser_proxy_mode() -> &'static str {
+    use winreg::{enums::{HKEY_CURRENT_USER, KEY_READ}, RegKey};
+
+    let Ok(internet_settings) = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", KEY_READ)
+    else { return "unknown"; };
+    let proxy_enabled = internet_settings.get_value::<u32, _>("ProxyEnable").unwrap_or_default() != 0
+        && internet_settings.get_value::<String, _>("ProxyServer").is_ok_and(|value| !value.trim().is_empty());
+    let pac_enabled = internet_settings.get_value::<String, _>("AutoConfigURL").is_ok_and(|value| !value.trim().is_empty());
+    let auto_detect = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Connections", KEY_READ)
+        .and_then(|connections| connections.get_raw_value("DefaultConnectionSettings"))
+        .ok()
+        .and_then(|value| value.bytes.get(4..8).map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap())))
+        .is_some_and(|flags| flags & 8 != 0);
+
+    match (proxy_enabled, pac_enabled, auto_detect) {
+        (true, true, _) => "static+pac",
+        (true, false, true) => "static+wpad",
+        (true, false, false) => "static",
+        (false, true, true) => "pac+wpad",
+        (false, true, false) => "pac",
+        (false, false, true) => "wpad",
+        (false, false, false) => "direct",
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn browser_proxy_mode() -> &'static str { "platform-default" }
+
+#[cfg(target_os = "windows")]
+fn browser_args(proxy_mode: &str) -> String {
+    let mut args = BROWSER_BASE_ARGS.to_string();
+    if proxy_mode == "direct" { args.push_str("--proxy-auto-detect=false "); }
+    args
+}
 
 fn browser_directory(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let directory = crate::profiles::data_directory(app).join("browser");
@@ -360,7 +398,12 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
     let app_handle = window.app_handle().clone();
     let popup_directory = directory.clone();
     let popup_owner = window.clone();
-    log::info!(target: "browser", "label={label} create url={} profile={} args={}", diagnostic_url(&browser_url(&url)?), directory.display(), if cfg!(windows) { "persistent-session/default-feature-overrides" } else { "default" });
+    let proxy_mode = browser_proxy_mode();
+    #[cfg(target_os = "windows")]
+    let browser_args = browser_args(proxy_mode);
+    #[cfg(target_os = "windows")]
+    let popup_browser_args = browser_args.clone();
+    log::info!(target: "browser", "label={label} create url={} profile={} proxy_mode={proxy_mode} args={}", diagnostic_url(&browser_url(&url)?), directory.display(), if cfg!(windows) { "persistent-session/default-feature-overrides" } else { "default" });
     let navigation_label = label.clone();
     let load_label = label.clone();
     let title_label = label.clone();
@@ -488,7 +531,7 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
             })
             .title("网页授权");
             #[cfg(target_os = "windows")]
-            let builder = builder.additional_browser_args(BROWSER_ARGS).browser_extensions_enabled(true);
+            let builder = builder.additional_browser_args(&popup_browser_args).browser_extensions_enabled(true);
             match builder.build() {
                 Ok(window) => {
                     #[cfg(windows)]
@@ -513,7 +556,7 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
             }
         });
     #[cfg(target_os = "windows")]
-    let builder = builder.additional_browser_args(BROWSER_ARGS).browser_extensions_enabled(true);
+    let builder = builder.additional_browser_args(&browser_args).browser_extensions_enabled(true);
     let (position, size) = (tauri::LogicalPosition::new(x, y), tauri::LogicalSize::new(width.max(1.), height.max(1.)));
     let view = trace_browser_result("new-child", "add-child", window.add_child(builder, position, size))?;
     #[cfg(target_os = "windows")]
