@@ -101,12 +101,11 @@ test("browser preview handles shortcut events without registering a native liste
   env.cleanup();
 });
 
-test("Win+Space toggles speech and prevents the browser default", () => {
+test("Ctrl+left click toggles speech and prevents the browser default", () => {
   const env = setup({ native: false });
-  const event = new Event("keydown", { cancelable: true });
+  const event = new Event("mousedown", { cancelable: true });
   Object.defineProperties(event, {
-    ctrlKey: { value: false }, altKey: { value: false }, shiftKey: { value: false },
-    metaKey: { value: true }, code: { value: "Space" }, isComposing: { value: false },
+    ctrlKey: { value: true }, button: { value: 0 },
   });
   env.window.dispatchEvent(event);
   assert.equal(env.open, true);

@@ -38,9 +38,9 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
     const clearTarget = () => {
       setSpeechTarget(null);
     };
-    const handleShortcut = (event: KeyboardEvent) => {
-      if (event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
-        && event.code === "Space" && !event.isComposing) {
+    const handleShortcut = (event: MouseEvent) => {
+      if (event.ctrlKey && event.button === 0) {
+        if ((event.target as HTMLElement | null)?.closest?.('[aria-label="语音转文字"]')) return;
         event.preventDefault();
         window.dispatchEvent(new CustomEvent("nexusdesk-speech-toggle"));
       }
@@ -49,7 +49,7 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
     window.addEventListener("nexusdesk-speech-close", close);
     window.addEventListener("nexusdesk-speech-state", syncSpeechState);
     window.addEventListener("blur", clearTarget);
-    window.addEventListener("keydown", handleShortcut);
+    window.addEventListener("mousedown", handleShortcut);
     // 原生全局快捷键通过 Tauri 事件送达，统一转交给现有语音开关。
     let disposed = false;
     let unlisten: (() => void) | undefined;
@@ -70,7 +70,7 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
       window.removeEventListener("nexusdesk-speech-close", close);
       window.removeEventListener("nexusdesk-speech-state", syncSpeechState);
       window.removeEventListener("blur", clearTarget);
-      window.removeEventListener("keydown", handleShortcut);
+      window.removeEventListener("mousedown", handleShortcut);
     };
   }, []);
 
@@ -119,7 +119,7 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
           className="activity-bar-button no-drag-region"
           aria-label="语音转文字"
           aria-pressed={speechOpen}
-          title="语音转文字 (Win+空格)"
+          title="语音转文字 (Ctrl+鼠标左键)"
           onClick={() => window.dispatchEvent(new CustomEvent("nexusdesk-speech-toggle"))}
         >
           <Mic size={20} strokeWidth={1.75} aria-hidden="true" />

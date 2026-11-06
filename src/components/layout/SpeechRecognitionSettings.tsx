@@ -41,7 +41,7 @@ export function SpeechRecognitionSettings() {
       <p className="text-xs text-gray-400">模型首次使用时自动下载，之后可离线识别；当前使用 CPU 推理。</p>
       <div className="rounded border border-ide-panel-border bg-ide-bg p-3">
         <h3 className="font-medium">全局跨应用语音输入（Windows）</h3>
-        <p className="mt-2 text-xs leading-relaxed text-gray-400">点击左侧边栏的语音转文字按钮即可开启或关闭语音识别。悬浮窗显示录音状态，每段转写完成后自动填入当前输入光标处；切换输入框可继续输入。</p>
+        <p className="mt-2 text-xs leading-relaxed text-gray-400">按住 Ctrl 并点击鼠标左键即可开启或关闭语音识别，也可点击左侧边栏的语音转文字按钮。悬浮窗显示录音状态，每段转写完成后自动填入当前输入光标处；切换输入框可继续输入。</p>
         <p className="mt-2 text-xs leading-relaxed text-gray-400">目标位置需要支持文本粘贴；仅悬停鼠标不会建立文字插入光标。自动填入会使用系统剪贴板；向以管理员身份运行的应用输入时，需要以相同权限运行 NexusDesk。</p>
       </div>
       <label className="flex items-start gap-2"><input className="mt-1 accent-ide-accent" type="checkbox" checked={preferences.filterNoise} onChange={event => update({ ...preferences, filterNoise: event.target.checked })} /><span>过滤杂音标记<span className="mt-1 block text-xs text-gray-400">忽略音乐、掌声、静音等非语音标记。</span></span></label>
