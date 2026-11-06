@@ -135,7 +135,7 @@ export function BottomPanel() {
       }
       const prompt = settingsStorage.getItem(AUTO_REVIEW_PROMPT_KEY)?.trim() || DEFAULT_AUTO_REVIEW_PROMPT;
       const reviewText = `${commitId}${prompt}`.replace(/[\r\n]+/g, " ").replace(/'/g, "''");
-      const reviewCommand = `codex '${reviewText}'`;
+      const reviewCommand = `codex --no-alt-screen '${reviewText}'`;
       const reviewProfile = { id: "codex-auto-review", name: "Codex 自动审核", command: reviewCommand };
       if (await createSession(reviewProfile, root)) {
         const id = useTerminalStore.getState().activeSessionId;
