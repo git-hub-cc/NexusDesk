@@ -266,6 +266,7 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({ pane }) => {
                 setNodeRef(node);
                 scrollContainerRef.current = node;
               }}
+              data-tabs-container={pane}
               className={`min-w-0 flex-1 relative flex overflow-x-auto overflow-y-hidden hide-scroll ${isFocused ? '' : 'opacity-80'}`}
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', scrollBehavior: 'smooth' }}
               onClick={() => { setFocusedPane(pane); setSpeechTarget({ kind: "editor", pane }); }}
@@ -274,11 +275,10 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({ pane }) => {
               {tabs.map((tab) => (
                   <SortableTab key={tab.id} tab={tab} pane={pane} isActive={tab.id === activeTabId} closeImages={closeImages} tabs={tabs} />
               ))}
-              <NewTabButtons pane={pane} />
             </SortableContext>
             <div data-tauri-drag-region className="drag-region h-full min-w-0 flex-1" />
           </div>
-
+          <NewTabButtons pane={pane} />
 
         </div>
       </>
@@ -289,6 +289,22 @@ export function EditorTabList({ pane }: EditorTabsProps) {
   const tabs = useTabMetadata(pane);
   const activeTabId = useWorkspaceStore(state => pane === "left" ? state.activeLeftTabId : state.activeRightTabId);
   const { setActiveTab, reorderTabs } = useWorkspaceStore(useShallow(state => ({ setActiveTab: state.setActiveTab, reorderTabs: state.reorderTabs })));
+  const [hasOverflow, setHasOverflow] = React.useState(false);
+
+  useEffect(() => {
+    const container = document.querySelector(`[data-tabs-container="${pane}"]`);
+    if (!(container instanceof HTMLElement)) return;
+
+    const updateOverflow = () => setHasOverflow(container.scrollWidth > container.clientWidth + 1);
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(container);
+    if (container.parentElement) observer.observe(container.parentElement);
+    updateOverflow();
+    return () => observer.disconnect();
+  }, [pane, tabs]);
+
+  if (!hasOverflow) return null;
+
   return (
           <DropdownMenu.Root>
             <DropdownMenu.Trigger className="window-control" aria-label="显示所有标签页" title="显示所有标签页" disabled={tabs.length === 0}>

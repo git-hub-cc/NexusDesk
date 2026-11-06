@@ -873,18 +873,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
           if (exists) {
             if (tab.diff !== undefined) {
-              const updated = tabs.map(t => t.id === tab.id ? tab : t);
+              const updated = sortTabs([tab, ...tabs.filter(t => t.id !== tab.id)]);
               const nextLeft = pane === "left" ? updated : state.leftTabs;
               const nextRight = pane === "right" ? updated : state.rightTabs;
               const resolved = resolveTabTitles(nextLeft, nextRight, state.rootPath);
               return { ...resolved, activeLeftTabId: pane === "left" ? tab.id : state.activeLeftTabId, activeRightTabId: pane === "right" ? tab.id : state.activeRightTabId };
             }
+            const reorderedTabs = sortTabs([exists, ...tabs.filter(t => t.id !== tab.id)]);
             return pane === "left"
-              ? { activeLeftTabId: tab.id }
-              : { activeRightTabId: tab.id };
+              ? { leftTabs: reorderedTabs, activeLeftTabId: tab.id }
+              : { rightTabs: reorderedTabs, activeRightTabId: tab.id };
           }
 
-          const newTabs = sortTabs([...tabs, tab]);
+          const newTabs = sortTabs([tab, ...tabs]);
           const nextLeft = pane === "left" ? newTabs : state.leftTabs;
           const nextRight = pane === "right" ? newTabs : state.rightTabs;
           const resolved = resolveTabTitles(nextLeft, nextRight, state.rootPath);
