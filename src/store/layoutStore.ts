@@ -54,6 +54,19 @@ export const useLayoutStore = create<LayoutState>((set) => ({
 const defaults = Object.fromEntries(Object.entries(useLayoutStore.getState()).filter(([, value]) => typeof value !== "function"));
 let layoutProject: string | null = null;
 let restoring = false;
+let layoutResizing = false;
+let layoutChangedDuringResize = false;
+
+export function setLayoutResizing(resizing: boolean) {
+  if (layoutResizing === resizing) return;
+  layoutResizing = resizing;
+  if (layoutResizing || !layoutChangedDuringResize) return;
+  layoutChangedDuringResize = false;
+  const state = useLayoutStore.getState();
+  if (layoutProject && !restoring) {
+    writeUI(layoutProject, "layout", Object.fromEntries(Object.entries(state).filter(([, value]) => typeof value !== "function")));
+  }
+}
 export function restoreProjectLayout(root: string) {
   const saved = readUI<Record<string, unknown>>(root, "layout");
   const values = { ...defaults };
@@ -72,5 +85,9 @@ export function restoreProjectLayout(root: string) {
 }
 useLayoutStore.subscribe(state => {
   if (!layoutProject || restoring) return;
+  if (layoutResizing) {
+    layoutChangedDuringResize = true;
+    return;
+  }
   writeUI(layoutProject, "layout", Object.fromEntries(Object.entries(state).filter(([, value]) => typeof value !== "function")));
 });
