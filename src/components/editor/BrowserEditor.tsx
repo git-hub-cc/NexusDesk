@@ -18,6 +18,13 @@ import { BrowserExtensions, CHROME_EXTENSION_STORE_URL } from "./BrowserExtensio
 
 export const BROWSER_HOME = "nexusdesk:nav";
 
+function browserDiagnosticUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}${url.pathname}`;
+  } catch { return "invalid-url"; }
+}
+
 function updateBrowserTabs(tabs: Tab[], id: string, url: string, title?: string): Tab[] {
   const fallback = new URL(url).hostname || "网页";
   return tabs.map(item => item.id === id && item.browser ? {
@@ -129,13 +136,19 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
     let unlistenFocus: (() => void) | undefined;
     let fullscreen = false;
     const { label, warm, loaded } = pendingView.current ?? reserveBrowser(tab.browser!.url);
+    const setupStarted = performance.now();
+    const logStage = (stage: string, started: number, details = "") => {
+      console.info("[browser]", `label=${label}`, `stage=${stage}`, `elapsed_ms=${Math.round(performance.now() - started)}`, details);
+    };
     pendingView.current = undefined;
     if (!retainedViews.current.includes(label)) {
       retainedViews.current.push(label);
       retainedIndex.current = retainedViews.current.length - 1;
     }
     labelRef.current = label;
+    console.info("[browser]", `label=${label}`, "stage=open-start", `url=${browserDiagnosticUrl(tab.browser!.url)}`, `warm=${warm}`, `loaded=${loaded ?? false}`);
     const setup = async () => {
+      const listenersStarted = performance.now();
       const updatePage = (url: string, title?: string) => {
         if (disposed) return;
         currentUrl.current = url;
@@ -171,22 +184,28 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
         if (!disposed) setError(event.payload);
       });
       if (disposed) { unlistenLoad(); return; }
+      logStage("listeners-ready", listenersStarted);
       const initialRect = host.current?.getBoundingClientRect();
+      const nativeStarted = performance.now();
       if (warm && !loaded) {
         await invoke("browser_action", { label, action: "navigate", url: tab.browser!.url });
       } else if (!warm) await invoke("create_browser", { label, url: tab.browser!.url, x: initialRect?.x ?? 0, y: initialRect?.y ?? 0, width: initialRect?.width ?? 1, height: initialRect?.height ?? 1, visible: browserVisibility(activeRef.current, initialRect?.width ?? 0, initialRect?.height ?? 0).visible });
+      logStage(warm ? (loaded ? "reuse-view" : "navigate-view") : "create-view", nativeStarted, `url=${browserDiagnosticUrl(tab.browser!.url)}`);
       if (disposed) {
         if (!retainedViews.current.includes(label)) await invoke("browser_action", { label, action: "close" });
         return;
       }
       if (loaded) {
+        const syncStarted = performance.now();
         await invoke("browser_action", { label, action: "sync" });
+        logStage("sync-view", syncStarted);
       }
       // The component may have closed or promoted another retained view while
       // native creation/synchronization was still in flight.
       if (disposed) return;
       switching.current = false;
       setReady(true);
+      logStage("editor-ready", setupStarted, `url=${browserDiagnosticUrl(tab.browser!.url)}`);
       let previousX = NaN, previousY = NaN, previousWidth = NaN, previousHeight = NaN;
       let previousVisible: boolean | undefined;
       let previousReason: string | undefined;
@@ -269,6 +288,7 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
       if (disposed) unlistenFocus?.();
     };
     void setup().catch(reason => {
+      console.error("[browser]", `label=${label}`, "stage=setup-failed", `elapsed_ms=${Math.round(performance.now() - setupStarted)}`, reason);
       if (disposed) return;
       void invoke("browser_action", { label, action: "close" }).catch(() => {});
       if (!disposed) { switching.current = false; setError(String(reason)); }

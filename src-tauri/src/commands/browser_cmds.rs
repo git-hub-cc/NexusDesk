@@ -352,6 +352,7 @@ fn observe_browser_navigation(view: &tauri::Webview, window: tauri::Window) -> R
 
 #[tauri::command]
 pub async fn create_browser(window: tauri::Window, label: String, url: String, x: f64, y: f64, width: f64, height: f64, visible: bool) -> Result<(), String> {
+    let create_started = std::time::Instant::now();
     if !label.starts_with(&format!("{}-browser-", window.label())) { return Err("无效的网页标签".into()); }
     let directory = browser_directory(window.app_handle())?;
     let owner = window.clone();
@@ -364,6 +365,8 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
     let load_label = label.clone();
     let title_label = label.clone();
     let initial_url = browser_url(&url)?;
+    let page_load_started = std::sync::Arc::new(std::sync::Mutex::new(None::<std::time::Instant>));
+    let load_clock = page_load_started.clone();
     let popup_parent_label = label.clone();
     // Start the target navigation immediately using the measured editor bounds.
     let builder = tauri::webview::WebviewBuilder::new(&label, tauri::WebviewUrl::External(initial_url))
@@ -417,16 +420,20 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
         })
         .on_page_load(move |view, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                if let Ok(mut started) = load_clock.lock() { *started = Some(std::time::Instant::now()); }
                 if let Ok(mut results) = load_results().lock() { results.remove(&load_label); }
                 let _ = view.emit_to(view.window().label(), &format!("browser-load-result-{load_label}"), "");
             }
+            let load_elapsed_ms = if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                page_load_started.lock().ok().and_then(|mut started| started.take()).map(|started| started.elapsed().as_millis())
+            } else { None };
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                 // Google can replace its route without another navigation callback.
                 let _ = view.emit_to(view.window().label(), &format!("browser-url-{load_label}"), payload.url().as_str());
                 let _ = view.emit_to(view.window().label(), &format!("browser-document-ready-{load_label}"), ());
                 if !is_speculative(&load_label) { super::browser_passwords::fill(&view, payload.url()); }
             }
-            log::info!(target: "browser", "label={load_label} page-load event={:?} url={}", payload.event(), diagnostic_url(payload.url()));
+            log::info!(target: "browser", "label={load_label} page-load event={:?} elapsed_ms={load_elapsed_ms:?} url={}", payload.event(), diagnostic_url(payload.url()));
         })
         .on_new_window(move |url, features| {
             if is_speculative(&popup_parent_label) { return tauri::webview::NewWindowResponse::Deny; }
@@ -519,7 +526,7 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
     if let Err(error) = install_browser_blackhole(&view) {
         log::warn!(target: "browser", "optional resource filter failed: {error}");
     }
-    log::info!(target: "browser", "label={} child-created visible={visible}", view.label());
+    log::info!(target: "browser", "label={} child-created elapsed_ms={} visible={visible}", view.label(), create_started.elapsed().as_millis());
     if !visible { trace_browser_result(view.label(), "initial-hide", view.hide())?; }
     Ok(())
 }
