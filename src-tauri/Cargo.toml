@@ -1,0 +1,74 @@
+[package]
+name = "nexusdesk"
+version = "0.1.2"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2024"
+
+[features]
+default = []
+
+[lib]
+name = "nexusdesk_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+# 保证构建脚本执行前，语音运行库已下载并复制到目标目录。
+sherpa-onnx-sys = { version = "=2.0.1", default-features = false, features = ["shared"] }
+
+[dependencies]
+log = { version = "0.4", features = ["std"] }
+chrono = "0.4"
+tauri = { version = "2", features = ["protocol-asset", "unstable", "devtools"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-window-state = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+axum = "0.8"
+bytes = "1"
+flate2 = "1"
+zstd = "0.13"
+futures-util = "0.3"
+toml = "0.8"
+rusqlite = { version = "0.31.0", features = ["bundled"] }
+git2 = "0.18.3"
+notify = "6.1.1"
+tokio = { version = "1.37.0", features = ["full"] }
+dirs = "5.0.1"
+serde_yaml = "0.9"
+gray_matter = "0.2.6"
+regex = "1.10.4"
+ignore = "0.4"
+portable-pty = "0.9"
+libc = "0.2"
+ssh2 = "0.9"
+
+ort = "=2.0.0-rc.10"
+image = "0.25"
+imageproc = "0.25"
+screenshots = "0.8"
+arboard = "3"
+base64 = "0.22"
+winit = "0.30"
+raw-window-handle = "0.6"
+softbuffer = "0.4"
+ab_glyph = "0.2"
+tauri-plugin-global-shortcut = "2"
+sherpa-onnx = { version = "=2.0.1", default-features = false, features = ["shared"] }
+
+[target.'cfg(windows)'.dependencies]
+zip = { version = "2", default-features = false, features = ["deflate"] }
+winreg = "0.55"
+windows = { version = "0.62", features = ["Win32_System_Com"] }
+webview2-com = "0.39.1"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"           # 改为 "thin"，启用并行 LTO，大幅削减链接耗时
+codegen-units = 6     # 开启多核并发生成机器码（根据 CPU 核心数自动调度）
+panic = "abort"
+strip = true

@@ -1,0 +1,663 @@
+use serde::Serialize;
+use std::{collections::{HashMap, HashSet}, sync::{Arc, Mutex, OnceLock}, time::{Duration, Instant}};
+use tauri::Emitter;
+use tauri::Manager;
+
+/// 读取内置浏览器指定地址的会话 Cookie，供需要登录态的后台请求复用。
+pub fn cookies_for_url(app: &tauri::AppHandle, url: &str) -> Result<String, String> {
+    let target = tauri::Url::parse(url).map_err(|e| e.to_string())?;
+    // 浏览器页面通过 `add_child` 创建，必须遍历 WebView；`webview_windows`
+    // 只包含顶层 WebviewWindow，无法读取内置浏览器子页面的会话状态。
+    // 先按稳定的标签排序，并排除菜单、迁移页等非浏览器 WebView，避免
+    // HashMap 遍历顺序造成结果不确定或无关页面被命中。
+    let mut views = app.webviews().into_iter()
+        .filter(|(label, _)| label.contains("-browser-"))
+        .collect::<Vec<_>>();
+    views.sort_by(|(left, _), (right, _)| left.cmp(right));
+    for (_, view) in views {
+        if let Ok(cookies) = view.cookies_for_url(target.clone()) {
+            if !cookies.is_empty() {
+                return Ok(cookies.iter().map(|cookie| format!("{}={}", cookie.name(), cookie.value())).collect::<Vec<_>>().join("; "));
+            }
+        }
+    }
+    Ok(String::new())
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Download {
+    id: String, label: String, name: String, path: String,
+    received: u64, total: Option<u64>, speed: f64, connections: usize,
+    state: String, message: String, revision: u64,
+}
+
+fn records() -> &'static Mutex<HashMap<String, (String, Download)>> {
+    static RECORDS: OnceLock<Mutex<HashMap<String, (String, Download)>>> = OnceLock::new();
+    RECORDS.get_or_init(Default::default)
+}
+
+#[tauri::command]
+pub fn browser_downloads(window: tauri::Window) -> Vec<Download> {
+    records().lock().unwrap().values().filter(|(owner, _)| owner == window.label()).map(|(_, item)| item.clone()).collect()
+}
+
+#[cfg(windows)]
+thread_local! {
+    static CANCEL: std::cell::RefCell<HashMap<String, std::rc::Rc<dyn Fn() -> Result<(), String>>>> = Default::default();
+}
+
+#[tauri::command]
+pub async fn browser_cancel_download(window: tauri::Window, id: String) -> Result<(), String> {
+    {
+        let records = records().lock().unwrap();
+        let (owner, item) = records.get(&id).ok_or("下载记录不存在")?;
+        if owner != window.label() { return Err("无权取消此下载".into()); }
+        if item.state != "downloading" { return Ok(()); }
+    }
+    #[cfg(windows)]
+    {
+        let (send, receive) = tokio::sync::oneshot::channel();
+        window.run_on_main_thread(move || {
+            let cancel = CANCEL.with(|items| items.borrow().get(&id).cloned());
+            let _ = send.send(match cancel { Some(cancel) => cancel(), None => Ok(()) });
+        }).map_err(|e| e.to_string())?;
+        return receive.await.map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(windows))]
+    Err("当前平台不支持取消下载".into())
+}
+
+#[cfg(windows)]
+fn close_download_popup(window: &tauri::Window, view_label: &str, event_label: &str) {
+    if view_label == event_label { return; }
+    use tauri::Manager;
+    let app = window.app_handle().clone();
+    let label = view_label.to_owned();
+    let _ = window.run_on_main_thread(move || {
+        if let Some(popup) = app.get_webview_window(&label) {
+            if let Err(error) = popup.close() { log::warn!(target: "browser", "label={label} close download popup failed: {error}"); }
+        }
+    });
+}
+
+struct Progress { item: Download, started: Instant, emitted: Instant }
+
+fn received_all(received: u64, total: Option<u64>) -> bool {
+    total.is_some_and(|total| total > 0 && received >= total)
+}
+
+// BytesReceived may reach the total before WebView2 publishes StateChanged.
+// Require the actual destination to have the expected length and no writer.
+fn finalized_native_file(path: &str, received: u64, total: Option<u64>) -> bool {
+    if !received_all(received, total) { return false; }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.share_mode(0);
+    }
+    options.open(path).and_then(|file| file.metadata()).is_ok_and(|metadata| {
+        metadata.is_file() && Some(metadata.len()) == total
+    })
+}
+
+fn sync_native_progress(item: &mut Download, received: u64, total: Option<u64>, path: String,
+    completed: bool, interrupted: Option<i32>) {
+    item.received = received;
+    item.total = total;
+    item.path = path;
+    if completed || (interrupted.is_none() && finalized_native_file(&item.path, received, total)) {
+        item.state = "completed".into(); item.message = "下载完成".into();
+    } else if let Some(reason) = interrupted {
+        item.state = "failed".into();
+        item.message = format!("下载已中断（代码 {reason}），请重新打开链接重试");
+    } else {
+        item.message = if received_all(received, total) { "文件已接收，正在确认保存" } else { "正在下载" }.into();
+    }
+}
+
+impl Progress {
+    fn publish(&mut self, window: &tauri::Window, force: bool) {
+        if !force && self.emitted.elapsed() < Duration::from_millis(150) { return; }
+        self.emitted = Instant::now();
+        self.item.revision += 1;
+        self.item.speed = self.item.received as f64 / self.started.elapsed().as_secs_f64().max(0.1);
+        let mut records = records().lock().unwrap();
+        // Keep active transfers and a bounded recent history for remounted tabs.
+        if records.len() >= 100 {
+            if let Some(key) = records.iter().filter(|(_, (_, d))| d.state != "downloading").map(|(id, _)| id.clone()).next() { records.remove(&key); }
+        }
+        if records.get(&self.item.id).is_none_or(|(_, old)| old.state != self.item.state) {
+            log::info!(target: "browser", "download={} label={} state={} bytes={} total={:?}", self.item.id, self.item.label, self.item.state, self.item.received, self.item.total);
+        }
+        records.insert(self.item.id.clone(), (window.label().into(), self.item.clone()));
+        drop(records);
+        let _ = window.emit_to(window.label(), "browser-download", &self.item);
+    }
+}
+
+fn navigation_downloads() -> &'static Mutex<HashSet<(String, u64)>> {
+    static IDS: OnceLock<Mutex<HashSet<(String, u64)>>> = OnceLock::new();
+    IDS.get_or_init(Default::default)
+}
+pub fn is_download(label: &str, navigation: u64) -> bool {
+    navigation_downloads().lock().unwrap().remove(&(label.into(), navigation))
+}
+
+fn ranges(total: u64) -> Vec<(u64, u64)> {
+    let size = total.div_ceil(4);
+    (0..4).filter_map(|i| { let start = i * size; (start < total).then_some((start, (start + size).min(total) - 1)) }).collect()
+}
+
+fn valid_range(value: &str, start: u64, end: u64, total: u64) -> bool {
+    value == format!("bytes {start}-{end}/{total}")
+}
+
+// Validate every response before writing it. A server ignoring Range or changing
+// the resource must never produce a file assembled from incompatible responses.
+async fn parallel_download(
+    url: &str, cookies: String, total: u64, destination: &std::path::Path,
+    id: &str, report: Arc<dyn Fn(u64, usize) + Send + Sync>, cancel: Arc<tokio::sync::Notify>,
+) -> Result<std::path::PathBuf, String> {
+    use reqwest::header::*;
+    use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+    let client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(10)).read_timeout(Duration::from_secs(20))
+        .build().map_err(|e| e.to_string())?;
+    let request = client.get(url).header(ACCEPT_ENCODING, "identity").header(COOKIE, cookies);
+    let probe_request = request.try_clone().ok_or("无法创建下载请求")?.header(RANGE, "bytes=0-0")
+        .timeout(Duration::from_secs(10));
+    let probe = tokio::select! {
+        biased;
+        _ = cancel.notified() => return Err("下载已取消".into()),
+        response = probe_request.send() => response.map_err(|e| e.to_string())?,
+    };
+    if probe.status() != reqwest::StatusCode::PARTIAL_CONTENT
+        || !valid_range(probe.headers().get(CONTENT_RANGE).and_then(|v| v.to_str().ok()).unwrap_or(""), 0, 0, total) {
+        return Err("服务器不支持分段下载".into());
+    }
+    // Only strong validators permit safely combining concurrent responses.
+    let etag = probe.headers().get(ETAG).filter(|v| !v.as_bytes().starts_with(b"W/"))
+        .cloned().ok_or("服务器未提供文件版本标识")?;
+    drop(probe);
+    let temporary = destination.with_file_name(format!(".nexusdesk-{id}.part"));
+    let file = tokio::fs::OpenOptions::new().write(true).create_new(true).open(&temporary).await.map_err(|e| e.to_string())?;
+    let transfer = async {
+        file.set_len(total).await.map_err(|e| e.to_string())?;
+        drop(file);
+        report(0, 4);
+        let mut tasks = tokio::task::JoinSet::new();
+        for (start, end) in ranges(total) {
+            let request = request.try_clone().ok_or("无法创建分段请求")?;
+            let etag = etag.clone(); let temporary = temporary.clone();
+            let report = report.clone();
+            tasks.spawn(async move {
+                let mut response = request.header(RANGE, format!("bytes={start}-{end}")).header(IF_RANGE, etag.clone())
+                    .send().await.map_err(|e| e.to_string())?;
+                if response.status() != reqwest::StatusCode::PARTIAL_CONTENT
+                    || response.headers().get(ETAG) != Some(&etag)
+                    || response.headers().get(CONTENT_ENCODING).is_some_and(|v| v != "identity")
+                    || !valid_range(response.headers().get(CONTENT_RANGE).and_then(|v| v.to_str().ok()).unwrap_or(""), start, end, total) {
+                    return Err("分段响应发生变化".to_string());
+                }
+                let mut file = tokio::fs::OpenOptions::new().write(true).open(temporary).await.map_err(|e| e.to_string())?;
+                file.seek(std::io::SeekFrom::Start(start)).await.map_err(|e| e.to_string())?;
+                let mut received = 0;
+                while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+                    received += chunk.len() as u64;
+                    if received > end - start + 1 { return Err("分段长度不匹配".into()); }
+                    file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+                    report(chunk.len() as u64, 4);
+                }
+                if received != end - start + 1 { return Err("分段下载不完整".into()); }
+                file.flush().await.map_err(|e| e.to_string())?;
+                Ok::<_, String>(())
+            });
+        }
+        let mut failure = None;
+        loop {
+            let result = tokio::select! {
+                biased;
+                _ = cancel.notified() => {
+                    tasks.abort_all();
+                    while tasks.join_next().await.is_some() {}
+                    return Err("下载已取消".into());
+                }
+                result = tasks.join_next() => result,
+            };
+            let Some(result) = result else { break; };
+            if let Err(error) = result.map_err(|e| e.to_string()).and_then(|r| r) {
+                failure = Some(error); tasks.abort_all();
+            }
+        }
+        if let Some(error) = failure { return Err(error); }
+        // A hard link publishes the complete file atomically without overwriting
+        // an existing download. Both paths are on the same filesystem.
+        for index in 0..10000 {
+            let target = if index == 0 { destination.to_path_buf() } else {
+                let stem = destination.file_stem().unwrap_or_default().to_string_lossy();
+                let ext = destination.extension().map(|v| format!(".{}", v.to_string_lossy())).unwrap_or_default();
+                destination.with_file_name(format!("{stem} ({index}){ext}"))
+            };
+            match tokio::fs::hard_link(&temporary, &target).await {
+                Ok(()) => return Ok(target),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+        Err("同名文件过多".into())
+    };
+    let outcome = transfer.await;
+    let _ = tokio::fs::remove_file(&temporary).await;
+    outcome
+}
+
+#[cfg(windows)]
+pub fn observe(view: &tauri::Webview, window: tauri::Window, event_label: String) -> Result<(), String> {
+    use std::{cell::RefCell, sync::atomic::{AtomicBool, AtomicU64, Ordering}};
+    use windows::core::{Interface, PWSTR};
+    use webview2_com::{*, Microsoft::Web::WebView2::Win32::*};
+    struct StartingDeferral(Option<ICoreWebView2Deferral>);
+    impl Drop for StartingDeferral {
+        fn drop(&mut self) {
+            if let Some(deferral) = self.0.take() { unsafe { let _ = deferral.Complete(); } }
+        }
+    }
+    // COM objects stay in their UI apartment while the network runs on Tokio.
+    thread_local! { static PENDING: RefCell<HashMap<String, (ICoreWebView2DownloadStartingEventArgs, ICoreWebView2Deferral)>> = RefCell::new(HashMap::new()); }
+    let view_handle = view.clone();
+    view.with_webview(move |platform| unsafe {
+        let setup = (|| -> windows::core::Result<()> {
+            let core = platform.controller().CoreWebView2()?;
+            let navigation = Arc::new(AtomicU64::new(0));
+            let current = navigation.clone();
+            core.add_NavigationStarting(&NavigationStartingEventHandler::create(Box::new(move |_, args| {
+                if let Some(args) = args { let mut id = 0; args.NavigationId(&mut id)?; current.store(id, Ordering::Relaxed); }
+                Ok(())
+            })), &mut 0)?;
+            // Preserve POST/blob/authenticated downloads in the native engine.
+            let methods = Arc::new(Mutex::new(HashMap::<String, String>::new()));
+            let request_methods = methods.clone();
+            core.add_WebResourceRequested(&WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
+                if let Some(args) = args {
+                    let request = args.Request()?;
+                    let mut uri = PWSTR::null(); let mut method = PWSTR::null();
+                    request.Uri(&mut uri)?; request.Method(&mut method)?;
+                    let mut methods = request_methods.lock().unwrap();
+                    if methods.len() > 128 { methods.clear(); }
+                    methods.insert(take_pwstr(uri), take_pwstr(method));
+                }
+                Ok(())
+            })), &mut 0)?;
+            core.AddWebResourceRequestedFilter(windows::core::w!("*"), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT)?;
+            core.cast::<ICoreWebView2_4>()?.add_DownloadStarting(&DownloadStartingEventHandler::create(Box::new(move |_, args| {
+                let Some(args) = args else { return Ok(()); };
+                // Install handlers before releasing even a cached/instant response.
+                let mut deferral = StartingDeferral(Some(args.GetDeferral()?));
+                let operation = args.DownloadOperation()?;
+                let mut uri = PWSTR::null(); let mut path = PWSTR::null(); let mut total = 0;
+                operation.Uri(&mut uri)?; args.ResultFilePath(&mut path)?; operation.TotalBytesToReceive(&mut total)?;
+                let url = take_pwstr(uri); let path = std::path::PathBuf::from(take_pwstr(path));
+                // The application owns progress and cancellation, including tiny
+                // downloads; do not leave a second native download dialog open.
+                args.SetHandled(true)?;
+                let id = format!("{}-{}", std::process::id(), NEXT_ID.fetch_add(1, Ordering::Relaxed));
+                let nav = navigation.load(Ordering::Relaxed);
+                {
+                    let mut ids = navigation_downloads().lock().unwrap();
+                    if ids.len() >= 256 { ids.clear(); }
+                    ids.insert((view_handle.label().into(), nav));
+                }
+                super::browser_cmds::clear_download_error(&window, view_handle.label());
+                let crx = path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("crx"))
+                    || tauri::Url::parse(&url).is_ok_and(|url| url.path().to_ascii_lowercase().ends_with(".crx")
+                        || (url.host_str() == Some("clients2.google.com") && url.path() == "/service/update2/crx"));
+                if crx {
+                    // Cancel before registering native state handlers: WebView2's
+                    // CRX rejection must never become a code 12 download record.
+                    args.SetCancel(true)?;
+                    let owner = window.clone(); let label = event_label.clone();
+                    close_download_popup(&window, view_handle.label(), &event_label);
+                    tauri::async_runtime::spawn(async move {
+                        let _ = super::browser_extensions::browser_install_extension(owner, label, url).await;
+                    });
+                    return Ok(());
+                }
+                let now = Instant::now();
+                let progress = Arc::new(Mutex::new(Progress { item: Download {
+                    id: id.clone(), label: event_label.clone(), name: path.file_name().unwrap_or_default().to_string_lossy().into(),
+                    path: path.to_string_lossy().into(), received: 0, total: (total > 0).then_some(total as u64),
+                    speed: 0., connections: 1, state: "downloading".into(), message: "正在准备下载".into(), revision: 0,
+                }, started: now, emitted: now }));
+                progress.lock().unwrap().publish(&window, true);
+                let managed = Arc::new(AtomicBool::new(false));
+                let p = progress.clone(); let w = window.clone(); let m = managed.clone();
+                operation.add_BytesReceivedChanged(&BytesReceivedChangedEventHandler::create(Box::new(move |op, _| {
+                    if !m.load(Ordering::Relaxed) { if let Some(op) = op {
+                        let mut received = 0; let mut total = 0; op.BytesReceived(&mut received)?; op.TotalBytesToReceive(&mut total)?;
+                        let mut p = p.lock().unwrap();
+                        if p.item.state != "downloading" { return Ok(()); }
+                        p.item.received = received.max(0) as u64;
+                        p.item.total = (total > 0).then_some(total as u64); p.item.message = "正在下载".into();
+                        let full = received_all(p.item.received, p.item.total);
+                        p.publish(&w, full);
+                    }} Ok(())
+                })), &mut 0)?;
+                let cancel = Arc::new(tokio::sync::Notify::new());
+                let cancelled = Arc::new(AtomicBool::new(false));
+                let p = progress.clone(); let w = window.clone(); let m = managed.clone();
+                let op = operation.clone(); let download_id = id.clone();
+                let popup_label = view_handle.label().to_owned(); let parent_label = event_label.clone();
+                // Read state after subscribing and periodically: tiny downloads may
+                // already be complete when the first callback is installed.
+                let refresh: std::rc::Rc<dyn Fn() -> windows::core::Result<()>> = std::rc::Rc::new(move || {
+                    if m.load(Ordering::Relaxed) || p.lock().unwrap().item.state != "downloading" { return Ok(()); }
+                    let mut state = COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS; op.State(&mut state)?;
+                    let mut bytes = 0; let mut total = 0; let mut path = PWSTR::null();
+                    op.BytesReceived(&mut bytes)?; op.TotalBytesToReceive(&mut total)?; op.ResultFilePath(&mut path)?;
+                    let interrupted = if state == COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED {
+                        let mut reason = COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON::default(); op.InterruptReason(&mut reason)?;
+                        Some(reason.0)
+                    } else { None };
+                    let mut p = p.lock().unwrap();
+                    sync_native_progress(&mut p.item, bytes.max(0) as u64, (total > 0).then_some(total as u64),
+                        take_pwstr(path), state == COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED, interrupted);
+                    let finished = p.item.state != "downloading";
+                    let completed = p.item.state == "completed";
+                    let force = finished || received_all(p.item.received, p.item.total);
+                    p.publish(&w, force);
+                    drop(p);
+                    if finished { CANCEL.with(|items| items.borrow_mut().remove(&download_id)); }
+                    if completed { close_download_popup(&w, &popup_label, &parent_label); }
+                    Ok(())
+                });
+                let update = std::rc::Rc::downgrade(&refresh);
+                operation.add_StateChanged(&StateChangedEventHandler::create(Box::new(move |_, _| {
+                    if let Some(update) = update.upgrade() { update()?; }
+                    Ok(())
+                })), &mut 0)?;
+                let op = operation.clone(); let p = progress.clone(); let w = window.clone();
+                let m = managed.clone(); let signal = cancel.clone(); let c = cancelled.clone();
+                let update = refresh.clone(); let download_id = id.clone();
+                let popup_label = view_handle.label().to_owned(); let parent_label = event_label.clone();
+                CANCEL.with(|items| items.borrow_mut().insert(id.clone(), std::rc::Rc::new(move || {
+                    update().map_err(|e| e.to_string())?;
+                    if p.lock().unwrap().item.state != "downloading" { return Ok(()); }
+                    if !m.load(Ordering::Relaxed) {
+                        // Re-read immediately before Cancel. Cancel deletes the
+                        // destination even while a fully received file is finalizing.
+                        let mut bytes = 0; let mut total = 0;
+                        op.BytesReceived(&mut bytes).map_err(|e| e.to_string())?;
+                        op.TotalBytesToReceive(&mut total).map_err(|e| e.to_string())?;
+                        if received_all(bytes.max(0) as u64, (total > 0).then_some(total as u64)) {
+                            return Ok(());
+                        }
+                    }
+                    // Suppress the synchronous native interruption callback during Cancel.
+                    let was_managed = m.swap(true, Ordering::Relaxed);
+                    if !was_managed {
+                        if let Err(error) = op.Cancel() { m.store(false, Ordering::Relaxed); return Err(error.to_string()); }
+                    }
+                    c.store(true, Ordering::Relaxed); signal.notify_one();
+                    let mut p = p.lock().unwrap(); p.item.state = "cancelled".into(); p.item.message = "下载已取消".into(); p.publish(&w, true);
+                    if !was_managed { close_download_popup(&w, &popup_label, &parent_label); }
+                    CANCEL.with(|items| items.borrow_mut().remove(&download_id));
+                    Ok(())
+                })));
+                refresh()?;
+                // Keep COM objects on the UI thread. Polls only schedule a state
+                // read; the async task never captures a COM interface.
+                thread_local! { static CHECKS: RefCell<HashMap<String, std::rc::Rc<dyn Fn() -> windows::core::Result<()>>>> = Default::default(); }
+                CHECKS.with(|items| items.borrow_mut().insert(id.clone(), refresh));
+                let poll_id = id.clone(); let poll_window = window.clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        tokio::time::sleep(Duration::from_millis(250)).await;
+                        let active = records().lock().unwrap().get(&poll_id).is_some_and(|(_, item)| item.state == "downloading");
+                        let key = poll_id.clone();
+                        if poll_window.run_on_main_thread(move || {
+                            if active {
+                                let check = CHECKS.with(|items| items.borrow().get(&key).cloned());
+                                if let Some(check) = check {
+                                    if let Err(error) = check() { log::warn!(target: "browser", "download={key} state check failed: {error}"); }
+                                }
+                            } else { CHECKS.with(|items| items.borrow_mut().remove(&key)); }
+                        }).is_err() || !active { break; }
+                    }
+                });
+                let can_parallel = total >= 4 * 1024 * 1024 && methods.lock().unwrap().get(&url).is_some_and(|m| m == "GET")
+                    && tauri::Url::parse(&url).is_ok_and(|u| matches!(u.scheme(), "http" | "https"));
+                if !can_parallel || progress.lock().unwrap().item.state != "downloading" {
+                    return Ok(());
+                }
+                PENDING.with(|pending| pending.borrow_mut().insert(id.clone(), (args.clone(), deferral.0.take().unwrap())));
+                managed.store(true, Ordering::Relaxed);
+                let popup_label = view_handle.label().to_owned();
+                let event_label = event_label.clone();
+                let view = view_handle.clone(); let window = window.clone();
+                tauri::async_runtime::spawn(async move {
+                    let cookie_url = tauri::Url::parse(&url).unwrap();
+                    let cookies = tauri::async_runtime::spawn_blocking(move || view.cookies_for_url(cookie_url)).await;
+                    let result = match cookies {
+                        Ok(Ok(cookies)) => {
+                            let cookies = cookies.iter().map(|c| format!("{}={}", c.name(), c.value())).collect::<Vec<_>>().join("; ");
+                            let p = progress.clone(); let w = window.clone();
+                            let report = Arc::new(move |bytes, connections| {
+                                let mut p = p.lock().unwrap(); if p.item.state != "downloading" { return; } p.item.received += bytes;
+                                p.item.connections = connections; p.item.message = "正在并发下载".into(); p.publish(&w, bytes == 0);
+                            });
+                            parallel_download(&url, cookies, total as u64, &path, &id, report, cancel).await
+                        }
+                        _ => Err("无法读取下载会话".into()),
+                    };
+                    let owner = window.clone();
+                    let _ = window.run_on_main_thread(move || {
+                        PENDING.with(|pending| {
+                            if let Some((args, deferral)) = pending.borrow_mut().remove(&id) {
+                                match result {
+                                    Ok(path) => {
+                                        let _ = args.SetCancel(true);
+                                        let mut p = progress.lock().unwrap(); p.item.path = path.to_string_lossy().into();
+                                        p.item.state = "completed".into(); p.item.message = "下载完成".into(); p.publish(&owner, true);
+                                    }
+                                    Err(_) if cancelled.load(Ordering::Relaxed) => { let _ = args.SetCancel(true); }
+                                    Err(_) => {
+                                        let mut p = progress.lock().unwrap(); p.item.received = 0; p.item.connections = 1;
+                                        p.started = Instant::now(); p.item.message = "已切换为浏览器下载".into(); p.publish(&owner, true);
+                                        managed.store(false, Ordering::Relaxed);
+                                    }
+                                }
+                                let _ = deferral.Complete();
+                                if progress.lock().unwrap().item.state != "downloading" {
+                                    CANCEL.with(|items| items.borrow_mut().remove(&id));
+                                    close_download_popup(&owner, &popup_label, &event_label);
+                                }
+                            }
+                        });
+                    });
+                });
+                Ok(())
+            })), &mut 0)?;
+            Ok(())
+        })();
+        if let Err(error) = setup { log::error!(target: "browser", "download observer failed: {error}"); }
+    }).map_err(|e| e.to_string())
+}
+
+#[cfg(windows)]
+static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn native_item(path: &std::path::Path) -> Download {
+        Download { id: "native".into(), label: "browser".into(), name: "small.bin".into(),
+            path: path.to_string_lossy().into(), received: 0, total: Some(1_594_848),
+            speed: 0., connections: 1, state: "downloading".into(), message: "正在准备下载".into(), revision: 1 }
+    }
+
+    #[test]
+    fn native_snapshot_recovers_zero_progress_and_finalized_file_without_completion_event() {
+        let root = std::env::temp_dir().join(format!("nexusdesk-native-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("small.bin");
+        let mut item = native_item(&path);
+        let full = item.total.unwrap();
+        // The native state remains IN_PROGRESS after all BytesReceived callbacks
+        // occurred inside the 150ms throttle interval.
+        std::fs::write(&path, vec![42; full as usize]).unwrap();
+        sync_native_progress(&mut item, full, Some(full), path.to_string_lossy().into(), false, None);
+        assert_eq!(item.received, full);
+        assert_eq!(item.state, "completed");
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), full);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn native_snapshot_does_not_complete_missing_partial_unknown_or_interrupted_files() {
+        let root = std::env::temp_dir().join(format!("nexusdesk-native-partial-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("small.bin");
+        let mut item = native_item(&path);
+        let full = item.total.unwrap();
+        for length in [None, Some(100), Some(full)] {
+            if let Some(length) = length { std::fs::write(&path, vec![42; length as usize]).unwrap(); }
+            for (received, total) in [(100, Some(full)), (full, None), (0, Some(full))] {
+                sync_native_progress(&mut item, received, total, path.to_string_lossy().into(), false, None);
+                assert_eq!(item.state, "downloading");
+                assert_eq!(item.received, received);
+            }
+        }
+        sync_native_progress(&mut item, full, Some(full), path.to_string_lossy().into(), false, Some(7));
+        assert_eq!(item.state, "failed");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn fully_received_file_still_open_by_writer_is_protected_from_cancel_until_finalized() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let path = std::env::temp_dir().join(format!("nexusdesk-native-writer-{}-{}.bin", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let writer = std::fs::OpenOptions::new().write(true).create_new(true).share_mode(3).open(&path).unwrap();
+        let mut item = native_item(&path);
+        let full = item.total.unwrap();
+        writer.set_len(full).unwrap();
+        sync_native_progress(&mut item, full, Some(full), path.to_string_lossy().into(), false, None);
+        assert_eq!(item.state, "downloading");
+        assert_eq!(item.message, "文件已接收，正在确认保存");
+        assert!(received_all(item.received, item.total)); // cancellation must only dismiss
+        drop(writer);
+        sync_native_progress(&mut item, full, Some(full), path.to_string_lossy().into(), false, None);
+        assert_eq!(item.state, "completed");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn ranges_cover_each_byte_once() {
+        for total in [1, 3, 4, 5, 4_194_305, u32::MAX as u64] {
+            let parts = ranges(total);
+            assert_eq!(parts.first().unwrap().0, 0);
+            assert_eq!(parts.last().unwrap().1, total - 1);
+            assert_eq!(parts.iter().map(|(a, b)| b - a + 1).sum::<u64>(), total);
+            for pair in parts.windows(2) { assert_eq!(pair[0].1 + 1, pair[1].0); }
+        }
+    }
+    #[test]
+    fn rejects_wrong_or_unknown_content_ranges() {
+        assert!(valid_range("bytes 4-7/10", 4, 7, 10));
+        for value in ["bytes 0-7/10", "bytes 4-8/10", "bytes 4-7/*", "bytes 4-7/11", ""] {
+            assert!(!valid_range(value, 4, 7, 10));
+        }
+    }
+
+    // Local HTTP fixture exercises actual Range requests, concurrent writes,
+    // cookie forwarding and rejection of servers that return invalid ranges.
+    async fn fixture(mode: &'static str) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let barrier = Arc::new(tokio::sync::Barrier::new(4));
+        let task = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let barrier = barrier.clone();
+                tokio::spawn(async move {
+                    let mut request = Vec::new();
+                    while !request.ends_with(b"\r\n\r\n") {
+                        let mut byte = [0];
+                        if socket.read_exact(&mut byte).await.is_err() { return; }
+                        request.push(byte[0]);
+                    }
+                    let request = String::from_utf8(request).unwrap().to_ascii_lowercase();
+                    assert!(request.contains("cookie: session=test"));
+                    let range = request.lines().find_map(|l| l.strip_prefix("range: bytes=")).unwrap();
+                    let (start, end) = range.split_once('-').unwrap();
+                    let start: usize = start.parse().unwrap(); let end: usize = end.parse().unwrap();
+                    let probe = start == 0 && end == 0;
+                    if mode == "valid" && !probe { barrier.wait().await; }
+                    let status = if mode == "ignore" { "200 OK" } else { "206 Partial Content" };
+                    let etag = if mode == "changed" && !probe { "other" } else { "fixture" };
+                    let actual_start = if mode == "wrong" && !probe { start + 1 } else { start };
+                    let length = end - start + 1;
+                    let validator = match mode { "missing" => String::new(), "weak" => "ETag: W/\"fixture\"\r\n".into(), _ => format!("ETag: \"{etag}\"\r\n") };
+                    let header = format!("HTTP/1.1 {status}\r\nContent-Length: {length}\r\nContent-Range: bytes {actual_start}-{end}/8193\r\n{validator}Connection: close\r\n\r\n");
+                    if socket.write_all(header.as_bytes()).await.is_err() { return; }
+                    let mut body: Vec<_> = (start..=end).map(|n| (n % 251) as u8).collect();
+                    if mode == "truncated" && !probe { body.pop(); }
+                    let _ = socket.write_all(&body).await;
+                });
+            }
+        });
+        (format!("http://{address}/download"), task)
+    }
+
+    #[tokio::test]
+    async fn downloads_ranges_without_corruption_or_overwriting() {
+        let (url, server) = fixture("valid").await;
+        let root = std::env::temp_dir().join(format!("nexusdesk-download-test-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        let destination = root.join("file.bin");
+        tokio::fs::write(&destination, b"existing file").await.unwrap();
+        let count = Arc::new(std::sync::atomic::AtomicU64::new(0)); let received = count.clone();
+        let report = Arc::new(move |bytes, connections| { assert_eq!(connections, 4); received.fetch_add(bytes, std::sync::atomic::Ordering::Relaxed); });
+        let result = tokio::time::timeout(Duration::from_secs(5), parallel_download(&url, "session=test".into(), 8193, &destination, "success", report, Arc::new(tokio::sync::Notify::new()))).await.unwrap().unwrap();
+        assert_eq!(tokio::fs::read(&destination).await.unwrap(), b"existing file");
+        assert_eq!(result.file_name().unwrap(), "file (1).bin");
+        assert_eq!(tokio::fs::read(result).await.unwrap(), (0..8193).map(|n| (n % 251) as u8).collect::<Vec<_>>());
+        assert_eq!(count.load(std::sync::atomic::Ordering::Relaxed), 8193);
+        assert!(!root.join(".nexusdesk-success.part").exists());
+        server.abort(); tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn invalid_responses_never_publish_a_partial_file() {
+        for mode in ["ignore", "changed", "wrong", "truncated", "missing", "weak"] {
+            let (url, server) = fixture(mode).await;
+            let root = std::env::temp_dir().join(format!("nexusdesk-download-test-{mode}-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+            tokio::fs::create_dir_all(&root).await.unwrap();
+            let result = parallel_download(&url, "session=test".into(), 8193, &root.join("file.bin"), mode, Arc::new(|_, _| {}), Arc::new(tokio::sync::Notify::new())).await;
+            assert!(result.is_err(), "{mode}");
+            assert!(tokio::fs::read_dir(&root).await.unwrap().next_entry().await.unwrap().is_none(), "{mode}");
+            server.abort(); tokio::fs::remove_dir_all(root).await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn cancellation_stops_ranges_and_removes_temporary_file() {
+        let (url, server) = fixture("valid").await;
+        let root = std::env::temp_dir().join(format!("nexusdesk-download-cancel-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        let signal = Arc::new(tokio::sync::Notify::new());
+        let cancel = signal.clone();
+        // Cancel after the part file exists, before any ranges can finish.
+        let report = Arc::new(move |bytes, _| { if bytes == 0 { cancel.notify_one(); } });
+        let result = tokio::time::timeout(Duration::from_secs(5), parallel_download(
+            &url, "session=test".into(), 8193, &root.join("file.bin"), "cancel", report, signal,
+        )).await.unwrap();
+        assert_eq!(result.unwrap_err(), "下载已取消");
+        assert!(tokio::fs::read_dir(&root).await.unwrap().next_entry().await.unwrap().is_none());
+        server.abort(); tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+}

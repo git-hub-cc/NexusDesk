@@ -1,0 +1,9 @@
+{
+  "productName": "NexusDesk-stt",
+  "bundle": {
+    "resources": {
+      "resources/stt-model/model.int8.onnx": "models/sensevoice-small/2365baeacb507f821a0c8120fcee3d484dba7a07/model.int8.onnx",
+      "resources/stt-model/tokens.txt": "models/sensevoice-small/2365baeacb507f821a0c8120fcee3d484dba7a07/tokens.txt"
+    }
+  }
+}
