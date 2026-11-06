@@ -911,10 +911,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           const tabs = isLeft ? state.leftTabs : state.rightTabs;
           const activeId = isLeft ? state.activeLeftTabId : state.activeRightTabId;
 
+          const closedIndex = tabs.findIndex((t) => t.id === id);
           const newTabs = tabs.filter((t) => t.id !== id);
           let newActiveId = activeId;
-          if (activeId === id) {
-            newActiveId = newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null;
+          if (activeId === id && closedIndex !== -1) {
+            newActiveId = newTabs[closedIndex]?.id ?? newTabs[closedIndex - 1]?.id ?? null;
           }
 
           const nextLeftTabs = isLeft ? newTabs : state.leftTabs;

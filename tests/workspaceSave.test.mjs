@@ -194,6 +194,27 @@ test("editor changes defer serialization and store updates, and flush before clo
   unsubscribe();
 });
 
+test("closing the active tab selects its right neighbor before its left neighbor", () => {
+  const tab = id => ({ id, path: `${id}.md`, title: id, content: id });
+  store.setState({
+    leftTabs: [tab("left"), tab("active"), tab("right")],
+    rightTabs: [],
+    activeLeftTabId: "active",
+    activeRightTabId: null,
+    isSplitMode: false,
+  });
+
+  store.getState().closeTab("active", "left");
+  assert.equal(store.getState().activeLeftTabId, "right");
+
+  store.setState({
+    leftTabs: [tab("left"), tab("active")],
+    activeLeftTabId: "active",
+  });
+  store.getState().closeTab("active", "left");
+  assert.equal(store.getState().activeLeftTabId, "left");
+});
+
 
 test("same-file edits in separate panes are both flushed", async () => {
   const tab = { id: "shared", path: "shared.md", title: "shared", content: "initial" };
