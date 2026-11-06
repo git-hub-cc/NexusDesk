@@ -175,11 +175,11 @@ export function BottomPanel() {
           return <ContextMenu.Root key={session.id}><SessionTab id={session.id} pinned={!!session.isPinned}><ContextMenu.Trigger asChild>
             <div data-session-id={session.id} title={session.cwd || session.name} className={`group flex items-center shrink-0 h-full min-w-[120px] max-w-[200px] border-r border-ide-panel-border ${activeTab === "terminal" && activeSessionId === session.id ? "bg-ide-tab-active-bg" : "hover:bg-ide-tab-hover"}`}>
             <button className={`${tabClass(activeTab === "terminal" && activeSessionId === session.id)} min-w-0 flex-1 hover:bg-transparent ${session.isPinned ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}`} onClick={() => { setActiveSessionId(session.id); setBottomPanelTab("terminal"); }}>
-              {isExited ? <CircleDot size={14} className="text-gray-500" /> : isCodex ? <img src={openaiIcon} alt="" className="h-3.5 w-3.5 shrink-0 opacity-70 group-hover:opacity-100" /> : <Terminal size={14} />}
+              {isExited ? <CircleDot size={14} className="text-gray-500" /> : isCodex ? <img src={openaiIcon} alt="" className="h-3.5 w-3.5 shrink-0 opacity-70 group-hover:opacity-100" /> : <Terminal size={14} className="transition-colors group-hover:text-white" />}
               <span className="truncate">{sessionLabel}</span>
               {session.isPinned && <Pin size={12} className="shrink-0 text-gray-400 rotate-45" />}
             </button>
-            <button aria-label={`关闭 ${sessionLabel} 会话`} title={`关闭 ${sessionLabel} 会话`} className="flex h-5 w-5 items-center justify-center rounded text-gray-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/15 hover:text-white active:bg-white/20" onClick={() => {
+            <button aria-label={`关闭 ${sessionLabel} 会话`} title={`关闭 ${sessionLabel} 会话`} className={`mr-1 flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-white/15 hover:text-white active:bg-white/20 ${activeTab === "terminal" && activeSessionId === session.id ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`} onClick={() => {
               removeSession(session.id);
               setExitedSessions(prev => { const next = { ...prev }; delete next[session.id]; return next; });
               if (sessions.length === 1 && gitInstalled) setBottomPanelTab("git");
