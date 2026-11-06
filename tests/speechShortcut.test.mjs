@@ -101,15 +101,27 @@ test("browser preview handles shortcut events without registering a native liste
   env.cleanup();
 });
 
-test("Ctrl+left click toggles speech and prevents the browser default", () => {
+test("Alt+left click toggles speech and prevents the browser default", () => {
+  const env = setup({ native: false });
+  const event = new Event("mousedown", { cancelable: true });
+  Object.defineProperties(event, {
+    altKey: { value: true }, button: { value: 0 },
+  });
+  env.window.dispatchEvent(event);
+  assert.equal(env.open, true);
+  assert.equal(event.defaultPrevented, true);
+  env.cleanup();
+});
+
+test("Ctrl+left click no longer toggles speech", () => {
   const env = setup({ native: false });
   const event = new Event("mousedown", { cancelable: true });
   Object.defineProperties(event, {
     ctrlKey: { value: true }, button: { value: 0 },
   });
   env.window.dispatchEvent(event);
-  assert.equal(env.open, true);
-  assert.equal(event.defaultPrevented, true);
+  assert.equal(env.open, false);
+  assert.equal(event.defaultPrevented, false);
   env.cleanup();
 });
 

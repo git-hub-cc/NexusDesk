@@ -39,7 +39,7 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
       setSpeechTarget(null);
     };
     const handleShortcut = (event: MouseEvent) => {
-      if (event.ctrlKey && event.button === 0) {
+      if (event.altKey && event.button === 0) {
         if ((event.target as HTMLElement | null)?.closest?.('[aria-label="语音转文字"]')) return;
         event.preventDefault();
         window.dispatchEvent(new CustomEvent("nexusdesk-speech-toggle"));
@@ -119,7 +119,7 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
           className="activity-bar-button no-drag-region"
           aria-label="语音转文字"
           aria-pressed={speechOpen}
-          title="语音转文字 (Ctrl+鼠标左键)"
+          title="语音转文字 (Alt+鼠标左键)"
           onClick={() => window.dispatchEvent(new CustomEvent("nexusdesk-speech-toggle"))}
         >
           <Mic size={20} strokeWidth={1.75} aria-hidden="true" />
