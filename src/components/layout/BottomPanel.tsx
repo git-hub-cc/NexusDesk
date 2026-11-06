@@ -156,7 +156,7 @@ export function BottomPanel() {
     || profile.name.toLowerCase() === "codex")
     ?? { id: "codex", name: "Codex", command: "codex" };
   const toolProfiles = profiles.filter(profile => profile.id !== terminalProfile.id && profile !== codexProfile);
-  const tabClass = (selected: boolean) => `group flex shrink-0 items-center gap-1 px-3 h-full text-gray-400 ${selected ? "bg-ide-tab-active-bg text-white hover:bg-ide-tab-active-bg" : "hover:bg-ide-tab-hover hover:text-white"}`;
+  const tabClass = (selected: boolean) => `group flex shrink-0 items-center gap-1 px-3 h-full text-gray-400 ${selected ? "bg-ide-tab-active-bg text-white hover:bg-ide-tab-active-bg" : "hover:bg-ide-tab-hover"}`;
 
   if (isSnapshot) return <div className="flex flex-col h-full"><div className="flex items-center justify-between px-3 h-8 shrink-0 border-b border-ide-panel-border text-xs"><span>历史快照 · 只读（终端已禁用）</span><PanelMinimizeButton panel="bottom" /></div><div className="flex-1 min-h-0"><GitPanel /></div></div>;
 
@@ -173,8 +173,8 @@ export function BottomPanel() {
 
           const sessionLabel = getSessionLabel(session.cwd, session.name);
           return <ContextMenu.Root key={session.id}><SessionTab id={session.id} pinned={!!session.isPinned}><ContextMenu.Trigger asChild>
-            <div data-session-id={session.id} title={session.cwd || session.name} className={`group flex items-center shrink-0 h-full min-w-[120px] max-w-[200px] border-r border-ide-panel-border ${activeTab === "terminal" && activeSessionId === session.id ? "bg-ide-tab-active-bg hover:bg-ide-tab-active-bg" : "hover:bg-ide-tab-hover"}`}>
-            <button className={`${tabClass(false)} min-w-0 flex-1 hover:bg-transparent ${activeTab === "terminal" && activeSessionId === session.id ? "text-white" : ""} ${session.isPinned ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}`} onClick={() => { setActiveSessionId(session.id); setBottomPanelTab("terminal"); }}>
+            <div data-session-id={session.id} title={session.cwd || session.name} className={`group flex items-center shrink-0 h-full min-w-[120px] max-w-[200px] border-r border-ide-panel-border ${activeTab === "terminal" && activeSessionId === session.id ? "bg-ide-tab-active-bg" : "hover:bg-ide-tab-hover"}`}>
+            <button className={`${tabClass(activeTab === "terminal" && activeSessionId === session.id)} min-w-0 flex-1 hover:bg-transparent ${session.isPinned ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}`} onClick={() => { setActiveSessionId(session.id); setBottomPanelTab("terminal"); }}>
               {isExited ? <CircleDot size={14} className="text-gray-500" /> : isCodex ? <img src={openaiIcon} alt="" className="h-3.5 w-3.5 shrink-0 opacity-70 group-hover:opacity-100" /> : <Terminal size={14} />}
               <span className="truncate">{sessionLabel}</span>
               {session.isPinned && <Pin size={12} className="shrink-0 text-gray-400 rotate-45" />}
