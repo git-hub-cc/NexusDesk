@@ -290,6 +290,8 @@ export function TerminalSession({ session, active, onExit }: {
     let lastSize = "";
     let resizeQueue = Promise.resolve();
     let resizePending = false;
+    let resizeTasks = 0;
+    let deferredOutput: Uint8Array[] = [];
     let panelDragging = false;
     let writeQueue: Promise<void> = Promise.resolve();
     let fontsReady = false;
@@ -297,6 +299,16 @@ export function TerminalSession({ session, active, onExit }: {
       pixelWidth: Math.min(65535, Math.round(element.clientWidth * (window.devicePixelRatio || 1))),
       pixelHeight: Math.min(65535, Math.round(element.clientHeight * (window.devicePixelRatio || 1))) });
     const sizeKey = (size: { cols: number; rows: number }) => `${size.cols}:${size.rows}`;
+    const writeOutput = (data: Uint8Array) => {
+      if (resizeTasks) deferredOutput.push(data);
+      else terminal.write(data);
+    };
+    const flushDeferredOutput = () => {
+      if (resizeTasks || !deferredOutput.length) return;
+      const output = deferredOutput;
+      deferredOutput = [];
+      for (const data of output) terminal.write(data);
+    };
     const resize = () => {
       if (disposed || exited || !fontsReady || !element.clientWidth || !element.clientHeight) return;
       // Keep the grid at the PTY's size until the previous resize has completed.
@@ -313,8 +325,14 @@ export function TerminalSession({ session, active, onExit }: {
         // ConPTY only uses rows/columns. Pixel-only changes must not trigger a
         // console redraw (and another prompt) on every splitter movement.
         if (!started || key === lastSize) return;
-        await terminalInvoke("resize_terminal", size);
-        lastSize = key;
+        resizeTasks++;
+        try {
+          await terminalInvoke("resize_terminal", size);
+          lastSize = key;
+        } finally {
+          resizeTasks--;
+          flushDeferredOutput();
+        }
       }).catch(error => { lastSize = ""; report(error); });
     };
     const scheduleResize = () => {
@@ -358,7 +376,7 @@ export function TerminalSession({ session, active, onExit }: {
       if (disposed) return;
       if (event.type === "output") {
         const dataArr = new Uint8Array(event.data);
-        terminal.write(dataArr);
+        writeOutput(dataArr);
 
       } else {
         exited = true;
