@@ -30,6 +30,7 @@ export function ImageEditor({ path, sourceContent, sourceUrl }: { path: string; 
     const container = containerRef.current;
     if (!container || !imgSize.w || !imgSize.h) return;
     const fit = () => {
+      if (panelDragging) return;
       // The preview has 32px of padding on each side.
       const width = container.clientWidth - 64;
       const height = container.clientHeight - 64;
@@ -38,10 +39,19 @@ export function ImageEditor({ path, sourceContent, sourceUrl }: { path: string; 
       container.scrollLeft = 0;
       container.scrollTop = 0;
     };
+    let panelDragging = false;
+    const onPanelDrag = (event: Event) => {
+      panelDragging = (event as CustomEvent<boolean>).detail;
+      if (!panelDragging) fit();
+    };
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(container, { box: "border-box" });
-    return () => observer.disconnect();
+    window.addEventListener("terminal-panel-drag", onPanelDrag);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("terminal-panel-drag", onPanelDrag);
+    };
   }, [imgSize.w, imgSize.h]);
   useEffect(() => {
     const container = containerRef.current;

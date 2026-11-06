@@ -3,7 +3,7 @@ import { GitBranch, Mic, Package, X } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
 import { DndContext, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent, closestCenter, DragOverlay } from "@dnd-kit/core";
-import { useLayoutStore } from "@/store/layoutStore";
+import { setLayoutResizing, useLayoutStore } from "@/store/layoutStore";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { WindowTitleBar } from "./WindowTitleBar";
 import { ActivityBar } from "./ActivityBar";
@@ -21,7 +21,39 @@ import openAiIcon from "@/assets/openai.svg";
 import { sidebarMaxSize, workspacePanelMinSize } from "@/lib/workspacePanelSizing";
 
 export const Workspace: React.FC = () => {
-  const { rightSidebarWidth, setRightSidebarWidth, editorSplitRatio, setEditorSplitRatio, leftSidebarVisible, rightSidebarVisible, bottomPanelVisible, bottomPanelHeight, setBottomPanelHeight, leftSidebarWidth, setLeftSidebarWidth } = useLayoutStore();
+  const rightSidebarWidth = useLayoutStore(state => state.rightSidebarWidth);
+  const setRightSidebarWidth = useLayoutStore(state => state.setRightSidebarWidth);
+  const editorSplitRatio = useLayoutStore(state => state.editorSplitRatio);
+  const setEditorSplitRatio = useLayoutStore(state => state.setEditorSplitRatio);
+  const leftSidebarVisible = useLayoutStore(state => state.leftSidebarVisible);
+  const rightSidebarVisible = useLayoutStore(state => state.rightSidebarVisible);
+  const bottomPanelVisible = useLayoutStore(state => state.bottomPanelVisible);
+  const bottomPanelHeight = useLayoutStore(state => state.bottomPanelHeight);
+  const setBottomPanelHeight = useLayoutStore(state => state.setBottomPanelHeight);
+  const leftSidebarWidth = useLayoutStore(state => state.leftSidebarWidth);
+  const setLeftSidebarWidth = useLayoutStore(state => state.setLeftSidebarWidth);
+  const pendingPanelSizes = useRef<Partial<Record<"leftSidebarWidth" | "rightSidebarWidth" | "editorSplitRatio" | "bottomPanelHeight", number>>>({});
+  const updatePanelSize = (key: "leftSidebarWidth" | "rightSidebarWidth" | "editorSplitRatio" | "bottomPanelHeight", value: number, update: (value: number) => void) => {
+    if (panelDraggingRef.current) pendingPanelSizes.current[key] = value;
+    else update(value);
+  };
+  const panelDraggingRef = useRef(false);
+  const onPanelDragging = (dragging: boolean) => {
+    window.dispatchEvent(new CustomEvent("terminal-panel-drag", { detail: dragging }));
+    if (dragging) {
+      panelDraggingRef.current = true;
+      setLayoutResizing(true);
+      return;
+    }
+    const sizes = pendingPanelSizes.current;
+    pendingPanelSizes.current = {};
+    if (sizes.leftSidebarWidth !== undefined) setLeftSidebarWidth(sizes.leftSidebarWidth);
+    if (sizes.rightSidebarWidth !== undefined) setRightSidebarWidth(sizes.rightSidebarWidth);
+    if (sizes.editorSplitRatio !== undefined) setEditorSplitRatio(sizes.editorSplitRatio);
+    if (sizes.bottomPanelHeight !== undefined) setBottomPanelHeight(sizes.bottomPanelHeight);
+    panelDraggingRef.current = false;
+    setLayoutResizing(false);
+  };
   const horizontalContainer = useRef<HTMLDivElement>(null);
   const workspaceContainer = useRef<HTMLDivElement>(null);
   const leftEditorContainer = useRef<HTMLDivElement>(null);
@@ -183,12 +215,12 @@ export const Workspace: React.FC = () => {
                         defaultSize={leftSidebarWidth || 20}
                         {...horizontalPanelMinimum}
                         maxSize={sidebarMaxSize}
-                        onResize={setLeftSidebarWidth}
+                        onResize={size => updatePanelSize("leftSidebarWidth", size, setLeftSidebarWidth)}
                         className="bg-ide-panel-bg"
                       >
                         <Sidebar />
                       </Panel>
-                      <PanelResizeHandle className="ide-resize-handle ide-resize-handle-x" />
+                      <PanelResizeHandle onDragging={onPanelDragging} className="ide-resize-handle ide-resize-handle-x" />
                     </>
                   )}
 
@@ -196,11 +228,11 @@ export const Workspace: React.FC = () => {
                     <PanelGroup direction="horizontal">
                         {/* Keep the left group mounted when opening or closing a split. */}
                         {/* 左侧编辑器组 */}
-                        <Panel key="left" ref={leftEditorPanel} id="left-editor" order={1} defaultSize={isSplitMode ? editorSplitRatio : 100} onResize={size => { if (isSplitMode) setEditorSplitRatio(size); }} minSize={20} className="flex flex-col relative">
+                        <Panel key="left" ref={leftEditorPanel} id="left-editor" order={1} defaultSize={isSplitMode ? editorSplitRatio : 100} onResize={size => { if (isSplitMode) updatePanelSize("editorSplitRatio", size, setEditorSplitRatio); }} minSize={20} className="flex flex-col relative">
                           <div ref={leftEditorContainer} className="h-full min-w-0"><EditorGroupPanel groupId="left" /></div>
                         </Panel>
 
-                        {isSplitMode && <PanelResizeHandle key="split-handle" className="ide-resize-handle ide-resize-handle-x z-10" />}
+                        {isSplitMode && <PanelResizeHandle key="split-handle" onDragging={onPanelDragging} className="ide-resize-handle ide-resize-handle-x z-10" />}
 
                         {/* 右侧编辑器组 */}
                         {isSplitMode && <Panel key="right" id="right-editor" order={2} defaultSize={100 - editorSplitRatio} minSize={20} className="flex flex-col relative">
@@ -210,21 +242,21 @@ export const Workspace: React.FC = () => {
                   </Panel>
                   {rightSidebarVisible && (
                     <>
-                      <PanelResizeHandle className="ide-resize-handle ide-resize-handle-x" />
-                      <Panel id="relations-sidebar" order={3} defaultSize={rightSidebarWidth} onResize={setRightSidebarWidth} {...horizontalPanelMinimum} maxSize={sidebarMaxSize} className="bg-ide-panel-bg"><RelationalView /></Panel>
+                      <PanelResizeHandle onDragging={onPanelDragging} className="ide-resize-handle ide-resize-handle-x" />
+                      <Panel id="relations-sidebar" order={3} defaultSize={rightSidebarWidth} onResize={size => updatePanelSize("rightSidebarWidth", size, setRightSidebarWidth)} {...horizontalPanelMinimum} maxSize={sidebarMaxSize} className="bg-ide-panel-bg"><RelationalView /></Panel>
                     </>
                   )}
                 </PanelGroup>
 
               </div>
             </Panel>
-            <PanelResizeHandle disabled={!bottomPanelVisible} className={bottomPanelVisible ? "ide-resize-handle ide-resize-handle-y z-10" : "hidden"} />
+            <PanelResizeHandle disabled={!bottomPanelVisible} onDragging={onPanelDragging} className={bottomPanelVisible ? "ide-resize-handle ide-resize-handle-y z-10" : "hidden"} />
             <Panel id="bottom-panel" order={2} ref={bottomPanel} collapsible collapsedSize={0} defaultSize={bottomPanelVisible ? bottomPanelHeight : 0} minSize={15} maxSize={80} className="bg-ide-panel-bg" onExpand={() => {
               if (!useLayoutStore.getState().bottomPanelVisible) useLayoutStore.setState({ bottomPanelVisible: true });
             }} onCollapse={() => {
               if (useLayoutStore.getState().bottomPanelVisible) useLayoutStore.setState({ bottomPanelVisible: false });
             }} onResize={(size) => {
-              if (size > 5) setBottomPanelHeight(size);
+              if (size > 5) updatePanelSize("bottomPanelHeight", size, setBottomPanelHeight);
             }}>
               <BottomPanel />
             </Panel>

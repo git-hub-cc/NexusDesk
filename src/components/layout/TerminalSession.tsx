@@ -290,6 +290,7 @@ export function TerminalSession({ session, active, onExit }: {
     let lastSize = "";
     let resizeQueue = Promise.resolve();
     let resizePending = false;
+    let panelDragging = false;
     let writeQueue: Promise<void> = Promise.resolve();
     let fontsReady = false;
     const dimensions = () => ({ id, cols: Math.max(1, terminal.cols), rows: Math.max(1, terminal.rows),
@@ -305,6 +306,7 @@ export function TerminalSession({ session, active, onExit }: {
       resizeQueue = resizeQueue.then(async () => {
         resizePending = false;
         if (disposed || exited || !element.clientWidth || !element.clientHeight) return;
+        if (panelDragging) return;
         fit.fit();
         const size = dimensions();
         const key = sizeKey(size);
@@ -325,6 +327,11 @@ export function TerminalSession({ session, active, onExit }: {
     // 分割面板改变的是宿主尺寸，不一定会触发 window.resize。
     const resizeObserver = new ResizeObserver(() => scheduleResize());
     resizeObserver.observe(element);
+    const onPanelDrag = (event: Event) => {
+      panelDragging = (event as CustomEvent<boolean>).detail;
+      if (!panelDragging) scheduleResize();
+    };
+    window.addEventListener("terminal-panel-drag", onPanelDrag);
     fitRef.current = () => { scheduleResize(); focusTerminal(); };
     // Wait for fonts and three equal, visible layout samples before opening PTY.
     let finishLayout: (() => void) | undefined;
@@ -450,6 +457,7 @@ export function TerminalSession({ session, active, onExit }: {
       cancelAnimationFrame(layoutFrame);
       resizeObserver.disconnect();
       window.removeEventListener("resize", scheduleResize);
+      window.removeEventListener("terminal-panel-drag", onPanelDrag);
       document.fonts?.removeEventListener("loadingdone", fontsChanged);
       clearTimeout(historyClickTimer.current);
       fillHistory.current = () => {};
