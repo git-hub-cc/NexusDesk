@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(import.meta.url);
 const tauriCli = require.resolve("@tauri-apps/cli/tauri.js");
+const noSttModel = process.argv.includes("--no-stt-model");
 const revision = "2365baeacb507f821a0c8120fcee3d484dba7a07";
 const modelDirectory = join(root, "src-tauri", "resources", "stt-model");
 const outputDirectory = join(root, "release");
@@ -64,10 +65,12 @@ function copyInstaller(label) {
 
 try {
   await runTauri(["build"]);
-  copyInstaller("不含语音模型");
-  await ensureModel();
-  await runTauri(["build", "--config", "src-tauri/tauri.model.conf.json"]);
-  copyInstaller("内置语音模型");
+  copyInstaller("不含STT内置模型");
+  if (!noSttModel) {
+    await ensureModel();
+    await runTauri(["build", "--config", "src-tauri/tauri.model.conf.json"]);
+    copyInstaller("内置语音模型");
+  }
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;
