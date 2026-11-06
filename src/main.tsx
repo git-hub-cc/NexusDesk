@@ -3,7 +3,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { flushGlobalSettings, initializeGlobalSettings } from "./lib/globalSettings";
 import { flushUIState } from "./lib/uiPersistence";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 
 // Cancel the native menu after application context-menu handlers have run.
 document.addEventListener("contextmenu", event => event.preventDefault());
@@ -16,6 +16,11 @@ window.addEventListener("keydown", event => {
 
   const key = event.key.toLowerCase();
   const command = event.ctrlKey || event.metaKey;
+
+  if (isTauri() && event.altKey && !command && !event.shiftKey && key === "a") {
+    event.preventDefault();
+    void invoke("capture_start").catch(error => console.error("无法启动截图:", error));
+  }
 
   // 保留 F12 的 WebView2 原生开发者工具快捷键，便于查看元素和调试页面。
   const isFunctionKey = /^f(1[0-2]|[1-9])$/.test(key) && key !== "f12";
