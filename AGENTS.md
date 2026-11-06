@@ -2,6 +2,8 @@
 
 Windows PowerShell 5.1 does not support `&&` as a command separator. Run commands separately or use `;` to separate them.
 
+Avoid using the `nl` command in PowerShell; use `Select-String` instead.
+
 In PowerShell, backslash (`\`) does not escape quote characters. For regular expressions containing both single and double quotes, use a single-quoted PowerShell string and double embedded single quotes. For example:
 
 ```powershell
