@@ -136,6 +136,7 @@ export const Workspace: React.FC = () => {
     if (sourcePane === targetPane) {
       if (overId && activeId !== overId) {
         const tabs = sourcePane === "left" ? leftTabs : rightTabs;
+        if (tabs.find(tab => tab.id === overId)?.isPinned) return;
         const oldIndex = tabs.findIndex(t => t.id === activeId);
         const newIndex = tabs.findIndex(t => t.id === overId);
         if (oldIndex !== -1 && newIndex !== -1) {

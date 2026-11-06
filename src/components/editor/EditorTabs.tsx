@@ -10,7 +10,7 @@ import { MUSIC_HOME, VIDEO_HOME, CHAT_HOME, MIRROR_HOME, retryFileSave, useWorks
 import { openContextMenuFromKeyboard } from "@/lib/contextMenu";
 import { confirmAction } from "@/lib/dialogs";
 import { setSpeechTarget } from "@/lib/speechTarget";
-import { SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { SortableContext, horizontalListSortingStrategy, useSortable, type SortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useDroppable } from "@dnd-kit/core";
 
@@ -102,8 +102,8 @@ export const TabUI = forwardRef<HTMLDivElement, {
           className={`group flex items-center gap-2 px-3 min-w-[120px] max-w-[200px] h-9 border-r border-ide-panel-border text-sm select-none shrink-0 outline-none ${
               isOverlay ? "cursor-grabbing shadow-xl bg-ide-tab-active-bg text-white border-t-2 border-t-transparent opacity-90" :
                   isDraggingPlaceholder ? "opacity-20 bg-ide-tab-bg border-t-2 border-t-transparent" :
-                      isActive ? `bg-ide-tab-active-bg text-white border-t-2 border-t-transparent ${tab.browser?.url === MIRROR_HOME ? "cursor-default" : "cursor-pointer"}` :
-                          `text-gray-400 hover:bg-ide-tab-hover border-t-2 border-t-transparent ${tab.browser?.url === MIRROR_HOME ? "cursor-default" : "cursor-pointer"}`
+                  isActive ? `bg-ide-tab-active-bg text-white border-t-2 border-t-transparent ${tab.browser?.url === MIRROR_HOME ? "cursor-default" : tab.isPinned ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}` :
+                          `text-gray-400 hover:bg-ide-tab-hover border-t-2 border-t-transparent ${tab.browser?.url === MIRROR_HOME ? "cursor-default" : tab.isPinned ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}`
           }`}
           {...props}
       >
@@ -133,7 +133,8 @@ const SortableTab = ({ tab, pane, isActive, closeImages, tabs }: { tab: any, pan
   const sortableId = `${pane}-${tab.id}`;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: sortableId,
-    data: { type: "tab", pane, tab }
+    data: { type: "tab", pane, tab },
+    disabled: !!tab.isPinned,
   });
 
   const style = {
@@ -189,6 +190,14 @@ const SortableTab = ({ tab, pane, isActive, closeImages, tabs }: { tab: any, pan
   );
 };
 
+const getEditorTabSortingStrategy = (pane: EditorTabsProps["pane"]): SortingStrategy => args => {
+  const tabs = pane === "left"
+    ? useWorkspaceStore.getState().leftTabs
+    : useWorkspaceStore.getState().rightTabs;
+  const pinnedCount = tabs.filter(tab => tab.isPinned).length;
+  return args.index < pinnedCount ? null : horizontalListSortingStrategy(args);
+};
+
 function useTabMetadata(pane: EditorTabsProps["pane"]) {
   // Subscribe only to metadata displayed by the tab bar, never document content.
   const selectTabs = React.useMemo(() => {
@@ -208,6 +217,7 @@ function useTabMetadata(pane: EditorTabsProps["pane"]) {
 
 export const EditorTabs: React.FC<EditorTabsProps> = ({ pane }) => {
   const tabs = useTabMetadata(pane);
+  const sortingStrategy = React.useMemo(() => getEditorTabSortingStrategy(pane), [pane]);
   const activeTabId = useWorkspaceStore(state => pane === "left" ? state.activeLeftTabId : state.activeRightTabId);
   const isFocused = useWorkspaceStore(state => state.focusedPane === pane);
   const setFocusedPane = useWorkspaceStore(state => state.setFocusedPane);
@@ -271,14 +281,17 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({ pane }) => {
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', scrollBehavior: 'smooth' }}
               onClick={() => { setFocusedPane(pane); setSpeechTarget({ kind: "editor", pane }); }}
           >
-            <SortableContext items={tabs.map(t => `${pane}-${t.id}`)} strategy={horizontalListSortingStrategy}>
+            <SortableContext items={tabs.map(t => `${pane}-${t.id}`)} strategy={sortingStrategy}>
               {tabs.map((tab) => (
                   <SortableTab key={tab.id} tab={tab} pane={pane} isActive={tab.id === activeTabId} closeImages={closeImages} tabs={tabs} />
               ))}
             </SortableContext>
             <div data-tauri-drag-region className="drag-region h-full min-w-0 flex-1" />
           </div>
-          <NewTabButtons pane={pane} />
+          <div className="flex h-full shrink-0 items-center no-drag-region">
+            <EditorTabList pane={pane} />
+            <NewTabButtons pane={pane} />
+          </div>
 
         </div>
       </>
