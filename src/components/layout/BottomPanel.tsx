@@ -3,9 +3,9 @@ import { PanelMinimizeButton } from "./PanelMinimizeButton";
 import { isSnapshot } from "@/lib/snapshot";
 import { useEffect, useRef, useState } from "react";
 import { gitApi } from "@/lib/api";
-import { ClipboardCheck, GitBranch, Settings, Terminal, X, CircleDot, ChevronDown } from "lucide-react";
+import { ClipboardCheck, GitBranch, Settings, Terminal, X, CircleDot, ChevronDown, Pin } from "lucide-react";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { SortableContext, horizontalListSortingStrategy, useSortable, type SortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as DropdownMenu from "@/lib/nativeDropdownMenu";
 import * as ContextMenu from "@/lib/nativeMenu";
@@ -20,8 +20,8 @@ import { GitPanel } from "@/components/git/GitPanel";
 import { TerminalSettings } from "./TerminalSettings";
 import { TerminalSession } from "./TerminalSession";
 
-function SessionTab({ id, children }: { id: string; children: React.ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+function SessionTab({ id, pinned, children }: { id: string; pinned: boolean; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: pinned });
   return <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.35 : undefined }} {...attributes} {...listeners} className="flex h-full shrink-0 items-center">
     {children}
   </div>;
@@ -31,6 +31,11 @@ function getSessionLabel(cwd: string | null, fallback: string) {
   const directory = cwd?.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
   return directory || fallback;
 }
+
+const sessionSortingStrategy: SortingStrategy = args => {
+  const pinnedCount = useTerminalStore.getState().sessions.filter(session => session.isPinned).length;
+  return args.index < pinnedCount ? null : horizontalListSortingStrategy(args);
+};
 
 export function BottomPanel() {
   const { bottomPanelTab: activeTab, setBottomPanelTab } = useLayoutStore();
@@ -68,6 +73,7 @@ export function BottomPanel() {
 
   const handleSessionDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;
+    if (sessions.find(session => session.id === active.id)?.isPinned || sessions.find(session => session.id === over.id)?.isPinned) return;
     reorderSessions(sessions.findIndex(session => session.id === active.id), sessions.findIndex(session => session.id === over.id));
   };
 
@@ -159,16 +165,17 @@ export function BottomPanel() {
         <div ref={tabsRef} className="flex h-full min-w-0 shrink items-center overflow-hidden">
         {gitInstalled && <button className={`${tabClass(activeTab === "git")} shrink-0`} onClick={() => setBottomPanelTab("git")}><GitBranch size={14} />版本控制</button>}
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSessionDragEnd}>
-          <SortableContext items={sessions.map(session => session.id)} strategy={horizontalListSortingStrategy}>
+          <SortableContext items={sessions.map(session => session.id)} strategy={sessionSortingStrategy}>
           {sessions.map(session => {
           const isCodex = session.command.toLowerCase().includes("codex") || session.name.toLowerCase().includes("codex");
           const isExited = exitedSessions[session.id];
 
           const sessionLabel = getSessionLabel(session.cwd, session.name);
-          return <ContextMenu.Root key={session.id}><SessionTab id={session.id}><ContextMenu.Trigger asChild>
+          return <ContextMenu.Root key={session.id}><SessionTab id={session.id} pinned={!!session.isPinned}><ContextMenu.Trigger asChild>
             <div data-session-id={session.id} title={session.cwd || session.name} className="group flex items-center shrink-0 h-full">
-            <button className={`${tabClass(activeTab === "terminal" && activeSessionId === session.id)} cursor-grab active:cursor-grabbing`} onClick={() => { setActiveSessionId(session.id); setBottomPanelTab("terminal"); }}>
+            <button className={`${tabClass(activeTab === "terminal" && activeSessionId === session.id)} ${session.isPinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"}`} onClick={() => { setActiveSessionId(session.id); setBottomPanelTab("terminal"); }}>
               {isExited ? <CircleDot size={14} className="text-gray-500" /> : isCodex ? <img src={openaiIcon} alt="" className="h-3.5 w-3.5 shrink-0 opacity-70 group-hover:opacity-100" /> : <Terminal size={14} />}
+              {session.isPinned && <Pin size={12} className="shrink-0 text-gray-400 rotate-45" />}
               {sessionLabel}
             </button>
             <button aria-label={`关闭 ${sessionLabel} 会话`} title={`关闭 ${sessionLabel} 会话`} className="flex h-5 w-5 items-center justify-center rounded text-gray-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/15 hover:text-white active:bg-white/20" onClick={() => {
