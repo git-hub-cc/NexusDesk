@@ -146,14 +146,6 @@ pub fn is_download(label: &str, navigation: u64) -> bool {
     navigation_downloads().lock().unwrap().remove(&(label.into(), navigation))
 }
 
-fn speculative_downloads() -> &'static Mutex<HashMap<String, tauri::Url>> {
-    static URLS: OnceLock<Mutex<HashMap<String, tauri::Url>>> = OnceLock::new();
-    URLS.get_or_init(Default::default)
-}
-pub fn take_speculative_download(label: &str) -> Option<tauri::Url> {
-    speculative_downloads().lock().unwrap().remove(label)
-}
-
 fn ranges(total: u64) -> Vec<(u64, u64)> {
     let size = total.div_ceil(4);
     (0..4).filter_map(|i| { let start = i * size; (start < total).then_some((start, (start + size).min(total) - 1)) }).collect()
@@ -308,13 +300,6 @@ pub fn observe(view: &tauri::Webview, window: tauri::Window, event_label: String
                 let mut uri = PWSTR::null(); let mut path = PWSTR::null(); let mut total = 0;
                 operation.Uri(&mut uri)?; args.ResultFilePath(&mut path)?; operation.TotalBytesToReceive(&mut total)?;
                 let url = take_pwstr(uri); let path = std::path::PathBuf::from(take_pwstr(path));
-                if super::browser_cmds::is_speculative(view_handle.label()) {
-                    if let Ok(url) = tauri::Url::parse(&url) {
-                        speculative_downloads().lock().unwrap().insert(view_handle.label().into(), url);
-                    }
-                    args.SetCancel(true)?;
-                    return Ok(());
-                }
                 // The application owns progress and cancellation, including tiny
                 // downloads; do not leave a second native download dialog open.
                 args.SetHandled(true)?;

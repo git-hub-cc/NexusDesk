@@ -163,7 +163,6 @@ pub fn run() {
             commands::browser_cmds::browser_action,
             commands::browser_downloads::browser_downloads,
             commands::browser_downloads::browser_cancel_download,
-            commands::browser_cmds::browser_suggestions,
             commands::browser_cmds::browser_can_go,
             commands::menu_cmds::native_menu_open,
             commands::menu_cmds::native_menu_close,

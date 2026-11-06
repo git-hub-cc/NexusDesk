@@ -1,22 +1,32 @@
-import { reserveBrowser, speculateBrowser, cancelBrowserSpeculation, takeSpeculativeBrowser } from "@/lib/browserPool";
+import { reserveBrowser } from "@/lib/browserPool";
 import { browserVisibility } from "@/lib/browserVisibility";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ArrowLeft, ArrowRight, RotateCw, House, Globe, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, RotateCw, House, Globe } from "lucide-react";
 import { useWorkspaceStore, type Tab } from "@/store/workspaceStore";
 import { MUSIC_HOME, VIDEO_HOME, CHAT_HOME } from "@/store/workspaceStore";
 import { MusicEditor } from "@/components/music/MusicEditor";
 import { VideoEditor } from "@/components/video/VideoEditor";
 import { ChatEditor } from "@/components/chat/ChatEditor";
-import { searchHistory, useBrowserHistoryStore } from "@/store/browserHistoryStore";
-import { BrowserSuggestionPopup } from "./BrowserSuggestionPopup";
+import { useBrowserHistoryStore } from "@/store/browserHistoryStore";
 import { BrowserPasswords } from "./BrowserPasswords";
 import { BrowserDownloads } from "./BrowserDownloads";
 import { BrowserExtensions, CHROME_EXTENSION_STORE_URL } from "./BrowserExtensions";
 
 export const BROWSER_HOME = "nexusdesk:nav";
+
+export function validateBrowserAddress(value: string): string {
+  const trimmed = value.trim();
+  const input = /^(?:https?:\/\/|chrome-extension:\/\/)/i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  if (/\s/.test(input)) {
+    throw new Error("请输入有效的网址，例如 example.com");
+  }
+  const url = new URL(input);
+  if (!url.hostname) throw new Error("请输入有效的网址");
+  return url.href;
+}
 
 function browserDiagnosticUrl(value: string): string {
   try {
@@ -45,11 +55,10 @@ function NavigationEditor({ tab, active }: { tab: Tab; active: boolean }) {
   const frame = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
     const receive = (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow || event.origin !== window.location.origin || !["nexusdesk:navigate", "nexusdesk:speculate"].includes(event.data?.type)) return;
+      if (event.source !== frame.current?.contentWindow || event.origin !== window.location.origin || event.data?.type !== "nexusdesk:navigate") return;
       try {
         const url = new URL(event.data.url);
         if (!["https:", "http:"].includes(url.protocol)) return;
-        if (event.data.type === "nexusdesk:speculate") { if (active) speculateBrowser(url.href); return; }
         const state = useWorkspaceStore.getState();
         state.setFocusedPane(state.rightTabs.some(item => item.id === tab.id) ? "right" : "left");
         const id = `browser:${crypto.randomUUID()}`;
@@ -59,13 +68,11 @@ function NavigationEditor({ tab, active }: { tab: Tab; active: boolean }) {
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
   }, [tab.id, tab.browser!.root, active]);
-  useEffect(() => () => cancelBrowserSpeculation(), []);
   return <div className={`absolute inset-0 flex flex-col bg-ide-bg ${active ? "" : "hidden"}`}><iframe ref={frame} title="导航工作台" src={`${import.meta.env.BASE_URL}navigation/index.html`} className="min-h-0 w-full flex-1 border-0 bg-ide-bg" /></div>;
 }
 
 function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
   const host = useRef<HTMLDivElement>(null);
-  const addressAnchor = useRef<HTMLDivElement>(null);
   const addressInput = useRef<HTMLInputElement>(null);
   const currentUrl = useRef(tab.browser!.url);
   const activeRef = useRef(active);
@@ -73,14 +80,8 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
   const [address, setAddress] = useState(tab.browser!.url === "about:blank" ? "" : tab.browser!.url);
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
-  const labelRef = useRef("");
-  const entries = useBrowserHistoryStore(state => state.entries);
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState(-1);
-  const suggestions = searchHistory(entries, query);
-  const listId = useId();
   const editingRef = useRef(false);
+  const labelRef = useRef("");
   const syncLayout = useRef<() => void>(() => {});
   const [viewGeneration, setViewGeneration] = useState(0);
   const pendingView = useRef<ReturnType<typeof reserveBrowser> | undefined>(undefined);
@@ -96,33 +97,7 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
     pendingView.current = undefined;
   }, []);
 
-  useEffect(() => {
-    if (!active || !suggestionsOpen) return;
-    const dismissOutside = (event: PointerEvent) => {
-      if (addressAnchor.current?.contains(event.target as Node)) return;
-      // Resize handles prevent the default focus change and can stop propagation.
-      // Capture outside presses instead of relying on the address input's blur.
-      editingRef.current = false;
-      setSuggestionsOpen(false);
-      setSelected(-1);
-    };
-    document.addEventListener("pointerdown", dismissOutside, true);
-    return () => document.removeEventListener("pointerdown", dismissOutside, true);
-  }, [active, suggestionsOpen]);
-
-  useEffect(() => {
-    if (!active || !suggestionsOpen || (!query.trim() && selected < 0)) return;
-    const candidate = selected >= 0 ? suggestions[selected]?.url : suggestions.length === 1 ? suggestions[0].url : undefined;
-    if (!candidate) return;
-    const timer = window.setTimeout(() => speculateBrowser(candidate), 100);
-    return () => window.clearTimeout(timer);
-  }, [active, suggestionsOpen, query, selected, entries]);
-
   useEffect(() => { syncLayout.current(); }, [active, error]);
-
-  useEffect(() => {
-    if (!active) { setSuggestionsOpen(false); editingRef.current = false; }
-  }, [active]);
 
   useEffect(() => {
     let disposed = false;
@@ -318,7 +293,6 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
         switching.current = true;
         setReady(false);
         pendingView.current = view;
-        setSuggestionsOpen(false);
         setViewGeneration(value => value + 1);
       };
       if (name === "back" || name === "forward") {
@@ -332,21 +306,9 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
         }
       }
       if (name === "navigate" && url) {
-        const candidate = takeSpeculativeBrowser(url);
         // A new navigation invalidates the retained forward chain.
         for (const old of retainedViews.current.splice(retainedIndex.current + 1)) {
           void invoke("browser_action", { label: old, action: "close" }).catch(() => {});
-        }
-        if (candidate) {
-          retainedViews.current.push(candidate.label);
-          // Bound retained renderers even during long browsing sessions.
-          if (retainedViews.current.length > 8) {
-            const oldest = retainedViews.current.shift()!;
-            void invoke("browser_action", { label: oldest, action: "close" }).catch(() => {});
-          }
-          retainedIndex.current = retainedViews.current.length - 1;
-          activate(candidate);
-          return;
         }
       }
       // Failed redirects can leave the native view on its previous document.
@@ -357,31 +319,17 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
   const navigate = (value: string) => {
     if (!ready) return;
     try {
-      const input = value.trim();
-      if (!input) return;
-      let url: URL;
-      try {
-        if (/^\d+$/.test(input)) throw new Error('Not a website address');
-        url = new URL(/^(?:https?|chrome-extension):\/\//i.test(input) ? input : `https://${input}`);
-        if (/\s/.test(input) || (!/^(?:https?|chrome-extension):\/\//i.test(input)
-          && !url.hostname.includes('.') && url.hostname !== 'localhost' && !url.hostname.startsWith('['))) {
-          throw new Error('Not a website address');
-        }
-      } catch {
-        url = new URL(`https://gemini.google.com/app?prompt=${encodeURIComponent(input)}`);
-      }
+      const input = validateBrowserAddress(value);
+      const url = new URL(input);
       if (!['http:', 'https:', 'chrome-extension:'].includes(url.protocol)) throw new Error("请输入网页或扩展页面地址");
       setAddress(url.href);
-      setSuggestionsOpen(false);
-      editingRef.current = false;
-      setSelected(-1);
       addressInput.current?.blur();
       void action("navigate", url.href);
-    } catch { setError("请输入有效的网页地址"); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "请输入有效的网址"); }
   };
 
   return <div className={`absolute inset-0 flex flex-col bg-ide-bg ${active ? "" : "hidden"}`}>
-    <form className="flex h-10 shrink-0 items-center gap-1 border-b border-ide-panel-border px-2 text-gray-400" onSubmit={event => { event.preventDefault(); navigate(suggestionsOpen && selected >= 0 && suggestions[selected] ? suggestions[selected].url : address); }}>
+    <form className="flex h-10 shrink-0 items-center gap-1 border-b border-ide-panel-border px-2 text-gray-400" onSubmit={event => { event.preventDefault(); navigate(address); }}>
       <BrowserPasswords onImported={async () => { await action("autofill"); }} />
       <BrowserExtensions getLabel={() => labelRef.current} currentUrl={currentUrl.current} onOpenStore={async () => { await action("navigate", CHROME_EXTENSION_STORE_URL); }} onInstalled={async () => { await action("reload"); }} />
       {([
@@ -395,55 +343,24 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
           useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
         }],
       ] as const).map(([title, Icon, onClick]) => <button key={title} type="button" title={title} aria-label={title} disabled={!ready} onClick={onClick} className="rounded p-1.5 hover:bg-white/10 hover:text-white disabled:opacity-40"><Icon size={15} /></button>)}
-      <div ref={addressAnchor} className="relative ml-1 flex h-7 min-w-0 flex-1 items-center gap-2 rounded border border-ide-panel-border bg-ide-tab-bg px-2 focus-within:border-ide-accent">
+      <div className="relative ml-1 flex h-7 min-w-0 flex-1 items-center gap-2 rounded border border-ide-panel-border bg-ide-tab-bg px-2 focus-within:border-ide-accent">
         <Globe size={14} className="shrink-0" />
-        <input ref={addressInput} aria-label="网页地址" role="combobox" aria-autocomplete="list" aria-expanded={suggestionsOpen} aria-controls={suggestionsOpen ? listId : undefined} aria-activedescendant={suggestionsOpen && selected >= 0 ? `${listId}-${selected}` : undefined}
-          placeholder="输入网址或搜索浏览历史" disabled={!ready}
+        <input ref={addressInput} aria-label="网页地址"
+          placeholder="输入网址，例如 example.com 或 https://example.com" disabled={!ready}
           className="min-w-0 flex-1 bg-transparent text-xs text-gray-200 outline-none" value={address}
-          onChange={event => { setAddress(event.target.value); setQuery(event.target.value); setSelected(-1); setSuggestionsOpen(true); }}
-          onFocus={event => { if (editingRef.current) return; editingRef.current = true; event.target.select(); setQuery(""); setSelected(-1); setSuggestionsOpen(true); }}
-          onBlur={event => {
-            editingRef.current = false;
-            if (event.relatedTarget) { setSuggestionsOpen(false); setSelected(-1); }
-            // Child pointer actions arrive after native focus changes. The injected
-            // panel dismisses itself on outside presses; keep its listener alive.
-
-          }}
+          onChange={event => setAddress(event.target.value)}
+          onFocus={event => { editingRef.current = true; event.target.select(); }}
+          onBlur={() => { editingRef.current = false; }}
           onKeyDown={event => {
             if (event.nativeEvent.isComposing) return;
             if (event.key === "Escape") {
               event.preventDefault();
               setAddress(currentUrl.current === "about:blank" ? "" : currentUrl.current);
-              setSuggestionsOpen(false); setSelected(-1);
               event.currentTarget.select();
-            }
-            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-              event.preventDefault(); setSuggestionsOpen(true);
-              setSelected(index => suggestions.length ? (index + (event.key === "ArrowDown" ? 1 : index < 0 ? 0 : -1) + suggestions.length) % suggestions.length : -1);
             }
           }} />
       </div>
     </form>
-    {active && suggestionsOpen && <BrowserSuggestionPopup label={labelRef.current} anchor={addressAnchor} onSelect={navigate} onRemove={url => {
-      editingRef.current = true;
-      useBrowserHistoryStore.getState().remove(url);
-      void invoke("browser_action", { label: labelRef.current, action: "focus-host" }).then(() => {
-        if (editingRef.current) addressInput.current?.focus();
-      }).catch(() => {});
-    }} onClose={() => { setSuggestionsOpen(false); setSelected(-1); }}>
-      <div className="px-3 py-2 text-[11px] text-gray-500">{query.trim() ? "匹配的历史网址" : "最近访问 · 输入关键词查找"}</div>
-      <div id={listId} role="listbox" aria-label="浏览历史">
-        {suggestions.map((entry, index) => <div key={entry.url} id={`${listId}-${index}`} role="option" data-action={entry.url} aria-selected={selected === index}
-          onMouseDown={event => event.preventDefault()} onMouseEnter={() => setSelected(index)} onClick={() => navigate(entry.url)}
-          className={`flex cursor-pointer items-center gap-2 px-3 py-2 text-xs ${selected === index ? "bg-white/10" : "hover:bg-white/5"}`}>
-          <span className="min-w-0 flex-1"><span className="block truncate text-gray-200">{entry.title}</span>
-          <span className="mt-1 block truncate text-gray-500" title={entry.url}>{entry.url}</span></span>
-          <button type="button" data-action="browser-history-remove" data-value={entry.url} aria-label={`删除 ${entry.url}`} title="从浏览记录中删除" onMouseDown={event => event.preventDefault()}
-            className="shrink-0 rounded p-1 text-gray-500 hover:bg-red-500/15 hover:text-red-400"><X size={13} /></button>
-        </div>)}
-      </div>
-      {!suggestions.length && <div className="px-3 pb-3 text-xs text-gray-500">{query.trim() ? "没有匹配的历史网址，可输入完整网址并按回车访问" : "暂无浏览记录，访问网站后将自动保存"}</div>}
-    </BrowserSuggestionPopup>}
     {error && <div data-browser-error role="status" className="px-3 py-2 text-xs text-red-400 border-b border-ide-panel-border">{error} <button type="button" className="ml-2 underline" onClick={() => void action("reload")}>重新加载</button> <button type="button" className="ml-2 underline" onClick={() => {
       try {
         const url = new URL(address);

@@ -16,27 +16,6 @@ pub(super) fn clear_download_error(window: &tauri::Window, label: &str) {
     let _ = window.emit_to(window.label(), &format!("browser-load-result-{label}"), "");
 }
 
-fn speculative_labels() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
-    static LABELS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = std::sync::OnceLock::new();
-    LABELS.get_or_init(Default::default)
-}
-
-pub(super) fn is_speculative(label: &str) -> bool {
-    speculative_labels().lock().map(|labels| labels.contains(label)).unwrap_or(false)
-}
-
-#[cfg(target_os = "windows")]
-fn mute_browser(view: &tauri::Webview, muted: bool) -> Result<(), String> {
-    view.with_webview(move |platform| unsafe {
-        use windows::core::Interface;
-        if let Ok(core) = platform.controller().CoreWebView2() {
-            if let Ok(audio) = core.cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_8>() {
-                let _ = audio.SetIsMuted(muted);
-            }
-        }
-    }).map_err(|error| error.to_string())
-}
-
 // OAuth query strings/fragments can contain credentials. Only record the route.
 fn diagnostic_url(url: &tauri::Url) -> String {
     format!("{}://{}{}", url.scheme(), url.host_str().unwrap_or(""), url.path())
@@ -235,9 +214,7 @@ fn validate_label(owner: &str, label: &str) -> Result<(), String> {
 
 fn clear_browser_state(window: &tauri::Window, label: &str) {
     if let Ok(mut titles) = document_titles().lock() { titles.remove(label); }
-    if let Ok(mut labels) = speculative_labels().lock() { labels.remove(label); }
     if let Ok(mut results) = load_results().lock() { results.remove(label); }
-    super::browser_downloads::take_speculative_download(label);
     close_browser_children(window, label);
 }
 
@@ -414,7 +391,6 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
     // Start the target navigation immediately using the measured editor bounds.
     let builder = tauri::webview::WebviewBuilder::new(&label, tauri::WebviewUrl::External(initial_url))
         .initialization_script(include_str!("browser_links.js"))
-        .initialization_script(include_str!("browser_suggestions.js"))
         .initialization_script(include_str!("browser_gemini.js"))
         .initialization_script(include_str!("browser_video_progress.js"))
         .initialization_script(include_str!("browser_extensions.js"))
@@ -437,7 +413,7 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
         })
         .on_navigation(move |url| {
             if url.scheme() == "nexusdesk-extension" {
-                if !is_speculative(&navigation_label) && owner.get_webview(&navigation_label)
+                if owner.get_webview(&navigation_label)
                     .and_then(|view| view.url().ok()).is_some_and(|current| current.scheme() == "https" && current.host_str() == Some("chromewebstore.google.com")) {
                     if let Some((_, source)) = url.query_pairs().find(|(key, _)| key == "source") {
                         // Only store detail links can cross this page bridge.
@@ -451,11 +427,7 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
                 }
                 return false;
             }
-            if url.scheme() == "nexusdesk-suggestion" {
-                let _ = owner.emit_to(owner.label(), &format!("browser-suggestion-{navigation_label}"), url.query().unwrap_or(""));
-                return false;
-            }
-            if !is_speculative(&navigation_label) && super::browser_passwords::password_navigation(owner.get_webview(&navigation_label), url) { return false; }
+            if super::browser_passwords::password_navigation(owner.get_webview(&navigation_label), url) { return false; }
             log::info!(target: "browser", "label={navigation_label} navigation url={} allowed={}", diagnostic_url(url), allowed_browser_url(url));
             if !allowed_browser_url(url) { return false; }
             let _ = trace_browser_result(&navigation_label, "emit-navigation", owner.emit_to(owner.label(), &event, url.as_str()));
@@ -474,12 +446,11 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
                 // Google can replace its route without another navigation callback.
                 let _ = view.emit_to(view.window().label(), &format!("browser-url-{load_label}"), payload.url().as_str());
                 let _ = view.emit_to(view.window().label(), &format!("browser-document-ready-{load_label}"), ());
-                if !is_speculative(&load_label) { super::browser_passwords::fill(&view, payload.url()); }
+                super::browser_passwords::fill(&view, payload.url());
             }
             log::info!(target: "browser", "label={load_label} page-load event={:?} elapsed_ms={load_elapsed_ms:?} url={}", payload.event(), diagnostic_url(payload.url()));
         })
         .on_new_window(move |url, features| {
-            if is_speculative(&popup_parent_label) { return tauri::webview::NewWindowResponse::Deny; }
             log::info!(target: "browser", "label={popup_parent_label} popup-request url={} allowed={}", diagnostic_url(&url), allowed_browser_url(&url));
             if !allowed_browser_url(&url) {
                 return tauri::webview::NewWindowResponse::Deny;
@@ -655,23 +626,8 @@ pub fn browser_action(window: tauri::Window, label: String, action: String, url:
         }).map_err(|error| error.to_string())?;
     }
     let result = match action.as_str() {
-        "speculate" => {
-            speculative_labels().lock().map_err(|e| e.to_string())?.insert(label.clone());
-            #[cfg(target_os = "windows")]
-            mute_browser(&view, true)?;
-            let target = browser_url(url.as_deref().unwrap_or(""))?;
-            let target = serde_json::to_string(target.as_str()).map_err(|e| e.to_string())?;
-            view.eval(&format!("location.replace({target})"))
-        },
         "navigate" => view.navigate(browser_url(url.as_deref().unwrap_or(""))?),
         "sync" => {
-            speculative_labels().lock().map_err(|e| e.to_string())?.remove(&label);
-            #[cfg(target_os = "windows")]
-            mute_browser(&view, false)?;
-            if let Some(target) = super::browser_downloads::take_speculative_download(&label) {
-                clear_download_error(&window, &label);
-                view.navigate(target).map_err(|e| e.to_string())?;
-            }
             let url = view.url().map_err(|e| e.to_string())?;
             super::browser_passwords::fill(&view, &url);
             window.emit_to(window.label(), &format!("browser-url-{label}"), url.as_str()).map_err(|e| e.to_string())?;
@@ -698,13 +654,6 @@ pub fn browser_action(window: tauri::Window, label: String, action: String, url:
         _ => return Err("未知浏览器操作".into()),
     };
     trace_browser_result(&label, &action, result)
-}
-
-#[tauri::command]
-pub fn browser_suggestions(window: tauri::Window, label: String, payload: serde_json::Value) -> Result<(), String> {
-    let view = child(&window, &label)?;
-    let data = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
-    view.eval(&format!("window.__nexusdeskSuggestions?.({data})")).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
