@@ -66,11 +66,11 @@ function copyInstaller(label) {
 
 try {
   await runTauri(["build"]);
-  copyInstaller("不含STT内置模型");
+  copyInstaller("no-stt");
   if (!noSttModel) {
     await ensureModel();
     await runTauri(["build", "--config", "src-tauri/tauri.model.conf.json"]);
-    copyInstaller("内置语音模型");
+    copyInstaller("stt");
   }
 } catch (error) {
   console.error(error.message);

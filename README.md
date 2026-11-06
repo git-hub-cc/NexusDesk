@@ -19,7 +19,7 @@ NexusDesk 是一个集成代码编辑、文件管理、浏览器、音乐、视�
 
 语音识别使用本地 SenseVoice 模型。Windows 安装包分为内置模型版和轻量版：内置模型版安装后即可离线识别；轻量版会在首次使用时下载模型，成功后可离线识别。
 
-在 Windows 开发环境中运行 `npm run package:windows`，会在 `release` 目录输出 `NexusDesk_x.x.x_x64-setup.exe` 和 `NexusDesk-stt_x.x.x_x64-setup.exe`。运行 `npm run package:windows-no-stt-model` 可只生成不含 STT 内置模型的安装包。该版本仍可下载模型使用语音转文字。内置模型版打包前会从固定版本的 Hugging Face 仓库获取约 239 MB 的模型和词表，因此需要可访问该站点的网络。
+在 Windows 开发环境中运行 `npm run package:windows`，会在 `release` 目录输出 `NexusDesk_x.x.x_x64-setup.exe` 和 `NexusDesk-x.x.x-stt.exe`。运行 `npm run package:windows-no-stt-model` 可只生成不含 STT 内置模型的安装包。该版本仍可下载模型使用语音转文字。内置模型版打包前会从固定版本的 Hugging Face 仓库获取约 239 MB 的模型和词表，因此需要可访问该站点的网络。
 
 若轻量版自动下载失败，请：
 
