@@ -13,7 +13,7 @@ function shellWords(input: string): string[] | null {
       if (quote === '"' && !['"', "\\", "$", "`"].includes(next)) word += "\\";
       word += next;
       started = true;
-    } else if (quote !== "'" && (char === "`" || (char === "$" && /[a-zA-Z0-9_@*#?$!{(\-]/.test(input[i + 1] ?? "")))) {
+    } else if (quote !== "'" && (char === "`" || (char === "$" && input[i + 1] === "("))) {
       return null;
     } else if (quote) {
       if (char === quote) quote = "";

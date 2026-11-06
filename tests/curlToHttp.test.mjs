@@ -27,10 +27,13 @@ Content-Type: application/json
   }`);
 });
 
-test("preserves commands requiring shell expansion", () => {
+test("preserves shell variable placeholders in converted requests", () => {
+  assert.equal(curlToHttp('curl -H "x-api-key: $NEW_API_KEY" https://example.com'), 'GET https://example.com\nx-api-key: $NEW_API_KEY');
+  assert.equal(curlToHttp('curl "https://example.com/${PATH}"'), 'GET https://example.com/${PATH}');
+});
+
+test("preserves commands requiring shell command substitution", () => {
   for (const input of [
-    'curl -H "Authorization: Bearer $TOKEN" https://example.com',
-    'curl https://example.com/$PATH',
     'curl https://example.com -d "$(command)"',
     'curl https://example.com -d "`command`"',
   ]) assert.equal(curlToHttp(input), null);
