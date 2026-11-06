@@ -165,7 +165,7 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
         const ready = await invoke<{ ready: boolean }>("stt_model_status", { model: config.current.model });
         if (!alive) return;
         if (!ready.ready) {
-          setStatus("正在下载 SenseVoice 模型和词表…");
+          setStatus("正在准备 SenseVoice 模型和词表…");
           await invoke("stt_download_model", { model: config.current.model });
         }
         if (!alive) return;

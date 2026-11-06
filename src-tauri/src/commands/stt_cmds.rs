@@ -144,6 +144,16 @@ fn model_path(app: &tauri::AppHandle, model: &str) -> Result<PathBuf, String> {
     if model != MODEL_ID {
         return Err("不支持的 SenseVoice 模型".into());
     }
+    let bundled_path = app
+        .path()
+        .resource_dir()
+        .map_err(|error| error.to_string())?
+        .join("models")
+        .join(MODEL_ID)
+        .join(MODEL_REVISION);
+    if model_ready(&bundled_path) {
+        return Ok(bundled_path);
+    }
     Ok(app
         .path()
         .app_data_dir()

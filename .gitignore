@@ -1,5 +1,7 @@
 node_modules
 dist
+/release
+/src-tauri/resources/stt-model
 /patch.md
 /res.md
 /00code.md

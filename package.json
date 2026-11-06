@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "icons": "tauri icon src/assets/nexusdesk.svg",
-    "tauri": "node scripts/tauri.mjs"
+    "tauri": "node scripts/tauri.mjs",
+    "package:windows": "node scripts/package-windows.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.4",

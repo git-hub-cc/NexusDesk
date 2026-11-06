@@ -38,7 +38,7 @@ export function SpeechRecognitionSettings() {
         <label className="grid gap-1">最短语音时长（秒）<input className={selectClass} type="number" min="0.1" max="5" step="0.1" value={preferences.minDurationSeconds} onChange={event => updateNumber("minDurationSeconds", event.currentTarget.valueAsNumber)} /><span className="text-xs text-gray-400">过短的录音片段不会识别。</span></label>
         <label className="grid gap-1">最少识别字符数<input className={selectClass} type="number" min="1" max="20" step="1" value={preferences.minTextLength} onChange={event => updateNumber("minTextLength", event.currentTarget.valueAsNumber)} /><span className="text-xs text-gray-400">识别结果不足此长度时会丢弃。</span></label>
       </div>
-      <p className="text-xs text-gray-400">模型首次使用时自动下载，之后可离线识别；当前使用 CPU 推理。</p>
+      <p className="text-xs text-gray-400">内置模型版安装包可直接离线识别；轻量版首次使用时会下载模型。当前使用 CPU 推理。</p>
       <div className="rounded border border-ide-panel-border bg-ide-bg p-3">
         <h3 className="font-medium">全局跨应用语音输入（Windows）</h3>
         <p className="mt-2 text-xs leading-relaxed text-gray-400">按住 Ctrl 并点击鼠标左键即可开启或关闭语音识别，也可点击左侧边栏的语音转文字按钮。悬浮窗显示录音状态，每段转写完成后自动填入当前输入光标处；切换输入框可继续输入。</p>
