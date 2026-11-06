@@ -10,6 +10,7 @@ export function CodexSettings() {
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
   const [trustMode, setTrustMode] = useState(false);
   const [showTooltips, setShowTooltips] = useState(true);
+  const [checkForUpdateOnStartup, setCheckForUpdateOnStartup] = useState(true);
   const [autoReview, setAutoReview] = useState(settingsStorage.getItem("nexusdesk.codex.autoReview") === "true");
   const [autoReviewPrompt, setAutoReviewPrompt] = useState(settingsStorage.getItem(AUTO_REVIEW_PROMPT_KEY) ?? DEFAULT_AUTO_REVIEW_PROMPT);
   const [busy, setBusy] = useState(false);
@@ -27,6 +28,7 @@ export function CodexSettings() {
       setApiKeyConfigured(settings.apiKeyConfigured);
       setTrustMode(settings.trustMode);
       setShowTooltips(settings.showTooltips);
+      setCheckForUpdateOnStartup(settings.checkForUpdateOnStartup);
       loaded.current = true;
     }).catch(reason => setError(String(reason)));
   }, []);
@@ -37,7 +39,7 @@ export function CodexSettings() {
       const version = ++saveVersion.current;
       setBusy(true);
       setError("");
-      const save = () => codexSettingsApi.save({ model, proxyUrl, apiKey: apiKey || undefined, trustMode, showTooltips });
+      const save = () => codexSettingsApi.save({ model, proxyUrl, apiKey: apiKey || undefined, trustMode, showTooltips, checkForUpdateOnStartup });
       const currentSave = saveQueue.current.catch(() => {}).then(save);
       saveQueue.current = currentSave;
       void currentSave.then(() => {
@@ -50,7 +52,7 @@ export function CodexSettings() {
       });
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [model, proxyUrl, apiKey, trustMode, showTooltips]);
+  }, [model, proxyUrl, apiKey, trustMode, showTooltips, checkForUpdateOnStartup]);
 
   useEffect(() => {
     settingsStorage.setItem("nexusdesk.codex.autoReview", String(autoReview));
@@ -81,6 +83,10 @@ export function CodexSettings() {
       <label className="flex items-start gap-2">
         <input type="checkbox" className="mt-0.5 accent-ide-accent" checked={showTooltips} onChange={event => setShowTooltips(event.target.checked)} />
         <span><span className="block">显示提示信息</span><span className="mt-0.5 block text-xs text-gray-400">控制 Codex TUI 是否显示提示信息。</span></span>
+      </label>
+      <label className="flex items-start gap-2">
+        <input type="checkbox" className="mt-0.5 accent-ide-accent" checked={checkForUpdateOnStartup} onChange={event => setCheckForUpdateOnStartup(event.target.checked)} />
+        <span><span className="block">启动时检查新版本</span><span className="mt-0.5 block text-xs text-gray-400">控制 Codex 启动时是否显示版本更新提示。</span></span>
       </label>
       {error && <p role="alert" className="break-all text-red-400">{error}</p>}
       {busy && <p className="text-xs text-gray-400" role="status">正在保存…</p>}

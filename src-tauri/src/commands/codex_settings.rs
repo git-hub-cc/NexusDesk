@@ -12,6 +12,7 @@ pub struct CodexSettings {
     api_key_configured: bool,
     trust_mode: bool,
     show_tooltips: bool,
+    check_for_update_on_startup: bool,
 }
 
 #[derive(Deserialize)]
@@ -22,6 +23,7 @@ pub struct CodexSettingsInput {
     api_key: Option<String>,
     trust_mode: bool,
     show_tooltips: bool,
+    check_for_update_on_startup: bool,
 }
 
 fn codex_dir() -> Result<PathBuf, String> {
@@ -259,6 +261,10 @@ pub fn codex_settings_read() -> Result<CodexSettings, String> {
             .and_then(|tui| tui.get("show_tooltips"))
             .and_then(toml::Value::as_bool)
             .unwrap_or(true),
+        check_for_update_on_startup: config
+            .get("check_for_update_on_startup")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(true),
     })
 }
 
@@ -308,6 +314,10 @@ pub fn codex_settings_save(input: CodexSettingsInput) -> Result<(), String> {
         .as_table_mut()
         .ok_or("tui 必须是表")?;
     tui.insert("show_tooltips".into(), toml::Value::Boolean(input.show_tooltips));
+    table.insert(
+        "check_for_update_on_startup".into(),
+        toml::Value::Boolean(input.check_for_update_on_startup),
+    );
 
     let proxy_url = input.proxy_url.trim();
     if !proxy_url.is_empty() {
