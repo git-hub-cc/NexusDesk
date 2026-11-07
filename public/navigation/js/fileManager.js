@@ -24,32 +24,29 @@ let pendingImportData = null; // 用于暂存待导入的数据
 // =========================================================================
 
 /**
- * 处理导出按钮点击事件，将当前数据源的数据保存为JSON文件。
+ * 处理导出按钮点击事件，将本地缓存中的“我的导航”保存为JSON文件。
  */
 export function handleExport() {
-    const currentSourceIdentifier = dom.customSelect.dataset.value;
+    // 导出只读取本地缓存，避免旧的内存状态覆盖刚同步的数据。
     let savedCustomCategory = null;
     try {
         savedCustomCategory = JSON.parse(localStorage.getItem(NAV_CUSTOM_USER_SITES_KEY) || 'null');
-    } catch { /* 损坏的本地缓存不影响当前数据导出。 */ }
-    saveNavData(currentSourceIdentifier); // 确保保存的是最新数据
+    } catch { /* 损坏的本地缓存按空的“我的导航”处理。 */ }
 
-    const dataToExport = JSON.parse(JSON.stringify(state.siteData)); // 深拷贝以安全操作
-    const currentCustomCategory = dataToExport.categories.find(category => category.categoryId === CUSTOM_CATEGORY_ID);
-    if (Array.isArray(savedCustomCategory?.sites) && savedCustomCategory.sites.length
-        && (!currentCustomCategory || !currentCustomCategory.sites?.length)) {
-        const preservedCategory = {
+    // 导出只包含本地缓存中的“我的导航”，避免带出任何数据源的内容。
+    const customCategory = savedCustomCategory && typeof savedCustomCategory === 'object'
+        ? {
             ...savedCustomCategory,
             categoryName: '我的导航',
             categoryId: CUSTOM_CATEGORY_ID,
-        };
-        if (currentCustomCategory) {
-            Object.assign(currentCustomCategory, preservedCategory);
-        } else {
-            dataToExport.categories.unshift(preservedCategory);
+            sites: Array.isArray(savedCustomCategory.sites) ? savedCustomCategory.sites : [],
         }
-        localStorage.setItem(NAV_CUSTOM_USER_SITES_KEY, JSON.stringify(preservedCategory));
-    }
+        : {
+            categoryName: '我的导航',
+            categoryId: CUSTOM_CATEGORY_ID,
+            sites: [],
+        };
+    const dataToExport = { categories: [customCategory] };
 
     // 导出前，确保所有分类和网站都有ID，保证数据的完整性和可再导入性
     dataToExport.categories.forEach(category => {
@@ -74,12 +71,11 @@ export function handleExport() {
     const dataStr = JSON.stringify(dataToExport, null, 2);
     if (window.parent !== window) {
         const timestamp = (new Date()).toISOString().slice(0, 10);
-        const sourceName = dom.customSelectSelectedText.textContent;
         const requestId = `navigation-export-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         window.parent.postMessage({
             type: 'nexusdesk:export-navigation',
             requestId,
-            filename: `NavHub-Export-${sourceName}-${timestamp}.json`,
+            filename: `NavHub-Export-我的导航-${timestamp}.json`,
             content: dataStr,
         }, window.location.origin);
         return;
@@ -89,8 +85,7 @@ export function handleExport() {
     const a = document.createElement('a');
     a.href = url;
     const timestamp = (new Date()).toISOString().slice(0, 10);
-    const sourceName = dom.customSelectSelectedText.textContent;
-    a.download = `NavHub-Export-${sourceName}-${timestamp}.json`;
+    a.download = `NavHub-Export-我的导航-${timestamp}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
