@@ -3,7 +3,7 @@ use std::{collections::{HashMap, HashSet}, sync::{Arc, Mutex, OnceLock}, time::{
 use tauri::Emitter;
 use tauri::Manager;
 
-fn youtube_cookie_file() -> Option<std::path::PathBuf> {
+pub fn youtube_cookie_file() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|home| home.join(".nexus").join("youtube-cookies.txt"))
 }
 

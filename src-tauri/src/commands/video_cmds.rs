@@ -100,11 +100,12 @@ async fn find_ffmpeg(ytdlp: Option<&Path>) -> Option<PathBuf> {
     find_working_tool(paths, "-version").await
 }
 
+#[cfg(test)]
 fn ytdlp_download_command(program: &Path, destination: &Path, url: &reqwest::Url, ffmpeg: Option<&Path>, cookies: Option<&str>) -> Command {
-    ytdlp_download_command_with_format(program, destination, url, ffmpeg, cookies, None)
+    ytdlp_download_command_with_format(program, destination, url, ffmpeg, cookies, None, None)
 }
 
-fn ytdlp_download_command_with_format(program: &Path, destination: &Path, url: &reqwest::Url, ffmpeg: Option<&Path>, cookies: Option<&str>, format: Option<&str>) -> Command {
+fn ytdlp_download_command_with_format(program: &Path, destination: &Path, url: &reqwest::Url, ffmpeg: Option<&Path>, cookies: Option<&str>, format: Option<&str>, cookie_file: Option<&Path>) -> Command {
     let mut command = video_tool_command(program);
     command.args(["--ignore-config", "--no-playlist", "--no-progress", "--windows-filenames", "--hls-prefer-native"])
         // 与内置 WebView2 的浏览器标识保持一致，避免 Cookie 与客户端不匹配。
@@ -121,7 +122,9 @@ fn ytdlp_download_command_with_format(program: &Path, destination: &Path, url: &
         // Never fall back to a silent video when merging is unavailable.
         command.args(["-f", "best[vcodec!=none][acodec!=none]"]);
     }
-    if let Some(cookies) = cookies.filter(|value| !value.is_empty()) {
+    if let Some(cookie_file) = cookie_file {
+        command.arg("--cookies").arg(cookie_file);
+    } else if let Some(cookies) = cookies.filter(|value| !value.is_empty()) {
         command.arg("--add-header").arg(format!("Cookie: {cookies}"));
     }
     command.arg("--").arg(url.as_str()).stdout(Stdio::null()).stderr(Stdio::piped());
@@ -218,12 +221,14 @@ pub async fn download_video(app: tauri::AppHandle, url: String, destination: Str
         let cookies = if host == "youtube.com" || host.ends_with(".youtube.com") || host == "youtu.be" || host.ends_with(".youtu.be") {
             crate::commands::browser_downloads::cookies_for_url(&app, "https://www.youtube.com/").ok()
         } else { None };
-        let output = ytdlp_download_command(&program, dest, &parsed, ffmpeg.as_deref(), cookies.as_deref()).output().await.map_err(|e| format!("无法启动 yt-dlp：{e}"))?;
+        let youtube = host == "youtube.com" || host.ends_with(".youtube.com") || host == "youtu.be" || host.ends_with(".youtu.be");
+        let cookie_file = youtube.then(crate::commands::browser_downloads::youtube_cookie_file).flatten().filter(|path| path.is_file());
+        let output = ytdlp_download_command_with_format(&program, dest, &parsed, ffmpeg.as_deref(), cookies.as_deref(), None, cookie_file.as_deref()).output().await.map_err(|e| format!("无法启动 yt-dlp：{e}"))?;
         if output.status.success() { return Ok("下载完成".into()); }
         let stderr = String::from_utf8_lossy(&output.stderr);
         if stderr.contains("HTTP Error 403") {
             // 部分视频拒绝分离音视频地址，退回带音频的单文件格式继续下载。
-            let mut retry = ytdlp_download_command_with_format(&program, dest, &parsed, ffmpeg.as_deref(), cookies.as_deref(), Some("best[vcodec!=none][acodec!=none]"));
+            let mut retry = ytdlp_download_command_with_format(&program, dest, &parsed, ffmpeg.as_deref(), cookies.as_deref(), Some("best[vcodec!=none][acodec!=none]"), cookie_file.as_deref());
             let retry_output = retry.output().await.map_err(|e| format!("无法启动 yt-dlp：{e}"))?;
             if retry_output.status.success() { return Ok("下载完成".into()); }
             let retry_stderr = String::from_utf8_lossy(&retry_output.stderr);
