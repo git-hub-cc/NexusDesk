@@ -587,6 +587,7 @@ html[data-theme='dark'] .card:hover { background: rgba(30, 41, 59, 0.9); box-sha
     display: flex; align-items: center; justify-content: center; margin-right: 14px; flex-shrink: 0;
 }
 .card-icon { width: 24px; height: 24px; object-fit: contain; }
+.sprite-icon { display: inline-block; flex: 0 0 auto; background-repeat: no-repeat; }
 .card-title {
     font-size: 15px; font-weight: 600; margin: 0; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; flex: 1;

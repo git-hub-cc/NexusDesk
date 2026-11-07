@@ -462,7 +462,12 @@ export function renderNavPage() {
 
 function createCardHTML(site, isEditable) {
     const defaultIcon = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🌐%3C/text%3E%3C/svg%3E';
-    const iconUrl = site.icon || defaultIcon;
+    const spriteIcon = site.icon && typeof site.icon === 'object' ? site.icon : null;
+    const iconUrl = typeof site.icon === 'string' ? site.icon : defaultIcon;
+    const spriteScale = spriteIcon ? 24 / spriteIcon.width : 1;
+    const iconMarkup = spriteIcon
+        ? `<span class="card-icon sprite-icon" aria-hidden="true" style="background-image:url('${spriteIcon.sprite}');background-position:-${spriteIcon.x * spriteScale}px -${spriteIcon.y * spriteScale}px;background-size:${spriteIcon.spriteWidth * spriteScale}px ${spriteIcon.spriteHeight * spriteScale}px"></span>`
+        : `<img src="${iconUrl}" alt="" class="card-icon" draggable="false" loading="lazy" onerror="this.src='${defaultIcon}'">`;
     const proxyBadge = site.proxy ? '<div class="proxy-dot" title="需代理"></div>' : '';
 
     const editOverlay = isEditable ? `
@@ -484,7 +489,7 @@ function createCardHTML(site, isEditable) {
             ${editOverlay}
             <div class="card-header">
                 <div class="card-icon-wrapper">
-                    <img src="${iconUrl}" alt="" class="card-icon" draggable="false" loading="lazy" onerror="this.src='${defaultIcon}'">
+                    ${iconMarkup}
                 </div>
                 <h3 class="card-title" title="${site.title}">${site.title}</h3>
             </div>
@@ -642,7 +647,7 @@ export function openSiteModal(mode, site = null, categoryId, categoryName = '') 
         dom.siteIdInput.value = site.id;
         dom.siteUrlInput.value = site.url;
         dom.siteTitleInput.value = site.title;
-        dom.siteIconInput.value = site.icon || '';
+        dom.siteIconInput.value = typeof site.icon === 'string' ? site.icon : '';
         dom.siteDescInput.value = site.desc || '';
         dom.siteProxyInput.checked = site.proxy || false;
     }
