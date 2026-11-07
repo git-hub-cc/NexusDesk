@@ -29,6 +29,8 @@ export const Workspace: React.FC = () => {
   const rightSidebarVisible = useLayoutStore(state => state.rightSidebarVisible);
   const bottomPanelVisible = useLayoutStore(state => state.bottomPanelVisible);
   const bottomPanelHeight = useLayoutStore(state => state.bottomPanelHeight);
+  const bottomPanelWidth = useLayoutStore(state => state.bottomPanelWidth);
+  const bottomPanelAtSidebar = bottomPanelWidth === "sidebar" && leftSidebarVisible;
   const setBottomPanelHeight = useLayoutStore(state => state.setBottomPanelHeight);
   const leftSidebarWidth = useLayoutStore(state => state.leftSidebarWidth);
   const setLeftSidebarWidth = useLayoutStore(state => state.setLeftSidebarWidth);
@@ -62,6 +64,27 @@ export const Workspace: React.FC = () => {
   };
   useEffect(() => () => onPanelDragging(false), []);
   const horizontalContainer = useRef<HTMLDivElement>(null);
+  const panelContainer = useRef<HTMLDivElement>(null);
+  const sidebarContainer = useRef<HTMLDivElement>(null);
+  const bottomContainer = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const container = panelContainer.current;
+    const sidebar = sidebarContainer.current;
+    const bottom = bottomContainer.current;
+    if (!container) return;
+    // 使用实际像素同步占位和宽度，让文件树拖动时底部面板保持对齐。
+    const update = () => {
+      const height = bottom?.getBoundingClientRect().height ?? 0;
+      container.style.setProperty("--bottom-panel-height", `${height}px`);
+      container.style.setProperty("--bottom-panel-width", `${sidebar?.getBoundingClientRect().width ?? container.clientWidth * leftSidebarWidth / 100}px`);
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    if (sidebar) observer.observe(sidebar);
+    if (bottom) observer.observe(bottom);
+    update();
+    return () => observer.disconnect();
+  }, [leftSidebarVisible, bottomPanelVisible, leftSidebarWidth]);
   const workspaceContainer = useRef<HTMLDivElement>(null);
   const leftEditorContainer = useRef<HTMLDivElement>(null);
   const rightEditorContainer = useRef<HTMLDivElement>(null);
@@ -110,14 +133,6 @@ export const Workspace: React.FC = () => {
     return () => observer.disconnect();
   }, [leftSidebarVisible, rightSidebarVisible]);
   const horizontalPanelMinimum = { minSize: horizontalMinSize };
-  const bottomPanel = useRef<ImperativePanelHandle>(null);
-  useEffect(() => {
-    if (bottomPanelVisible) {
-      bottomPanel.current?.resize(useLayoutStore.getState().bottomPanelHeight || 25);
-    } else {
-      bottomPanel.current?.collapse();
-    }
-  }, [bottomPanelVisible]);
   const leftEditorPanel = useRef<ImperativePanelHandle>(null);
   useLayoutEffect(() => {
     if (isSplitMode) leftEditorPanel.current?.resize(editorSplitRatio);
@@ -212,9 +227,8 @@ export const Workspace: React.FC = () => {
         <WindowTitleBar editorLayout={tabLayout} />
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <ActivityBar settingsOpen={settingsOpen} onLeaveSettings={() => setSettingsOpen(false)} />
-          <PanelGroup direction="vertical" className="min-w-0 flex-1">
-            <Panel id="main-area" order={1} className="min-h-0">
-              <div ref={horizontalContainer} className="h-full min-w-0">
+          <div ref={panelContainer} className="relative min-w-0 flex-1 overflow-hidden">
+              <div ref={horizontalContainer} className="h-full min-w-0" style={{ paddingBottom: bottomPanelVisible && !bottomPanelAtSidebar ? "var(--bottom-panel-height)" : 0 }}>
                 <PanelGroup direction="horizontal" className="h-full w-full">
                   {leftSidebarVisible && (
                     <>
@@ -227,7 +241,7 @@ export const Workspace: React.FC = () => {
                         onResize={size => updatePanelSize("leftSidebarWidth", size, setLeftSidebarWidth)}
                         className="bg-ide-panel-bg"
                       >
-                        <Sidebar />
+                        <div ref={sidebarContainer} className="h-full min-w-0" style={{ paddingBottom: bottomPanelVisible && bottomPanelAtSidebar ? "var(--bottom-panel-height)" : 0 }}><Sidebar /></div>
                       </Panel>
                       <PanelResizeHandle onDragging={onPanelDragging} className="ide-resize-handle ide-resize-handle-x" />
                     </>
@@ -258,18 +272,27 @@ export const Workspace: React.FC = () => {
                 </PanelGroup>
 
               </div>
-            </Panel>
-            <PanelResizeHandle disabled={!bottomPanelVisible} onDragging={onPanelDragging} className={bottomPanelVisible ? "ide-resize-handle ide-resize-handle-y z-10" : "hidden"} />
-            <Panel id="bottom-panel" order={2} ref={bottomPanel} collapsible collapsedSize={0} defaultSize={bottomPanelVisible ? bottomPanelHeight : 0} minSize={15} maxSize={80} className="bg-ide-panel-bg" onExpand={() => {
-              if (!useLayoutStore.getState().bottomPanelVisible) useLayoutStore.setState({ bottomPanelVisible: true });
-            }} onCollapse={() => {
-              if (useLayoutStore.getState().bottomPanelVisible) useLayoutStore.setState({ bottomPanelVisible: false });
-            }} onResize={(size) => {
-              if (size > 5) updatePanelSize("bottomPanelHeight", size, setBottomPanelHeight);
-            }}>
-              <BottomPanel />
-            </Panel>
-          </PanelGroup>
+            <div ref={bottomContainer} className="absolute bottom-0 left-0 z-20 flex flex-col bg-ide-panel-bg" style={{ display: bottomPanelVisible ? "flex" : "none", height: `${bottomPanelHeight}%`, width: bottomPanelAtSidebar ? "var(--bottom-panel-width)" : "100%" }}>
+              <div role="separator" aria-label="调整底部面板高度" aria-orientation="horizontal" aria-valuemin={15} aria-valuemax={80} aria-valuenow={Math.round(bottomPanelHeight)} tabIndex={0} className="ide-resize-handle ide-resize-handle-y relative before:absolute before:-inset-y-1 before:inset-x-0" onKeyDown={event => {
+                if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+                event.preventDefault();
+                setBottomPanelHeight(Math.min(80, Math.max(15, bottomPanelHeight + (event.key === "ArrowUp" ? 2 : -2))));
+              }} onPointerDown={event => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                onPanelDragging(true);
+              }} onPointerMove={event => {
+                if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+                const bounds = panelContainer.current?.getBoundingClientRect();
+                if (!bounds || bounds.height <= 0) return;
+                const height = Math.min(80, Math.max(15, (bounds.bottom - event.clientY) / bounds.height * 100));
+                if (bottomContainer.current) bottomContainer.current.style.height = `${height}%`;
+                updatePanelSize("bottomPanelHeight", height, setBottomPanelHeight);
+              }} onPointerUp={event => { event.currentTarget.releasePointerCapture(event.pointerId); onPanelDragging(false); }} onLostPointerCapture={() => onPanelDragging(false)} />
+              <div className="min-h-0 flex-1 overflow-hidden"><BottomPanel /></div>
+            </div>
+          </div>
         </div>
       </div>
       <AndroidMirrorWorkspace />

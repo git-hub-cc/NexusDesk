@@ -55,11 +55,13 @@ test("layout panels and all split ratios survive restart and stay isolated per p
   env.useLayoutStore.getState().setLeftSidebarWidth(26);
   env.useLayoutStore.getState().setRightSidebarWidth(22);
   env.useLayoutStore.getState().setBottomPanelHeight(34);
+  env.useLayoutStore.getState().setBottomPanelWidth("sidebar");
   env.useLayoutStore.getState().setEditorSplitRatio(38);
   env.useLayoutStore.getState().setMarkdownSplitRatio(64);
   env.useLayoutStore.getState().setGitDiffSplitRatio(43);
   env.restoreProjectLayout("B");
   assert.equal(env.useLayoutStore.getState().bottomPanelVisible, false);
+  assert.equal(env.useLayoutStore.getState().bottomPanelWidth, "full");
   env.useLayoutStore.getState().setMarkdownSplitRatio(30);
   env.flushUIState();
   const restarted = harness(env.disk);
@@ -69,6 +71,7 @@ test("layout panels and all split ratios survive restart and stay isolated per p
   assert.equal(state.rightSidebarVisible, true);
   assert.equal(state.bottomPanelVisible, true);
   assert.equal(state.bottomPanelTab, "terminal");
+  assert.equal(state.bottomPanelWidth, "sidebar");
   for (const [key, value] of Object.entries({ leftSidebarWidth: 26, rightSidebarWidth: 22, bottomPanelHeight: 34,
     editorSplitRatio: 38, markdownSplitRatio: 64, gitDiffSplitRatio: 43 })) assert.equal(state[key], value);
   assert.equal(typeof state.toggleLeftSidebar, "function");
@@ -82,11 +85,12 @@ test("snapshot viewers cannot overwrite UI state and corrupt records use default
   env.flushUIState();
   assert.equal(env.writes.length, 0);
   const normal = harness();
-  normal.writeUI("A", "layout", { leftSidebarWidth: -4, bottomPanelTab: "invalid", markdownSplitRatio: 60, toggleLeftSidebar: false });
+  normal.writeUI("A", "layout", { leftSidebarWidth: -4, bottomPanelTab: "invalid", bottomPanelWidth: "invalid", markdownSplitRatio: 60, toggleLeftSidebar: false });
   normal.restoreProjectLayout("A");
   const state = normal.useLayoutStore.getState();
   assert.equal(state.leftSidebarWidth, 20);
   assert.equal(state.bottomPanelTab, "git");
+  assert.equal(state.bottomPanelWidth, "full");
   assert.equal(state.markdownSplitRatio, 60);
   assert.equal(typeof state.toggleLeftSidebar, "function");
 });

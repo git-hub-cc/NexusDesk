@@ -8,6 +8,7 @@ interface LayoutState {
   rightSidebarVisible: boolean;
   leftSidebarWidth: number;
   bottomPanelHeight: number;
+  bottomPanelWidth: "full" | "sidebar";
   rightSidebarWidth: number;
   editorSplitRatio: number;
   markdownSplitRatio: number;
@@ -24,6 +25,7 @@ interface LayoutState {
   toggleRightSidebar: () => void;
   setLeftSidebarWidth: (width: number) => void;
   setBottomPanelHeight: (height: number) => void;
+  setBottomPanelWidth: (width: "full" | "sidebar") => void;
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
@@ -41,6 +43,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   rightSidebarVisible: false,
   leftSidebarWidth: 20, // 百分比
   bottomPanelHeight: 25, // 百分比
+  bottomPanelWidth: "full",
 
   toggleLeftSidebar: () => set((state) => ({ leftSidebarVisible: !state.leftSidebarVisible })),
   toggleBottomPanel: () => set((state) => ({ bottomPanelVisible: !state.bottomPanelVisible })),
@@ -49,6 +52,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   toggleRightSidebar: () => set((state) => ({ rightSidebarVisible: !state.rightSidebarVisible })),
   setLeftSidebarWidth: (width) => set({ leftSidebarWidth: width }),
   setBottomPanelHeight: (height) => set({ bottomPanelHeight: height }),
+  setBottomPanelWidth: (width) => set({ bottomPanelWidth: width }),
 }));
 
 const defaults = Object.fromEntries(Object.entries(useLayoutStore.getState()).filter(([, value]) => typeof value !== "function"));
@@ -75,6 +79,7 @@ export function restoreProjectLayout(root: string) {
     if (typeof value !== typeof fallback) continue;
     if (typeof value === "number" && (!Number.isFinite(value) || value <= 0 || value >= 100)) continue;
     if (key === "bottomPanelTab" && value !== "git" && value !== "terminal") continue;
+    if (key === "bottomPanelWidth" && value !== "full" && value !== "sidebar") continue;
     values[key] = value;
   }
   restoring = true;

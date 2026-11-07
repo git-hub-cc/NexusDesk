@@ -2,7 +2,7 @@ import { Minus } from "lucide-react";
 import { useLayoutStore } from "@/store/layoutStore";
 
 const panels = {
-  left: { visibility: "leftSidebarVisible", label: "最小化文件树" },
+  left: { visibility: "leftSidebarVisible", label: "最小化左侧面板" },
   right: { visibility: "rightSidebarVisible", label: "最小化右侧面板" },
   bottom: { visibility: "bottomPanelVisible", label: "最小化底部面板" },
 } as const;

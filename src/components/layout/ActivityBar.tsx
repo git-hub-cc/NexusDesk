@@ -1,4 +1,4 @@
-import { FolderTree, PanelRight, PanelBottom, Settings, Mic } from "lucide-react";
+import { PanelRight, PanelBottom, PanelBottomDashed, Settings, Mic, PanelLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -12,8 +12,8 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
   const speechOpenRef = useRef(false);
   speechOpenRef.current = speechOpen;
   const {
-    leftSidebarVisible, rightSidebarVisible, bottomPanelVisible,
-    toggleLeftSidebar, toggleRightSidebar, toggleBottomPanel,
+    leftSidebarVisible, rightSidebarVisible, bottomPanelVisible, bottomPanelWidth,
+    toggleLeftSidebar, toggleRightSidebar, toggleBottomPanel, setBottomPanelWidth,
   } = useLayoutStore();
 
   useEffect(() => {
@@ -90,10 +90,14 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
   };
 
   const panels = [
-    { label: "文件树", icon: FolderTree, visible: leftSidebarVisible, toggle: toggleLeftSidebar },
+    { label: "左侧面板", icon: PanelLeft, visible: leftSidebarVisible, toggle: toggleLeftSidebar },
     { label: "右侧面板", icon: PanelRight, visible: rightSidebarVisible, toggle: toggleRightSidebar },
     { label: "底部面板", icon: PanelBottom, visible: bottomPanelVisible, toggle: toggleBottomPanel },
   ];
+  const bottomPanelModes = [
+    { mode: "full", label: "底部面板占满宽度", icon: PanelBottom },
+    { mode: "sidebar", label: "底部面板与左侧面板等宽", icon: PanelBottomDashed },
+  ] as const;
 
   return (
     <aside data-tauri-drag-region aria-label="工具窗口" className="activity-bar drag-region">
@@ -114,6 +118,19 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
       </div>
 
       <div data-tauri-drag-region className="drag-region mt-auto flex flex-col gap-1">
+        {bottomPanelModes.map(({ mode, label, icon: Icon }) => (
+          <button key={mode} type="button" className="activity-bar-button no-drag-region"
+            aria-label={label} title={label} aria-pressed={bottomPanelWidth === mode}
+            onClick={() => {
+              setBottomPanelWidth(mode);
+              const layout = useLayoutStore.getState();
+              if (mode === "sidebar" && !layout.leftSidebarVisible) layout.toggleLeftSidebar();
+              layout.openBottomPanel(layout.bottomPanelTab);
+              onLeaveSettings();
+            }}>
+            <Icon size={20} strokeWidth={1.75} aria-hidden="true" />
+          </button>
+        ))}
         <button
           type="button"
           className="activity-bar-button no-drag-region"

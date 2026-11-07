@@ -27,6 +27,7 @@ function setup({ native = true, pending = false, target = null } = {}) {
   const context = {
     React, window, CustomEvent, console,
     FolderTree: "FolderTree", PanelRight: "PanelRight", PanelBottom: "PanelBottom",
+    PanelBottomDashed: "PanelBottomDashed", PanelLeft: "PanelLeft",
     Settings: "Settings", Mic: "Mic", Dialog: { Trigger: "Trigger" }, SpeechToText: "SpeechToText",
     useState: () => [speechOpen, update => { speechOpen = typeof update === "function" ? update(speechOpen) : update; }],
     useRef: value => { const ref = { current: value }; refs.push(ref); return ref; },
