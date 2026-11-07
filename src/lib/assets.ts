@@ -8,6 +8,10 @@ export function isVideo(path: string) {
   return /\.(mp4|webm|ogg|mov)$/i.test(path);
 }
 
+export function isBinaryAsset(path: string) {
+  return /\.(mp4|m4v|webm|ogg|mov|mkv|avi|ogv|mp3|wav|flac|zip|7z|rar|pdf)$/i.test(path);
+}
+
 export function resolveAsset(notePath: string, source: string) {
   if (/^(https?:|data:|blob:|tauri:|asset:)/i.test(source)) return source;
   try { source = decodeURIComponent(source); } catch { /* Preserve literal filenames with malformed escapes. */ }

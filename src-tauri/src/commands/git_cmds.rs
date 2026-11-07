@@ -141,13 +141,17 @@ pub async fn undo_git_commit(repo_path: String, commit_id: String) -> Result<(),
     tauri::async_runtime::spawn_blocking(move || git::undo_commit(&repo_path, &commit_id)).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
-pub fn get_git_tree_status(repo_path: String) -> Result<Vec<git::TreeStatus>, String> { git::tree_status(&repo_path) }
+pub async fn get_git_tree_status(repo_path: String) -> Result<Vec<git::TreeStatus>, String> {
+    tauri::async_runtime::spawn_blocking(move || git::tree_status(&repo_path)).await.map_err(|e| e.to_string())?
+}
 #[tauri::command]
 pub fn get_git_image_diff(repo_path: String, path: String, staged: bool, commit_id: Option<String>) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), String> {
     git::image_diff(&repo_path, &path, staged, commit_id.as_deref())
 }
 #[tauri::command]
-pub fn get_git_status(repo_path: String) -> Result<Vec<git::FileStatus>, String> { git::get_status(&repo_path) }
+pub async fn get_git_status(repo_path: String) -> Result<Vec<git::FileStatus>, String> {
+    tauri::async_runtime::spawn_blocking(move || git::get_status(&repo_path)).await.map_err(|e| e.to_string())?
+}
 #[tauri::command]
 pub fn stage_git_file(repo_path: String, path: String, staged: bool) -> Result<(), String> { git::stage(&repo_path, &path, staged) }
 #[tauri::command]
@@ -159,7 +163,9 @@ pub async fn get_git_path_history(path: String, limit: usize) -> Result<git::Pat
     tauri::async_runtime::spawn_blocking(move || git::path_history(&path, limit)).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
-pub fn get_git_diff(repo_path: String, path: String, staged: bool) -> Result<String, String> { git::diff(&repo_path, &path, staged) }
+pub async fn get_git_diff(repo_path: String, path: String, staged: bool) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || git::diff(&repo_path, &path, staged)).await.map_err(|e| e.to_string())?
+}
 #[tauri::command]
 pub fn get_git_revision_files(repo_path: String, commit_id: String) -> Result<Vec<git::RevisionFile>, String> { git::revision_files(&repo_path, &commit_id) }
 #[tauri::command]
@@ -169,11 +175,17 @@ pub fn get_git_revision_changes(repo_path: String, commit_id: String) -> Result<
 #[tauri::command]
 pub fn get_git_revision_diff(repo_path: String, commit_id: String, path: String) -> Result<String, String> { git::revision_diff(&repo_path, &commit_id, &path) }
 #[tauri::command]
-pub fn revert_git_file(repo_path: String, path: String) -> Result<(), String> { git::revert_files(&repo_path, &[path]) }
+pub async fn revert_git_file(repo_path: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || git::revert_files(&repo_path, &[path])).await.map_err(|e| e.to_string())?
+}
 #[tauri::command]
-pub fn revert_git_files(repo_path: String, paths: Vec<String>) -> Result<(), String> { git::revert_files(&repo_path, &paths) }
+pub async fn revert_git_files(repo_path: String, paths: Vec<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || git::revert_files(&repo_path, &paths)).await.map_err(|e| e.to_string())?
+}
 #[tauri::command]
-pub fn undo_git_revert(repo_path: String) -> Result<Vec<String>, String> { git::undo_revert(&repo_path) }
+pub async fn undo_git_revert(repo_path: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || git::undo_revert(&repo_path)).await.map_err(|e| e.to_string())?
+}
 #[tauri::command]
 pub fn ignore_git_file(repo_path: String, path: String) -> Result<(), String> { git::ignore_file(&repo_path, &path) }
 

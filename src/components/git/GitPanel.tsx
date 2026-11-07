@@ -4,7 +4,7 @@ import { Copy, GitCommit, RefreshCw, Undo2, Upload } from "lucide-react";
 import { gitApi, fsApi, type GitFileStatus, type GitLogEntry, type GitRevisionChange } from "@/lib/api";
 import { useWorkspaceStore, flushPendingWrites } from "@/store/workspaceStore";
 import { GitFileTree, type GitTreeTarget } from "./GitFileTree";
-import { isImage } from "@/lib/assets";
+import { isBinaryAsset, isImage } from "@/lib/assets";
 import { confirmAction } from "@/lib/dialogs";
 import { isRemotePath } from "@/lib/remote";
 import { commitDraftEvent, getCommitDraft, rememberCommitDraft } from "@/lib/codexCommitMessage";
@@ -246,7 +246,7 @@ function RepositoryPanel({ root }: { root: string }) {
     }
     async function openDiff(file: GitFileStatus, staged: boolean) {
         await flushPendingWrites();
-        const content = isImage(file.path) ? "" : await gitApi.diff(root, file.path, staged);
+        const content = isBinaryAsset(file.path) ? "" : await gitApi.diff(root, file.path, staged);
         if (!mounted.current) return;
         useWorkspaceStore.getState().openTab({ id: `git-diff:${root}:${file.path}:${staged}`, path: isImage(file.path) || staged ? file.path : file.worktreePath, diffContext: { root, path: file.path }, diffReadOnly: file.status === "删除", title: `${file.path.split("/").pop()} (${staged ? "已暂存" : "工作区"})`, diff: content, diffStaged: staged, imageDiff: isImage(file.path) ? { repoPath: root, staged } : undefined });
     }
@@ -290,7 +290,7 @@ function RepositoryPanel({ root }: { root: string }) {
         if (!revision) return;
         const commit = revision;
         const request = revisionRequest.current;
-        const content = isImage(path) ? "" : await gitApi.revisionDiff(root, commit.id, path);
+        const content = isBinaryAsset(path) ? "" : await gitApi.revisionDiff(root, commit.id, path);
         if (!mounted.current || request !== revisionRequest.current) return;
         useWorkspaceStore.getState().openTab({ id: `git-revision:${root}:${commit.id}:${path}`, path, diffContext: { root, path }, title: `${path.split("/").pop()} @${commit.id.slice(0, 8)}`, diff: content, revision: commit.id, imageDiff: isImage(path) ? { repoPath: root, staged: false, commitId: commit.id } : undefined, diffLabels: [commit.parents[0] ? `父提交 ${commit.parents[0].slice(0, 8)}` : "空版本 · 首次提交前", `当前提交 ${commit.id.slice(0, 8)}`] });
     }
