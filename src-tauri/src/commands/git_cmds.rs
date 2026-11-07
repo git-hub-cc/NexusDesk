@@ -90,11 +90,11 @@ pub async fn list_git_repositories(provider: String, token: String) -> Result<Ve
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GitSettingsInput { pub remote: String, pub proxy: String, pub username: String, pub token: String }
+pub struct GitSettingsInput { pub remote: String, pub proxy: String, pub token: String }
 #[tauri::command]
 pub fn get_git_settings(repo_path: String) -> Result<git::GitSettings, String> { git::get_settings(&repo_path) }
 #[tauri::command]
-pub fn save_git_settings(repo_path: String, settings: GitSettingsInput) -> Result<(), String> { git::save_settings(&repo_path, &settings.remote, &settings.proxy, &settings.username, &settings.token) }
+pub fn save_git_settings(repo_path: String, settings: GitSettingsInput) -> Result<(), String> { git::save_settings(&repo_path, &settings.remote, &settings.proxy, "oauth2", &settings.token) }
 #[tauri::command]
 pub async fn clone_git_repository(url: String, target_path: String, token: Option<String>, provider: Option<String>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {

@@ -35,7 +35,7 @@ fn head_tree(repo: &Repository) -> Result<Option<git2::Tree<'_>>, String> {
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GitSettings { pub remote: String, pub proxy: String, pub username: String, pub token: String }
+pub struct GitSettings { pub remote: String, pub proxy: String, pub token: String }
 fn token_path(repo: &Repository) -> Result<std::path::PathBuf, String> {
     let base = dirs::config_dir().ok_or("无法定位应用配置目录")?;
     let identity = repo.workdir().unwrap_or(repo.path()).to_string_lossy();
@@ -55,8 +55,8 @@ pub fn get_settings(repo_path: &str) -> Result<GitSettings, String> {
     let repo = open(repo_path)?;
     let config = repo.config().map_err(|e| e.to_string())?;
     let remote = repo.find_remote("origin").ok().and_then(|remote| remote.url().map(str::to_owned)).unwrap_or_default();
-    let (username, token) = load_credentials(&repo)?;
-    Ok(GitSettings { remote, proxy: config.get_string("http.proxy").unwrap_or_default(), username, token })
+    let (_, token) = load_credentials(&repo)?;
+    Ok(GitSettings { remote, proxy: config.get_string("http.proxy").unwrap_or_default(), token })
 }
 pub fn save_settings(repo_path: &str, remote_url: &str, proxy: &str, username: &str, token: &str) -> Result<(), String> {
     let repo = open(repo_path)?;

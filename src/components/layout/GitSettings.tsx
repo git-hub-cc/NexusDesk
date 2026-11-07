@@ -6,7 +6,6 @@ export function GitSettings() {
   const root = useWorkspaceStore(state => state.rootPath);
   const [remote, setRemote] = useState("");
   const [proxy, setProxy] = useState("");
-  const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -16,7 +15,7 @@ export function GitSettings() {
   useEffect(() => {
     loaded.current = false;
     if (root) void gitApi.settings(root).then(value => {
-      setRemote(value.remote); setProxy(value.proxy); setUsername(value.username); setToken(value.token); loaded.current = true;
+      setRemote(value.remote); setProxy(value.proxy); setToken(value.token); loaded.current = true;
     }).catch(reason => setError(String(reason)));
   }, [root]);
 
@@ -25,13 +24,13 @@ export function GitSettings() {
     const timer = window.setTimeout(async () => {
       setBusy(true); setError("");
       try {
-        await gitApi.saveSettings(root, { remote, proxy, username, token });
+        await gitApi.saveSettings(root, { remote, proxy, token });
         window.dispatchEvent(new Event("git-settings-changed"));
       } catch (reason) { setError(String(reason)); }
       finally { setBusy(false); }
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [root, remote, proxy, username, token]);
+  }, [root, remote, proxy, token]);
 
   return <div className="mx-auto w-full max-w-3xl p-8" onKeyDown={event => event.stopPropagation()}>
         <header className="mb-6 border-b border-ide-panel-border pb-4">
@@ -42,7 +41,6 @@ export function GitSettings() {
           {!root && <p className="text-amber-400">请先打开一个项目。</p>}
           <label className="grid gap-1">当前项目远程地址<input className={inputClass} value={remote} onChange={event => setRemote(event.target.value)} placeholder="https://... 或 git@..." spellCheck={false} /></label>
           <label className="grid gap-1">Git 代理<input className={inputClass} value={proxy} onChange={event => setProxy(event.target.value)} placeholder="http://127.0.0.1:7890（留空关闭）" spellCheck={false} /></label>
-          <label className="grid gap-1">用户名<input className={inputClass} value={username} onChange={event => setUsername(event.target.value)} placeholder="HTTPS 凭据用户名" autoComplete="username" /></label>
           <label className="grid gap-1">访问 Token<input className={inputClass} type="password" value={token} onChange={event => setToken(event.target.value)} placeholder="留空保留已保存 Token" autoComplete="new-password" /></label>
           <p className="text-xs text-gray-400">远程地址和代理保存在项目 Git 配置；Token 保存在本机应用配置，不会写入远程地址。</p>
           {error && <p role="alert" className="text-red-400 break-all">{error}</p>}

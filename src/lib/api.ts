@@ -131,7 +131,7 @@ export const fsApi = {
 export interface GitFileStatus { path: string; worktreePath: string; staged: boolean; unstaged: boolean; conflict: boolean; status: string }
 export interface GitLogEntry { id: string; parents: string[]; message: string; author: string; time: number; refs: string[]; pushed: boolean; isHead: boolean }
 export interface GitRevisionChange { path: string; status: string }
-export interface GitSettings { remote: string; proxy: string; username: string; token: string }
+export interface GitSettings { remote: string; proxy: string; token: string }
 export interface CodexSettings { model: string; proxyUrl: string; apiKeyConfigured: boolean; trustMode: boolean; showTooltips: boolean; checkForUpdateOnStartup: boolean }
 export type GitProvider = "github" | "gitlab" | "gitee";
 export interface GitRepository { name: string; fullName: string; cloneUrl: string; private: boolean }
