@@ -195,7 +195,10 @@ fn resolve_terminal_command(command: &str, cwd: Option<&str>) -> Result<String, 
         let mut probe = std::process::Command::new("powershell.exe");
         probe.creation_flags(0x08000000);
         probe.args(["-NoLogo", "-NonInteractive", "-Command", r#"
+            chcp 65001 > $null
+            [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
             [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+            $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
             $tokens = $null; $errors = $null
             $ast = [System.Management.Automation.Language.Parser]::ParseInput($env:NEXUSDESK_STARTUP_COMMAND, [ref]$tokens, [ref]$errors)
             if ($errors.Count) { [Console]::Error.Write('启动命令语法错误'); exit 2 }
@@ -229,6 +232,7 @@ fn resolve_terminal_command(command: &str, cwd: Option<&str>) -> Result<String, 
             }
         "#]);
         probe.env("NEXUSDESK_STARTUP_COMMAND", command);
+        configure_windows_utf8_command(&mut probe);
         probe
     };
     #[cfg(not(windows))]
@@ -284,6 +288,26 @@ pub async fn check_terminal_command(command: String, cwd: Option<String>) -> Res
 }
 
 #[cfg(windows)]
+fn configure_windows_utf8_command(cmd: &mut std::process::Command) {
+    cmd.env("LANG", "en_US.UTF-8");
+    cmd.env("LC_ALL", "en_US.UTF-8");
+    cmd.env("PYTHONUTF8", "1");
+    cmd.env("PYTHONIOENCODING", "utf-8");
+    cmd.env("NODE_CLI_FORCE_UTF8", "1");
+    cmd.env("NEXUSDESK_UTF8", "1");
+}
+
+#[cfg(windows)]
+fn configure_windows_utf8_builder(cmd: &mut CommandBuilder) {
+    cmd.env("LANG", "en_US.UTF-8");
+    cmd.env("LC_ALL", "en_US.UTF-8");
+    cmd.env("PYTHONUTF8", "1");
+    cmd.env("PYTHONIOENCODING", "utf-8");
+    cmd.env("NODE_CLI_FORCE_UTF8", "1");
+    cmd.env("NEXUSDESK_UTF8", "1");
+}
+
+#[cfg(windows)]
 fn enforce_utf8_console() {
     #[link(name = "kernel32")]
     unsafe extern "system" {
@@ -308,7 +332,10 @@ fn direct_terminal_command(command: &str, cwd: Option<&str>) -> Result<Option<Co
     let mut probe = std::process::Command::new("powershell.exe");
     probe.creation_flags(0x08000000);
     probe.args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", r#"
+        chcp 65001 > $null
+        [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
         [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+        $OutputEncoding = [Text.UTF8Encoding]::new($false)
         $tokens = $null; $errors = $null
         $ast = [Management.Automation.Language.Parser]::ParseInput($env:NEXUSDESK_STARTUP_COMMAND, [ref]$tokens, [ref]$errors)
         if ($errors.Count -or $ast.EndBlock.Statements.Count -ne 1) { exit 0 }
@@ -344,6 +371,7 @@ fn direct_terminal_command(command: &str, cwd: Option<&str>) -> Result<Option<Co
         if ([IO.Path]::GetFileName($path) -match '^(powershell|pwsh)\.exe$') { exit 0 }
         @{ path = $path; arguments = @($arguments) } | ConvertTo-Json -Compress
     "#]);
+    configure_windows_utf8_command(&mut probe);
     probe.env("NEXUSDESK_STARTUP_COMMAND", command);
     if let Some(cwd) = cwd { probe.current_dir(cwd); }
     let output = probe.output().map_err(|error| error.to_string())?;
@@ -371,7 +399,7 @@ pub fn start_terminal(window: tauri::Window, id: String, cwd: Option<String>, co
         // CLI tools. Setting the .NET encodings also makes PowerShell's own
         // stdin/stdout handling consistent with the PTY byte stream.
         // 保持脚本固定，通过环境变量传递启动命令，避免 PowerShell 二次解析引号。
-        let initialize_utf8 = "chcp 65001 > $null; [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [System.Text.UTF8Encoding]::new($false)";
+        let initialize_utf8 = "chcp 65001 > $null; [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [System.Text.UTF8Encoding]::new($false); $env:PYTHONUTF8 = '1'; $env:PYTHONIOENCODING = 'utf-8'; $env:NEXUSDESK_UTF8 = '1'";
         let run_startup = "if ($env:NEXUSDESK_STARTUP_COMMAND) { & ([scriptblock]::Create($env:NEXUSDESK_STARTUP_COMMAND)) }";
         cmd.arg("-NoExit");
         cmd.arg("-Command");
@@ -387,11 +415,18 @@ pub fn start_terminal(window: tauri::Window, id: String, cwd: Option<String>, co
     if let Some(path) = cwd { cmd.cwd(path); }
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
+    #[cfg(windows)]
+    configure_windows_utf8_builder(&mut cmd);
     // Keep common runtimes on UTF-8 even when Windows uses a GBK system locale.
+    #[cfg(not(windows))]
     cmd.env("LANG", "en_US.UTF-8");
+    #[cfg(not(windows))]
     cmd.env("LC_ALL", "en_US.UTF-8");
+    #[cfg(not(windows))]
     cmd.env("PYTHONUTF8", "1");
+    #[cfg(not(windows))]
     cmd.env("PYTHONIOENCODING", "utf-8");
+    #[cfg(not(windows))]
     cmd.env("NODE_CLI_FORCE_UTF8", "1");
     #[cfg(windows)]
     cmd.env("WT_SESSION", "1");
