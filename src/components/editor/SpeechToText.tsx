@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { Activity, Pause, Play, X } from "lucide-react";
 import { acquireSpeechSession, releaseSpeechSession, SpeechBuffer, SpeechTask } from "./speechBuffer";
 import { readSpeechPreferences } from "@/lib/speechPreferences";
@@ -64,6 +64,18 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
   const config = useRef(initialPreferences);
   const insertRef = useRef(onInsert);
   insertRef.current = onInsert;
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    void invoke("stt_shortcut_register").catch(error => {
+      console.warn("Cannot register wired speech shortcut:", error);
+    });
+    return () => {
+      void invoke("stt_shortcut_unregister").catch(error => {
+        console.warn("Cannot unregister wired speech shortcut:", error);
+      });
+    };
+  }, []);
 
   const flush = (reason = "unspecified") => {
     if (stopped.current || finishingRef.current) return Promise.resolve();
@@ -306,14 +318,17 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
 
   useEffect(() => {
     const close = () => { void stop(); };
+    const togglePauseFromRemote = () => togglePause();
     const showError = (event: Event) => {
       const detail = (event as CustomEvent<{ message?: string }>).detail;
       if (detail?.message) setStatus(detail.message);
     };
     window.addEventListener("nexusdesk-speech-close", close);
+    window.addEventListener("nexusdesk-speech-pause-toggle", togglePauseFromRemote);
     window.addEventListener("nexusdesk-speech-error", showError);
     return () => {
       window.removeEventListener("nexusdesk-speech-close", close);
+      window.removeEventListener("nexusdesk-speech-pause-toggle", togglePauseFromRemote);
       window.removeEventListener("nexusdesk-speech-error", showError);
     };
   }, []);

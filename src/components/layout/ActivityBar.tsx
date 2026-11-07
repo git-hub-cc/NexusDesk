@@ -77,10 +77,12 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
     let disposed = false;
     let unlisten: (() => void) | undefined;
     if (isTauri()) {
-      void getCurrentWindow().listen<{ stop?: boolean }>("nexusdesk-speech-toggle", event => {
-        if (!disposed) window.dispatchEvent(new CustomEvent(
-          event?.payload?.stop ? "nexusdesk-speech-close" : "nexusdesk-speech-toggle",
-        ));
+      void getCurrentWindow().listen<{ stop?: boolean; wiredRemote?: boolean }>("nexusdesk-speech-toggle", event => {
+        if (disposed) return;
+        const eventName = event?.payload?.wiredRemote === true
+          ? "nexusdesk-speech-pause-toggle"
+          : event?.payload?.stop === true ? "nexusdesk-speech-close" : "nexusdesk-speech-toggle";
+        window.dispatchEvent(new CustomEvent(eventName));
       }).then(stop => {
         if (disposed) stop();
         else unlisten = stop;

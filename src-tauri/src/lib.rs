@@ -7,8 +7,51 @@ mod capture_service;
 mod speech_input;
 
 use state::AppState;
-use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use std::sync::{Arc, Mutex, OnceLock};
+use tauri::{Emitter, Manager};
+
+static STT_SHORTCUT_USERS: OnceLock<Mutex<usize>> = OnceLock::new();
+
+#[tauri::command]
+fn stt_shortcut_register(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use tauri_plugin_global_shortcut::GlobalShortcutExt;
+        let users = STT_SHORTCUT_USERS.get_or_init(|| Mutex::new(0));
+        let mut users = users.lock().map_err(|error| error.to_string())?;
+        if *users == 0 {
+            app.global_shortcut()
+                .register("MediaPlayPause")
+                .map_err(|error| error.to_string())?;
+        }
+        *users += 1;
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+    Ok(())
+}
+
+#[tauri::command]
+fn stt_shortcut_unregister(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use tauri_plugin_global_shortcut::GlobalShortcutExt;
+        let users = STT_SHORTCUT_USERS.get_or_init(|| Mutex::new(0));
+        let mut users = users.lock().map_err(|error| error.to_string())?;
+        if *users == 0 {
+            return Ok(());
+        }
+        *users -= 1;
+        if *users == 0 {
+            app.global_shortcut()
+                .unregister("MediaPlayPause")
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+    Ok(())
+}
 
 fn is_project_window(label: &str) -> bool {
     label == "main" || label.strip_prefix("window-")
@@ -52,6 +95,21 @@ pub fn run() {
         // IMM context on activation can make input methods fall back to IMM32.
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed
+                        && shortcut.key == tauri_plugin_global_shortcut::Code::MediaPlayPause
+                    {
+                        if let Err(error) = app.emit("nexusdesk-speech-toggle", serde_json::json!({
+                            "wiredRemote": true,
+                        })) {
+                            log::warn!("Cannot emit wired speech toggle: {error}");
+                        }
+                    }
+                })
+                .build(),
+        )
         // Normalize the hidden, undecorated HWND's client area before window-state
         // measures its frame offsets in set_size. The initial WM_NCCALCSIZE can
         // still include a native caption, which would inflate the restored height.
@@ -131,6 +189,8 @@ pub fn run() {
                 return true;
             }
             let handler: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool> = Box::new(tauri::generate_handler![
+            stt_shortcut_register,
+            stt_shortcut_unregister,
             commands::android_mirror::mirror_devices,
             commands::android_mirror::mirror_connect_wifi,
             commands::android_mirror::mirror_list_files,
