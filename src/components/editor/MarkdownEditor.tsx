@@ -279,7 +279,7 @@ const MarkdownPreview = memo(({ content, path }: { content: string; path: string
   const workerRef = useRef<Worker | null>(null);
   const requestRef = useRef(0);
   useEffect(() => {
-    const worker = new Worker(`${import.meta.env.BASE_URL}markdownPreviewWorker.js`);
+    const worker = new Worker(new URL("../../workers/markdownPreview.worker.js", import.meta.url), { type: "module" });
     workerRef.current = worker;
     worker.onmessage = event => {
       if (event.data?.id === requestRef.current && event.data.type === "rendered") {

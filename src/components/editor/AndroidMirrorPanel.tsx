@@ -215,7 +215,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
         if (!worker) {
           const offscreen = targetCanvas!.transferControlToOffscreen();
           canvasTransferred.current = true;
-          worker = new Worker("/androidMirrorWorker.js", { type: "module" });
+          worker = new Worker(new URL("../../workers/androidMirror.worker.js", import.meta.url), { type: "module" });
           worker.postMessage({ type: "init", canvas: offscreen }, [offscreen]);
           mirrorWorker.current = worker;
         }
