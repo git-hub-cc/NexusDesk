@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Activity, Trash2, Pause, Play, X } from "lucide-react";
+import { Trash2, Pause, Play, X } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { type NetworkRequest } from "@/lib/networkMonitor";
 import { NetworkInspector } from "./NetworkInspector";
@@ -34,8 +34,8 @@ export const NetworkMonitor: React.FC = () => {
   }, setProxyInfo), []);
   const visible = items;
   return <div className="group/panel flex flex-col h-full w-full bg-ide-panel-bg">
-    <div className="flex items-center gap-1 px-2 py-1 border-b border-ide-panel-border text-xs font-semibold">
-      <Activity size={14} /> 请求记录 <span className="text-gray-500 font-normal">({items.length})</span>
+    <div className="flex items-center gap-1 pl-6 pr-2 py-1 border-b border-ide-panel-border text-xs font-semibold">
+      请求记录 <span className="text-gray-500 font-normal">({items.length})</span>
       <button type="button" title={paused ? "继续更新列表" : "暂停更新列表"} onClick={() => setPaused(value => !value)} className="ml-auto p-1 text-gray-400 hover:text-white">{paused ? <Play size={13} /> : <Pause size={13} />}</button>
       <button type="button" title="清空记录" onClick={() => { setItems([]); setSelected(null); }} className="p-1 text-gray-400 hover:text-white"><Trash2 size={13} /></button>
     </div>

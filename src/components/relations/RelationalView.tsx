@@ -1,6 +1,6 @@
 ﻿import { PanelMinimizeButton } from "@/components/layout/PanelMinimizeButton";
 import React, { useEffect, useState } from "react";
-import { Link, ArrowRight, ArrowLeft, Activity, ChevronDown, ChevronRight } from "lucide-react";
+import { Link, Activity, ChevronDown, ChevronRight } from "lucide-react";
 import { fsApi } from "@/lib/api";
 import { flushEditorContent, useWorkspaceStore } from "@/store/workspaceStore";
 import { NetworkMonitor } from "@/components/NetworkMonitor";
@@ -48,9 +48,9 @@ export const RelationalView: React.FC = () => {
       openTab({ id: target, path: target, title: target.split(/[\\/]/).pop() ?? target, content });
     } catch (error) { setNavigationError("打开关联文件失败：" + String(error)); }
   };
-  const group = (title: string, Icon: typeof ArrowLeft, items: FileLink[]) => (
+  const group = (title: string, items: FileLink[]) => (
     <div className="mb-4">
-      <div className="flex items-center gap-1 text-gray-300 mb-1"><Icon size={14}/><span>{title} ({items.length})</span></div>
+      <div className="text-gray-300 mb-1">{title} ({items.length})</div>
       {items.map(([target, anchor]) => <button key={JSON.stringify([target, anchor])} title={target + (anchor ? "#" + anchor : "")} onClick={() => void nav(target)} className="block w-full pl-4 text-left text-gray-400 hover:text-white truncate">{target.split(/[\\/]/).pop()} {anchor && "#" + anchor}</button>)}
     </div>
   );
@@ -62,8 +62,8 @@ export const RelationalView: React.FC = () => {
         </button>
         <PanelMinimizeButton panel="right" className="!ml-auto" />
       </header>
-      <div className={`min-h-0 overflow-auto p-2 text-sm ${relationsOpen ? "" : "hidden"}`}>
-      {!path ? <p className="text-gray-500">请选择文件</p> : !current ? <p className="text-gray-500">正在加载关联…</p> : <>{group("反向链接", ArrowLeft, current.backlinks)}{group("正向链接", ArrowRight, current.outgoing)}</>}
+      <div className={`min-h-0 overflow-auto py-2 pl-6 pr-2 text-sm ${relationsOpen ? "" : "hidden"}`}>
+      {!path ? <p className="text-gray-500">请选择文件</p> : !current ? <p className="text-gray-500">正在加载关联…</p> : <>{group("反向链接", current.backlinks)}{group("正向链接", current.outgoing)}</>}
       {(current?.error || navigationError) && <p role="alert" className="text-xs text-red-400 break-words">{navigationError || current?.error}</p>}
       </div>
     </section>
