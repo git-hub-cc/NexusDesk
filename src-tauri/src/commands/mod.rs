@@ -13,6 +13,7 @@ pub mod browser_cmds;
 pub mod browser_extensions;
 pub mod browser_downloads;
 pub mod browser_passwords;
+pub mod navigation_cmds;
 pub mod music_cmds;
 pub mod media_import;
 pub mod video_cmds;

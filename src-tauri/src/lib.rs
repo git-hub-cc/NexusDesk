@@ -173,6 +173,7 @@ pub fn run() {
             commands::browser_passwords::browser_import_passwords,
             commands::browser_passwords::browser_password_stats,
             commands::browser_passwords::browser_export_passwords,
+            commands::navigation_cmds::navigation_export_data,
             commands::music_cmds::search_music,
             commands::music_cmds::music_service_resource,
             commands::music_cmds::music_cover_url,

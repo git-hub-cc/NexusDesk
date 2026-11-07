@@ -2,6 +2,7 @@ import { reserveBrowser } from "@/lib/browserPool";
 import { browserVisibility } from "@/lib/browserVisibility";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ArrowLeft, ArrowRight, RotateCw, House, Globe } from "lucide-react";
@@ -54,7 +55,27 @@ function NavigationEditor({ tab, active }: { tab: Tab; active: boolean }) {
   const frame = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
     const receive = (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow || event.origin !== window.location.origin || event.data?.type !== "nexusdesk:navigate") return;
+      if (event.source !== frame.current?.contentWindow || event.origin !== window.location.origin) return;
+      if (event.data?.type === "nexusdesk:export-navigation") {
+        const { requestId, filename, content } = event.data;
+        if (typeof requestId !== "string" || typeof filename !== "string" || typeof content !== "string") return;
+        void (async () => {
+          try {
+            const file = await save({
+              title: "导出导航数据",
+              defaultPath: filename,
+              filters: [{ name: "JSON", extensions: ["json"] }],
+            });
+            if (!file) return;
+            await invoke("navigation_export_data", { file, content });
+            frame.current?.contentWindow?.postMessage({ type: "nexusdesk:export-complete", requestId }, window.location.origin);
+          } catch (reason) {
+            frame.current?.contentWindow?.postMessage({ type: "nexusdesk:export-failed", requestId, message: String(reason) }, window.location.origin);
+          }
+        })();
+        return;
+      }
+      if (event.data?.type !== "nexusdesk:navigate") return;
       try {
         const url = new URL(event.data.url);
         if (!["https:", "http:"].includes(url.protocol)) return;

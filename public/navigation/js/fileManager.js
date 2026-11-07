@@ -4,8 +4,18 @@
 // 包括：导出JSON文件、处理文件导入（JSON和HTML书签）、解析HTML书签、管理自定义数据源（新增、删除）。
 // =========================================================================
 
-import { state, getCustomSources, loadAllDataSources, saveNavData, performDataSourceSwitch, CUSTOM_CATEGORY_ID, DEFAULT_SITES_PATH, NAV_DATA_SOURCE_PREFERENCE_KEY, NAV_CUSTOM_SOURCES_KEY } from './dataManager.js';
+import { state, getCustomSources, loadAllDataSources, saveNavData, performDataSourceSwitch, CUSTOM_CATEGORY_ID, DEFAULT_SITES_PATH, NAV_DATA_SOURCE_PREFERENCE_KEY, NAV_CUSTOM_SOURCES_KEY, NAV_CUSTOM_USER_SITES_KEY } from './dataManager.js';
 import { dom, showAlert, showConfirm, populateDataSourceSelector, renderNavPage, updateDeleteButtonState, closeImportNameModal, openImportNameModal } from './ui.js';
+
+window.addEventListener('message', event => {
+    if (event.source !== window.parent || event.origin !== window.location.origin) return;
+    if (event.data?.type === 'nexusdesk:export-complete') {
+        showAlert('导航数据已成功导出。', '导出成功');
+    }
+    if (event.data?.type === 'nexusdesk:export-failed') {
+        showAlert(`导出失败：${event.data.message || '无法写入文件'}`, '导出失败');
+    }
+});
 
 let pendingImportData = null; // 用于暂存待导入的数据
 
@@ -18,9 +28,28 @@ let pendingImportData = null; // 用于暂存待导入的数据
  */
 export function handleExport() {
     const currentSourceIdentifier = dom.customSelect.dataset.value;
+    let savedCustomCategory = null;
+    try {
+        savedCustomCategory = JSON.parse(localStorage.getItem(NAV_CUSTOM_USER_SITES_KEY) || 'null');
+    } catch { /* 损坏的本地缓存不影响当前数据导出。 */ }
     saveNavData(currentSourceIdentifier); // 确保保存的是最新数据
 
     const dataToExport = JSON.parse(JSON.stringify(state.siteData)); // 深拷贝以安全操作
+    const currentCustomCategory = dataToExport.categories.find(category => category.categoryId === CUSTOM_CATEGORY_ID);
+    if (Array.isArray(savedCustomCategory?.sites) && savedCustomCategory.sites.length
+        && (!currentCustomCategory || !currentCustomCategory.sites?.length)) {
+        const preservedCategory = {
+            ...savedCustomCategory,
+            categoryName: '我的导航',
+            categoryId: CUSTOM_CATEGORY_ID,
+        };
+        if (currentCustomCategory) {
+            Object.assign(currentCustomCategory, preservedCategory);
+        } else {
+            dataToExport.categories.unshift(preservedCategory);
+        }
+        localStorage.setItem(NAV_CUSTOM_USER_SITES_KEY, JSON.stringify(preservedCategory));
+    }
 
     // 导出前，确保所有分类和网站都有ID，保证数据的完整性和可再导入性
     dataToExport.categories.forEach(category => {
@@ -43,6 +72,18 @@ export function handleExport() {
     dataToExport.categories = dataToExport.categories.filter(c => (c.sites && c.sites.length > 0) || c.categoryId === CUSTOM_CATEGORY_ID);
 
     const dataStr = JSON.stringify(dataToExport, null, 2);
+    if (window.parent !== window) {
+        const timestamp = (new Date()).toISOString().slice(0, 10);
+        const sourceName = dom.customSelectSelectedText.textContent;
+        const requestId = `navigation-export-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        window.parent.postMessage({
+            type: 'nexusdesk:export-navigation',
+            requestId,
+            filename: `NavHub-Export-${sourceName}-${timestamp}.json`,
+            content: dataStr,
+        }, window.location.origin);
+        return;
+    }
     const blob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -53,7 +94,8 @@ export function handleExport() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // WebView 中下载请求可能在 click 返回后才开始读取 Blob URL。
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 // #endregion
 
