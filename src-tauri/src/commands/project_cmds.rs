@@ -1,6 +1,7 @@
 use std::{ffi::OsString, path::PathBuf, process::Command};
 
 pub struct StartupProject(pub Option<PathBuf>);
+pub struct StartupUrl(pub Option<String>);
 
 pub fn project_argument(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> {
     let mut args = args.into_iter();
@@ -13,9 +14,31 @@ pub fn project_argument(args: impl IntoIterator<Item = OsString>) -> Option<Path
     None
 }
 
+pub fn startup_url_argument(args: impl IntoIterator<Item = OsString>) -> Option<String> {
+    let mut args = args.into_iter();
+    args.next();
+    while let Some(arg) = args.next() {
+        if arg == "--project" {
+            let _ = args.next();
+            continue;
+        }
+        let value = arg.to_string_lossy();
+        let Ok(url) = tauri::Url::parse(&value) else { continue; };
+        if matches!(url.scheme(), "http" | "https") && url.host_str().is_some() {
+            return Some(url.to_string());
+        }
+    }
+    None
+}
+
 #[tauri::command]
 pub fn startup_project(state: tauri::State<'_, StartupProject>) -> Option<String> {
     state.0.as_ref().map(|path| path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn startup_url(state: tauri::State<'_, StartupUrl>) -> Option<String> {
+    state.0.clone()
 }
 
 fn project_command(executable: PathBuf, project: PathBuf) -> Command {
@@ -100,6 +123,13 @@ mod tests {
         for args in [vec!["NexusDesk.exe"], vec!["NexusDesk.exe", "--project"], vec!["NexusDesk.exe", "--project", ""]] {
             assert_eq!(project_argument(args.into_iter().map(OsString::from)), None);
         }
+    }
+
+    #[test]
+    fn startup_url_accepts_only_http_urls() {
+        assert_eq!(startup_url_argument(["NexusDesk.exe", "https://example.com/a?q=1"].into_iter().map(OsString::from)), Some("https://example.com/a?q=1".into()));
+        assert_eq!(startup_url_argument(["NexusDesk.exe", "--project", "C:/notes", "http://example.com"].into_iter().map(OsString::from)), Some("http://example.com/".into()));
+        assert_eq!(startup_url_argument(["NexusDesk.exe", "file:///tmp/a"].into_iter().map(OsString::from)), None);
     }
 
     #[test]

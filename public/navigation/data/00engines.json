@@ -503,6 +503,12 @@
         "url": "https://cse.google.com/cse?cx=f5bb1a9a424824083&q=%s",
         "proxy": true,
         "desc": "electron框架。"
+      },
+      {
+        "name": "pikpak",
+        "url": "https://cse.google.com/cse?cx=e7dbb37893b8e4dbf&q=%s",
+        "proxy": true,
+        "desc": "pikpak。"
       }
     ]
   }

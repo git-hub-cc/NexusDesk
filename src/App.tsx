@@ -25,6 +25,7 @@ function App() {
   const rootPath = useWorkspaceStore(state => state.rootPath);
   const tabsRestored = useWorkspaceStore(state => state.pinnedTabsRestored);
   const startup = useRef<Promise<unknown> | null>(null);
+  const startupUrlOpened = useRef(false);
   const [startupReady, setStartupReady] = useState(false);
 
   useEffect(() => {
@@ -55,6 +56,18 @@ function App() {
       void getCurrentWindow().show().catch(error => console.error("Failed to show window:", error));
     });
   }, [startupReady]);
+
+  useEffect(() => {
+    if (!startupReady || !isTauri() || startupUrlOpened.current) return;
+    startupUrlOpened.current = true;
+    void invoke<string | null>("startup_url").then(url => {
+      if (!url) return;
+      const parsed = new URL(url);
+      if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname) return;
+      const id = `browser:${crypto.randomUUID()}`;
+      useWorkspaceStore.getState().openTab({ id, path: id, title: parsed.hostname, browser: { root: rootPath ?? "", url: parsed.href } });
+    }).catch(console.error);
+  }, [rootPath, startupReady]);
 
   return (
     <div className="flex flex-col h-screen w-screen min-w-[640px] overflow-hidden bg-ide-bg text-ide-fg font-sans">

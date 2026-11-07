@@ -38,6 +38,7 @@ pub fn run() {
         return;
     }
     let project = commands::project_cmds::project_argument(std::env::args_os());
+    let startup_url = commands::project_cmds::startup_url_argument(std::env::args_os());
     let profile_root = dirs::home_dir().expect("Cannot find home directory").join(".nexus/profiles");
     let profile = profiles::allocate(&profile_root, project.as_deref()).expect("Cannot create project profile");
     let window_state_file = format!("window-state-{}.json",
@@ -45,6 +46,7 @@ pub fn run() {
     log::info!("Project WebView2 profile: {}", profile.directory.display());
     tauri::Builder::default()
         .manage(commands::project_cmds::StartupProject(project))
+        .manage(commands::project_cmds::StartupUrl(startup_url))
         .manage(profile)
         // Let WebView2 manage TSF focus and composition. Detaching the host's
         // IMM context on activation can make input methods fall back to IMM32.
@@ -146,6 +148,7 @@ pub fn run() {
             commands::android_mirror::mirror_control,
             commands::snapshot_cmds::open_git_snapshot,
             commands::project_cmds::startup_project,
+            commands::project_cmds::startup_url,
             commands::project_cmds::open_project_instance,
             commands::settings_cmds::read_global_settings,
             commands::settings_cmds::write_global_setting,
