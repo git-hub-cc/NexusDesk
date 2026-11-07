@@ -1,11 +1,34 @@
-import { PanelRight, PanelBottom, PanelBottomDashed, Settings, Mic, PanelLeft } from "lucide-react";
+import { PanelRight, PanelBottom, Settings, Mic, PanelLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { SVGProps } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { SpeechToText } from "@/components/editor/SpeechToText";
 import { setSpeechTarget } from "@/lib/speechTarget";
 import { useLayoutStore } from "@/store/layoutStore";
 import * as Dialog from "@radix-ui/react-dialog";
+
+type LayoutIconProps = SVGProps<SVGSVGElement> & { size?: number | string };
+
+function FullWidthBottomPanelIcon({ size = 24, strokeWidth = 1.75, ...props }: LayoutIconProps) {
+  return (
+    <svg {...props} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="1" />
+      <path d="M9 3v12" />
+      <path d="M3 15h18" />
+    </svg>
+  );
+}
+
+function SidebarBottomPanelIcon({ size = 24, strokeWidth = 1.75, ...props }: LayoutIconProps) {
+  return (
+    <svg {...props} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="1" />
+      <path d="M9 3v18" />
+      <path d="M3 15h6" />
+    </svg>
+  );
+}
 
 export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: boolean; onLeaveSettings: () => void }) {
   const [speechOpen, setSpeechOpen] = useState(false);
@@ -95,8 +118,8 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
     { label: "底部面板", icon: PanelBottom, visible: bottomPanelVisible, toggle: toggleBottomPanel },
   ];
   const bottomPanelModes = [
-    { mode: "full", label: "底部面板占满宽度", icon: PanelBottom },
-    { mode: "sidebar", label: "底部面板与左侧面板等宽", icon: PanelBottomDashed },
+    { mode: "full", label: "底部面板占满宽度", icon: FullWidthBottomPanelIcon },
+    { mode: "sidebar", label: "底部面板与左侧面板等宽", icon: SidebarBottomPanelIcon },
   ] as const;
 
   return (
