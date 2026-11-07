@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Activity, Pause, Play, X } from "lucide-react";
 import { acquireSpeechSession, releaseSpeechSession, SpeechBuffer, SpeechTask } from "./speechBuffer";
 import { readSpeechPreferences } from "@/lib/speechPreferences";
+import { openSpeechMicrophone, speechStartupError } from "@/lib/speechMicrophone";
 
 let nextSpeechSession = 1;
 
@@ -34,6 +35,8 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
   const [status, setStatus] = useState("正在准备识别引擎…");
   const [busy, setBusy] = useState(false);
   const [preparing, setPreparing] = useState(true);
+  const [startAttempt, setStartAttempt] = useState(0);
+  const [startupFailed, setStartupFailed] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -133,12 +136,16 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
 
   const releaseMicrophone = () => {
     if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
+    animationRef.current = null;
     if (processorRef.current) {
       processorRef.current.onaudioprocess = null;
       processorRef.current.disconnect();
     }
+    processorRef.current = null;
     if (contextRef.current && contextRef.current.state !== "closed") void contextRef.current.close();
+    contextRef.current = null;
     streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
   };
   const cleanup = () => {
     stopped.current = true;
@@ -160,6 +167,12 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
       return () => { alive = false; };
     }
     ownsSpeechSession.current = true;
+    preparingRef.current = true;
+    pausedRef.current = false;
+    setPreparing(true);
+    setPaused(false);
+    setStartupFailed(false);
+    setStatus("正在准备识别引擎…");
     const start = async () => {
       try {
         const ready = await invoke<{ ready: boolean }>("stt_model_status", { model: config.current.model });
@@ -172,15 +185,8 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
         setStatus("正在初始化识别引擎…");
         await invoke<Runtime>("stt_prepare", config.current);
         if (!alive) return;
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            sampleRate: 16000,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
+        setStatus("正在启动麦克风…");
+        const stream = await openSpeechMicrophone();
         if (!alive) { stream.getTracks().forEach(track => track.stop()); return; }
         streamRef.current = stream;
         const context = new AudioContext();
@@ -249,7 +255,9 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
           releaseMicrophone();
           pausedRef.current = true;
           setPaused(true);
-          setStatus(`启动失败：${String(error)}`);
+          setStartupFailed(true);
+          console.error("[speech] startup-failed", error);
+          setStatus(speechStartupError(error));
         }
       } finally {
         if (alive) { preparingRef.current = false; setPreparing(false); }
@@ -261,7 +269,7 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
       cleanup();
       releaseSpeechSession(sessionId);
     };
-  }, [sessionId]);
+  }, [sessionId, startAttempt]);
 
   const stop = async () => {
     if (stoppingRef.current || stopped.current) return;
@@ -325,7 +333,9 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
       {Array.from({ length: 25 }, (_, i) => { const shape = Math.abs(Math.sin(i * .67) * Math.cos(i * .19)); return <span key={i} style={{ height: 4 + shape * (5 + level * 24), opacity: .35 + shape * .65 }} />; })}
     </div>
     <div className="stt-actions">
-      <button disabled={preparing || finishing || !streamRef.current?.active} title={paused ? "继续录音" : "暂停录音"} aria-label={paused ? "继续录音" : "暂停录音"} onClick={togglePause}>{paused ? <Play size={16} /> : <Pause size={16} />}{paused ? "继续" : "暂停"}</button>
+      {startupFailed
+        ? <button disabled={isStopping} title="重试启动麦克风" aria-label="重试启动麦克风" onClick={() => { setStartupFailed(false); setPreparing(true); setStartAttempt(attempt => attempt + 1); }}><Play size={16} />重试</button>
+        : <button disabled={preparing || finishing || !streamRef.current?.active} title={paused ? "继续录音" : "暂停录音"} aria-label={paused ? "继续录音" : "暂停录音"} onClick={togglePause}>{paused ? <Play size={16} /> : <Pause size={16} />}{paused ? "继续" : "暂停"}</button>}
     </div>
   </div>, document.body);
 }

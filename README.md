@@ -103,4 +103,8 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 winget source remove --name msstore
 ```
 
+## 语音功能无法使用
+```powershell
+Set-Service -Name camsvc -StartupType Manual
+```
 
