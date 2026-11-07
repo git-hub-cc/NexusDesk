@@ -176,6 +176,7 @@ pub fn run() {
             commands::music_cmds::search_music,
             commands::music_cmds::music_service_resource,
             commands::music_cmds::music_cover_url,
+            commands::music_cmds::music_chorus,
             commands::music_cmds::download_music,
             commands::music_cmds::list_local_music,
             commands::media_import::import_media_files,

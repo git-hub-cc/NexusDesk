@@ -48,6 +48,33 @@ pub async fn music_cover_url(id: String) -> Result<Option<String>, String> {
         }))
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicChorus {
+    start_time: u64,
+    end_time: u64,
+}
+
+#[tauri::command]
+pub async fn music_chorus(id: String) -> Result<Option<MusicChorus>, String> {
+    if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_digit()) { return Ok(None); }
+    let data: serde_json::Value = music_client()?.get("https://music.163.com/api/song/chorus")
+        .query(&[("ids", format!("[{id}]"))])
+        .header("Referer", "https://music.163.com/")
+        .timeout(std::time::Duration::from_secs(5))
+        .send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|e| e.to_string())?
+        .json().await.map_err(|e| e.to_string())?;
+    if data["code"].as_u64() != Some(200) { return Err("获取副歌时间失败".into()); }
+    Ok(data.get("chorus").or_else(|| data.get("data"))
+        .and_then(serde_json::Value::as_array)
+        .and_then(|items| items.iter().find(|item| item["id"].as_u64().map(|value| value.to_string()).as_deref() == Some(id.as_str())))
+        .and_then(|item| {
+            let start_time = item["startTime"].as_u64()?;
+            let end_time = item["endTime"].as_u64()?;
+            (end_time > start_time).then_some(MusicChorus { start_time, end_time })
+        }))
+}
+
 fn music_dir() -> Result<PathBuf, String> {
     let directory = dirs::home_dir().ok_or("Cannot find home directory")?.join(".nexus").join("music");
     std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;

@@ -10,6 +10,7 @@ import { resolveGDStudioPlayUrl, searchGDStudio } from "@/lib/gdMusic";
 import { rememberPlaylistTracks, removePlaylistTrack, resolvePlaylistTracks } from "@/lib/musicPlaylist";
 import { importMedia, importSummary } from "@/lib/mediaImport";
 import { useVirtualList } from "@/hooks/useVirtualList";
+import { chorusRange, type MusicChorus } from "@/lib/musicChorus";
 
 type LibraryTab = "online" | "local" | `playlist:${string}`;
 const LIBRARY_TAB_KEY = "nexusdesk.music.libraryTab";
@@ -24,6 +25,7 @@ const formatTime = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Ma
 export function MusicEditor({ active }: { active: boolean }) {
   const audio = useRef<HTMLAudioElement>(null);
   const playbackRequest = useRef(0);
+  const pendingChorusStart = useRef<MusicChorus | null>(null);
   const searchGeneration = useRef(0);
   const queueSearchTerm = useRef("");
   const pageRequest = useRef<number | null>(null);
@@ -56,6 +58,7 @@ export function MusicEditor({ active }: { active: boolean }) {
   const ModeIcon = playbackMode.Icon;
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
+  const [chorus, setChorus] = useState<MusicChorus | null>(null);
   const [volume, setVolume] = useState(0.75);
   const [busy, setBusy] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -194,6 +197,8 @@ export function MusicEditor({ active }: { active: boolean }) {
   const playTrack = async (track: MusicTrack, queue: MusicTrack[], source: LibraryTab = tab) => {
     if (!audio.current) return;
     const request = ++playbackRequest.current;
+    pendingChorusStart.current = null;
+    setChorus(null);
     audio.current.pause();
     audio.current.removeAttribute("src");
     audio.current.load();
@@ -205,15 +210,45 @@ export function MusicEditor({ active }: { active: boolean }) {
     setPosition(0); setDuration(track.duration / 1000 || 0);
     try {
       const saved = track.path ? track : localTracks.find(item => item.id === track.id);
-      const source = saved?.path ? convertFileSrc(saved.path) : await resolveGDStudioPlayUrl(track.id);
+      const [playUrl, nextChorus] = await Promise.all([
+        saved?.path ? Promise.resolve(convertFileSrc(saved.path)) : resolveGDStudioPlayUrl(track.id),
+        saved?.path || source === "local" ? Promise.resolve(null) : musicApi.chorus(track.id),
+      ]);
       if (request !== playbackRequest.current) return;
       if (saved?.path) setCurrent({ ...track, ...saved });
-      audio.current.src = source;
+      setChorus(nextChorus);
+      // 等实际时长加载后再定位，避免试听音源的时长小于副歌起点。
+      pendingChorusStart.current = source === "online" ? nextChorus : null;
+      audio.current.src = playUrl;
       await audio.current.play();
       if (request === playbackRequest.current) { setPlaying(true); setError(""); }
     } catch (reason) {
       if (request === playbackRequest.current) { setPlaying(false); setError(reason instanceof Error ? reason.message : "播放失败，请检查网络或尝试其他歌曲"); }
     }
+  };
+
+  const handleLoadedMetadata = (event: React.SyntheticEvent<HTMLAudioElement>) => {
+    const player = event.currentTarget;
+    const range = chorusRange(pendingChorusStart.current, player.duration);
+    pendingChorusStart.current = null;
+    if (range) { player.currentTime = range.start; setPosition(range.start); }
+  };
+
+  const seekTo = (next: number) => {
+    pendingChorusStart.current = null;
+    setPosition(next);
+    if (audio.current) audio.current.currentTime = next;
+  };
+
+  const handleProgressPointerUp = (event: React.PointerEvent<HTMLInputElement>) => {
+    if (!event.isPrimary || event.button !== 0) return;
+    const range = chorusRange(chorus, duration);
+    if (!range) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (bounds.width <= 8) return;
+    // 以屏幕像素判断附近范围，保持不同曲长和窗口宽度下的点击手感一致。
+    const startX = bounds.left + 4 + (bounds.width - 8) * range.start / duration;
+    if (Math.abs(event.clientX - startX) <= 12) seekTo(range.start);
   };
 
   const togglePlayback = async () => {
@@ -265,7 +300,7 @@ export function MusicEditor({ active }: { active: boolean }) {
       if (playlists.some(playlist => playlist.trackIds.includes(track.id))) await persistPlaylists(playlists);
       await musicApi.deleteLocal(track.id);
       await refreshLocal();
-      if (current?.id === track.id) { playbackRequest.current++; audio.current?.pause(); audio.current?.removeAttribute("src"); setCurrent(null); setPlaying(false); }
+      if (current?.id === track.id) { playbackRequest.current++; pendingChorusStart.current = null; setChorus(null); audio.current?.pause(); audio.current?.removeAttribute("src"); setCurrent(null); setPlaying(false); }
       setNotice(`已删除：${track.title}`);
     } catch (reason) { setError(String(reason)); }
   };
@@ -304,6 +339,8 @@ export function MusicEditor({ active }: { active: boolean }) {
   const coverSource = current?.coverPath ? convertFileSrc(current.coverPath) : onlineCover?.id === current?.id ? onlineCover?.url : undefined;
   const VolumeIcon = volume === 0 ? VolumeX : volume < .5 ? Volume1 : Volume2;
   const progressPercent = duration ? Math.min(100, position / duration * 100) : 0;
+  const highlightedChorus = chorusRange(chorus, duration);
+  const chorusLabel = highlightedChorus ? `副歌 ${formatTime(highlightedChorus.start)}–${formatTime(highlightedChorus.end)}` : undefined;
 
   useEffect(() => {
     if (!active || playlistDialogOpen || confirmDialog || searching) return;
@@ -338,7 +375,7 @@ export function MusicEditor({ active }: { active: boolean }) {
   });
 
   return <div className={`music-page absolute inset-0 flex flex-col bg-ide-bg text-gray-200 ${active ? "" : "hidden"}`}>
-    <audio ref={audio} loop={playbackMode.id === "single"} onTimeUpdate={event => setPosition(event.currentTarget.currentTime)} onDurationChange={event => setDuration(event.currentTarget.duration || 0)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => playNext(1)} onError={() => { if (current && audio.current?.src) { setPlaying(false); setError(`歌曲“${current.title}”加载失败，播放地址可能已失效或当前浏览器无法访问该音源`); } }} />
+    <audio ref={audio} loop={playbackMode.id === "single"} onLoadedMetadata={handleLoadedMetadata} onTimeUpdate={event => setPosition(event.currentTarget.currentTime)} onDurationChange={event => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => playNext(1)} onError={() => { if (current && audio.current?.src) { setPlaying(false); setError(`歌曲“${current.title}”加载失败，播放地址可能已失效或当前浏览器无法访问该音源`); } }} />
     <div className="music-search-row flex shrink-0 items-center gap-3 px-5 py-4">
       <form onSubmit={search} className="music-search-form min-w-0 flex-1">
         <Search size={16} className="shrink-0 text-gray-500" />
@@ -421,7 +458,7 @@ export function MusicEditor({ active }: { active: boolean }) {
 
     <footer className="music-player shrink-0 border-t border-ide-panel-border">
       <div className="music-now-playing"><div className={`music-cover ${playing ? "is-playing" : ""}`}>{coverSource && current && !coverFailed ? <img src={coverSource} alt={current.album || current.title} onError={() => setCoverFailed(true)} /> : <Music2 size={22} />}</div><div className="min-w-0"><strong>{current?.title ?? "尚未播放"}</strong><span>{current?.artist ?? "从曲库选择一首歌曲"}</span></div></div>
-      <div className="music-transport"><div className="music-transport-buttons"><button type="button" title={`${playbackMode.label}（点击切换播放模式）`} aria-label={`播放模式：${playbackMode.label}，点击切换`} onClick={() => setModeIndex(index => (index + 1) % PLAYBACK_MODES.length)}><ModeIcon size={16} /></button><button type="button" title="上一首" aria-label="上一首" onClick={() => playNext(-1)}><SkipBack size={16} /></button><button type="button" title={playing ? "暂停" : "播放"} aria-label={playing ? "暂停" : "播放"} className="music-play-button" onKeyDown={event => { if (event.code === "Space" || event.key === " ") event.preventDefault(); }} disabled={!current} onClick={() => void togglePlayback()}>{playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</button><button type="button" title="下一首" aria-label="下一首" onClick={() => playNext(1)}><SkipForward size={16} /></button></div><div className="music-progress"><span>{formatTime(position)}</span><label className="music-range" style={{"--value": `${progressPercent}%`} as React.CSSProperties}><input aria-label="播放进度" type="range" min={0} max={duration || 0} step={0.1} value={Math.min(position, duration || 0)} onChange={event => { const next = Number(event.target.value); setPosition(next); if (audio.current) audio.current.currentTime = next; }} /><output>{formatTime(position)}</output></label><span>{formatTime(duration)}</span></div></div>
+      <div className="music-transport"><div className="music-transport-buttons"><button type="button" title={`${playbackMode.label}（点击切换播放模式）`} aria-label={`播放模式：${playbackMode.label}，点击切换`} onClick={() => setModeIndex(index => (index + 1) % PLAYBACK_MODES.length)}><ModeIcon size={16} /></button><button type="button" title="上一首" aria-label="上一首" onClick={() => playNext(-1)}><SkipBack size={16} /></button><button type="button" title={playing ? "暂停" : "播放"} aria-label={playing ? "暂停" : "播放"} className="music-play-button" onKeyDown={event => { if (event.code === "Space" || event.key === " ") event.preventDefault(); }} disabled={!current} onClick={() => void togglePlayback()}>{playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</button><button type="button" title="下一首" aria-label="下一首" onClick={() => playNext(1)}><SkipForward size={16} /></button></div><div className="music-progress"><span>{formatTime(position)}</span><label className="music-range" title={chorusLabel} style={{"--value": `${progressPercent}%`} as React.CSSProperties}>{highlightedChorus && <span className="music-chorus-highlight" role="img" aria-label={chorusLabel} style={{ left: `${highlightedChorus.start / duration * 100}%`, width: `${(highlightedChorus.end - highlightedChorus.start) / duration * 100}%` }} />}<input aria-label="播放进度" type="range" min={0} max={duration || 0} step={0.1} value={Math.min(position, duration || 0)} onChange={event => seekTo(Number(event.target.value))} onPointerUp={handleProgressPointerUp} /><output>{formatTime(position)}</output></label><span>{formatTime(duration)}</span></div></div>
       <label className="music-volume"><button type="button" aria-label={volume === 0 ? "恢复音量" : "静音"} onClick={() => setVolume(value => value === 0 ? .75 : 0)}><VolumeIcon size={17} /></button><span className="music-range" style={{"--value": `${volume * 100}%`} as React.CSSProperties}><input type="range" aria-label="音量" min={0} max={1} step={0.01} value={volume} onChange={event => setVolume(Number(event.target.value))} /></span></label>
     </footer>
   </div>;

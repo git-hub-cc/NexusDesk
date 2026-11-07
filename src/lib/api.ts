@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { homeDir, join } from "@tauri-apps/api/path";
 import { invalidateTreeFiles, readCachedTreeFile } from "./treeFileCache";
 import { resolveGDStudioPlayUrl, searchGDStudio } from "./gdMusic";
+import { getMusicChorus, type MusicChorus } from "./musicChorus";
 
 export interface SearchResult {
     path: string;
@@ -26,6 +27,8 @@ export interface MusicTrack { id: string; title: string; artist: string; album: 
 export type MusicPlaylistTrack = Pick<MusicTrack, "title" | "artist" | "album" | "duration">;
 export interface MusicPlaylist { id: string; name: string; trackIds: string[]; trackMetadata?: Record<string, MusicPlaylistTrack> }
 export const musicApi = {
+    chorus: (id: string): Promise<MusicChorus | null> =>
+        getMusicChorus(id, songId => invoke("music_chorus", { id: songId })),
     coverUrl: (id: string): Promise<string | null> => {
         const cached = musicCovers.get(id);
         if (cached) return cached;
