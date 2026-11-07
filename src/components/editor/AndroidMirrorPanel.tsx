@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { createPortal } from "react-dom";
 import { ArrowLeft, House, Square, Power, RefreshCw, Smartphone, Maximize, Minimize, FolderOpen } from "lucide-react";
 import { MirrorAudio } from "./mirrorAudio";
 import { AndroidFileManager } from "./AndroidFileManager";
@@ -500,5 +499,6 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       {audioStatus && ` · ${audioStatus}`}
     </div>
   </div>;
-  return fullscreen && typeof createPortal === "function" ? createPortal(content, document.body) : content;
+  // 保持 canvas 节点稳定，避免全屏切换时替换已转移到 Worker 的 OffscreenCanvas。
+  return content;
 }
