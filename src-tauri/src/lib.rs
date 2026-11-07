@@ -183,6 +183,8 @@ pub fn run() {
             commands::music_cmds::save_music_playlists,
             commands::music_cmds::delete_local_music,
             commands::video_cmds::video_tool_status,
+            commands::video_cmds::convert_mkv_to_mp4,
+            commands::video_cmds::cancel_mkv_to_mp4,
             commands::software_manager::managed_software_list,
             commands::software_manager::managed_software_status,
             commands::software_manager::managed_software_install,

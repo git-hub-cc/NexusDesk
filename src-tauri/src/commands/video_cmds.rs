@@ -1,8 +1,71 @@
 use serde::Serialize;
-use std::{path::{Path, PathBuf}, process::Stdio};
+use std::{collections::HashMap, path::{Path, PathBuf}, process::Stdio, sync::OnceLock};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
-use tokio::{io::AsyncWriteExt, process::Command};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, process::Command};
 use tokio::sync::oneshot;
+
+type ConversionTasks = tokio::sync::Mutex<HashMap<String, std::sync::Arc<tokio::sync::Mutex<Option<oneshot::Sender<()>>>>>>;
+static CONVERSION_TASKS: OnceLock<ConversionTasks> = OnceLock::new();
+
+fn conversion_tasks() -> &'static ConversionTasks {
+    CONVERSION_TASKS.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
+}
+
+async fn run_ffmpeg(mut command: Command, cancel: &mut oneshot::Receiver<()>) -> Result<std::process::Output, String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().map_err(|error| format!("无法启动 FFmpeg：{error}"))?;
+    let mut stdout = child.stdout.take().ok_or("无法读取 FFmpeg 输出")?;
+    let mut stderr = child.stderr.take().ok_or("无法读取 FFmpeg 错误输出")?;
+    let stdout_reader = tokio::spawn(async move {
+        let mut output = Vec::new();
+        let mut buffer = [0; 4096];
+        loop {
+            let count = stdout.read(&mut buffer).await?;
+            if count == 0 { break; }
+            output.extend_from_slice(&buffer[..count]);
+            if output.len() > 65536 { output.drain(..output.len() - 65536); }
+        }
+        std::io::Result::Ok(output)
+    });
+    let stderr_reader = tokio::spawn(async move {
+        let mut output = Vec::new();
+        let mut buffer = [0; 4096];
+        loop {
+            let count = stderr.read(&mut buffer).await?;
+            if count == 0 { break; }
+            output.extend_from_slice(&buffer[..count]);
+            if output.len() > 65536 { output.drain(..output.len() - 65536); }
+        }
+        std::io::Result::Ok(output)
+    });
+    let status = loop {
+        tokio::select! {
+            _ = &mut *cancel => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                let _ = stdout_reader.await;
+                let _ = stderr_reader.await;
+                return Err("转码已取消".into());
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                match child.try_wait() {
+                    Ok(Some(status)) => break status,
+                    Ok(None) => {}
+                    Err(error) => {
+                        let _ = child.kill().await;
+                        let _ = child.wait().await;
+                        let _ = stdout_reader.await;
+                        let _ = stderr_reader.await;
+                        return Err(format!("FFmpeg 运行失败：{error}"));
+                    }
+                }
+            }
+        }
+    };
+    let stdout = stdout_reader.await.map_err(|error| error.to_string())?.map_err(|error| error.to_string())?;
+    let stderr = stderr_reader.await.map_err(|error| error.to_string())?.map_err(|error| error.to_string())?;
+    Ok(std::process::Output { status, stdout, stderr })
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,6 +161,41 @@ async fn find_ffmpeg(ytdlp: Option<&Path>) -> Option<PathBuf> {
         }
     }
     find_working_tool(paths, "-version").await
+}
+
+async fn find_ffprobe(ffmpeg: &Path) -> Option<PathBuf> {
+    let name = if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" };
+    let adjacent = ffmpeg.with_file_name(name);
+    if adjacent.is_file() {
+        return Some(adjacent);
+    }
+    let paths = std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|path| std::env::split_paths(&path).map(|dir| dir.join(name)).collect::<Vec<_>>())
+        .collect();
+    find_working_tool(paths, "-version").await
+}
+
+async fn ffmpeg_gpu_args(ffmpeg: &Path) -> (Vec<&'static str>, Option<&'static str>) {
+    let probe = |argument: &'static str| async move {
+        video_tool_command(ffmpeg).args(["-hide_banner", argument]).output().await
+            .map(|output| String::from_utf8_lossy(&output.stdout).to_string() + &String::from_utf8_lossy(&output.stderr))
+            .unwrap_or_default()
+    };
+    let (encoders, hwaccels) = tokio::join!(probe("-encoders"), probe("-hwaccels"));
+    let can_encode = |encoder: &'static str| async move {
+        tokio::time::timeout(std::time::Duration::from_secs(5), video_tool_command(ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=size=128x128:rate=30", "-t", "1", "-an", "-pix_fmt", "nv12", "-c:v", encoder, "-f", "null", "-"])
+            .status()).await.map(|result| result.is_ok_and(|status| status.success())).unwrap_or(false)
+    };
+    if encoders.lines().any(|line| line.contains("h264_nvenc")) && hwaccels.lines().any(|line| line.trim() == "cuda") && can_encode("h264_nvenc").await {
+        return (vec!["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"], Some("h264_nvenc"));
+    }
+    // AMF 编码器可以接收软件解码后的帧，不强制要求 FFmpeg 暴露 d3d11va。
+    if cfg!(windows) && encoders.lines().any(|line| line.contains("h264_amf")) && can_encode("h264_amf").await {
+        return (Vec::new(), Some("h264_amf"));
+    }
+    (Vec::new(), None)
 }
 
 #[cfg(test)]
@@ -206,6 +304,146 @@ pub async fn video_tool_status() -> VideoToolStatus {
     let path = find_ytdlp().await;
     let ffmpeg = find_ffmpeg(path.as_deref()).await;
     VideoToolStatus { yt_dlp_available: path.is_some(), path: path.map(|p| p.to_string_lossy().into_owned()), ffmpeg_available: ffmpeg.is_some() }
+}
+
+#[tauri::command]
+pub async fn convert_mkv_to_mp4(path: String) -> Result<String, String> {
+    let source = PathBuf::from(&path).canonicalize().map_err(|_| "MKV 文件不存在或无法访问")?;
+    if !source.is_file() {
+        return Err("MKV 文件不存在或无法访问".into());
+    }
+    if source.extension().and_then(|value| value.to_str()).is_none_or(|value| !value.eq_ignore_ascii_case("mkv")) {
+        return Err("仅支持将 MKV 文件转换为 MP4".into());
+    }
+    let task_key = source.to_string_lossy().to_ascii_lowercase();
+    let (cancel_tx, mut cancel_rx) = oneshot::channel();
+    {
+        let mut tasks = conversion_tasks().lock().await;
+        if tasks.contains_key(&task_key) {
+            return Err("该 MKV 文件正在转码".into());
+        }
+        tasks.insert(task_key.clone(), std::sync::Arc::new(tokio::sync::Mutex::new(Some(cancel_tx))));
+    }
+    let result = convert_mkv_to_mp4_inner(&source, &mut cancel_rx).await;
+    conversion_tasks().lock().await.remove(&task_key);
+    result
+}
+
+async fn convert_mkv_to_mp4_inner(source: &Path, cancel: &mut oneshot::Receiver<()>) -> Result<String, String> {
+    let ffmpeg = find_ffmpeg(None).await.ok_or("未检测到 FFmpeg，请先安装 FFmpeg 后重试")?;
+    let stem = source.file_stem().and_then(|value| value.to_str()).ok_or("无法确定输出文件名")?;
+    let mut target = source.with_file_name(format!("{stem}.mp4"));
+    let mut attachments = source.with_file_name(format!("{stem}.attachments"));
+    let mut suffix = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_else(|| chrono::Utc::now().timestamp());
+    while target.exists() || attachments.exists() {
+        target = source.with_file_name(format!("{stem}-{suffix}.mp4"));
+        attachments = source.with_file_name(format!("{stem}-{suffix}.attachments"));
+        suffix = suffix.saturating_add(1);
+    }
+    let (gpu_args, gpu_encoder) = ffmpeg_gpu_args(&ffmpeg).await;
+    let run = |input_args: &[&str], encoder: &str| {
+        let mut command = video_tool_command(&ffmpeg);
+        command.args(["-n", "-hide_banner", "-loglevel", "error"])
+            .args(input_args).arg("-i").arg(&source)
+            .args(["-map", "0:v:0", "-map", "0:a?", "-map", "0:s?"]);
+        if encoder == "h264_amf" {
+            command.args(["-pix_fmt", "nv12"]);
+        }
+        command.args(["-c:v", encoder, "-c:a", "aac", "-c:s", "mov_text", "-movflags", "+faststart"]).arg(&target);
+        command
+    };
+    let mut output = match run_ffmpeg(run(&gpu_args, gpu_encoder.unwrap_or("libx264")), cancel).await {
+        Ok(output) => output,
+        Err(error) => { let _ = std::fs::remove_file(&target); return Err(error); }
+    };
+    // 驱动或硬件初始化失败时回退软件编码，确保转换仍可完成。
+    if !output.status.success() && gpu_encoder.is_some() {
+        let _ = std::fs::remove_file(&target);
+        output = match run_ffmpeg(run(&[], "libx264"), cancel).await {
+            Ok(output) => output,
+            Err(error) => { let _ = std::fs::remove_file(&target); return Err(error); }
+        };
+    }
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        let detail = detail.lines().rev().find(|line| !line.trim().is_empty()).unwrap_or("转码失败");
+        let _ = std::fs::remove_file(&target);
+        return Err(format!("MKV 转 MP4 失败：{}", detail.chars().take(240).collect::<String>()));
+    }
+    let ffprobe = match find_ffprobe(&ffmpeg).await {
+        Some(path) => path,
+        None => { let _ = std::fs::remove_file(&target); return Err("未检测到 FFprobe，无法检查 MKV 附件".into()); }
+    };
+    let probe = match video_tool_command(&ffprobe)
+        .args(["-v", "error", "-show_entries", "stream=index,codec_type:stream_tags=filename", "-of", "json"])
+        .arg(source).output().await {
+        Ok(output) => output,
+        Err(error) => { let _ = std::fs::remove_file(&target); return Err(error.to_string()); }
+    };
+    if !probe.status.success() {
+        let _ = std::fs::remove_file(&target);
+        return Err("无法读取 MKV 流信息".into());
+    }
+    let probe_json: serde_json::Value = match serde_json::from_slice(&probe.stdout) {
+        Ok(value) => value,
+        Err(error) => { let _ = std::fs::remove_file(&target); return Err(error.to_string()); }
+    };
+    let attachment_streams: Vec<(usize, String)> = probe_json["streams"].as_array().into_iter().flatten()
+        .filter(|stream| stream["codec_type"] == "attachment")
+        .enumerate()
+        .map(|(ordinal, stream)| {
+            let original = stream["tags"]["filename"].as_str()
+                .and_then(|name| Path::new(name).file_name()).and_then(|name| name.to_str()).unwrap_or("attachment.bin");
+            let safe_name: String = original.chars().map(|character| {
+                if character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-') { character } else { '_' }
+            }).collect();
+            (ordinal, format!("{ordinal}-{safe_name}"))
+        }).collect();
+    if !attachment_streams.is_empty() {
+        let staging_attachments = attachments.with_extension("attachments.tmp");
+        if staging_attachments.exists() {
+            let _ = std::fs::remove_file(&target);
+            return Err("附件临时目录已存在，请先移除后重试".into());
+        }
+        if let Err(error) = std::fs::create_dir(&staging_attachments) {
+            let _ = std::fs::remove_file(&target);
+            return Err(format!("无法创建附件临时目录：{error}"));
+        }
+        let mut attachment_command = video_tool_command(&ffmpeg);
+        attachment_command.args(["-hide_banner", "-loglevel", "info"]);
+        for (ordinal, name) in &attachment_streams {
+            attachment_command.arg(format!("-dump_attachment:t:{ordinal}")).arg(staging_attachments.join(name));
+        }
+        attachment_command.arg("-i").arg(source).args(["-map", "0:v:0?", "-frames:v", "1", "-f", "null", "-"]);
+        let attachment_output = match run_ffmpeg(attachment_command, cancel).await {
+            Ok(output) => output,
+            Err(error) => {
+                let _ = std::fs::remove_file(&target);
+                let _ = std::fs::remove_dir_all(&staging_attachments);
+                return Err(error);
+            }
+        };
+        if !attachment_output.status.success() {
+            let _ = std::fs::remove_file(&target);
+            let _ = std::fs::remove_dir_all(&staging_attachments);
+            let detail = String::from_utf8_lossy(&attachment_output.stderr);
+            let detail = detail.lines().rev().find(|line| !line.trim().is_empty()).unwrap_or("附件提取失败");
+            return Err(format!("MKV 附件提取失败：{}", detail.chars().take(240).collect::<String>()));
+        }
+        if let Err(error) = std::fs::rename(&staging_attachments, &attachments) {
+            let _ = std::fs::remove_file(&target);
+            let _ = std::fs::remove_dir_all(&staging_attachments);
+            return Err(format!("无法保存 MKV 附件：{error}"));
+        }
+    }
+    Ok(target.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn cancel_mkv_to_mp4(path: String) -> Result<(), String> {
+    let key = PathBuf::from(path).canonicalize().map_err(|_| "MKV 文件不存在或无法访问")?.to_string_lossy().to_ascii_lowercase();
+    let sender = conversion_tasks().lock().await.get(&key).cloned().ok_or("该 MKV 文件没有正在进行的转码")?;
+    sender.lock().await.take().map(|sender| sender.send(()).map_err(|_| "转码已结束".into())).unwrap_or_else(|| Err("转码已取消".into()))
 }
 
 #[tauri::command]

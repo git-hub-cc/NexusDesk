@@ -11,11 +11,11 @@ import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Tree, type NodeRendererProps } from "react-arborist";
-import { ChevronRight, ChevronDown, AlertTriangle, X } from "lucide-react";
+import { ChevronRight, ChevronDown, AlertTriangle, X, Square } from "lucide-react";
 import { useWorkspaceStore, flushPendingWrites } from "@/store/workspaceStore";
 import { useTerminalStore } from "@/store/terminalStore";
 import { useLayoutStore } from "@/store/layoutStore";
-import { fsApi } from "@/lib/api";
+import { fsApi, videoApi } from "@/lib/api";
 import { documentExtension, isConvertibleDocument } from "@/lib/documentConverter";
 import { useElementSize } from "@/hooks/useElementSize";
 import { openContextMenuFromKeyboard } from "@/lib/contextMenu";
@@ -67,6 +67,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
     const [renamePath, setRenamePath] = useState<string | null>(null);
     const busy = useRef(false);
     const [converting, setConverting] = useState(false);
+    const [convertingPath, setConvertingPath] = useState<string | null>(null);
     const [historyPath, setHistoryPath] = useState<string | null>(null);
     const [gitHistoryPath, setGitHistoryPath] = useState<string | null>(null);
     const [error, setError] = useState("");
@@ -246,6 +247,25 @@ export const PhysicalTree: React.FC = React.memo(() => {
             setConverting(false);
         }
     });
+
+    const handleConvertMkvToMp4 = (sourcePath: string) => runOperation(async () => {
+        setConverting(true);
+        setConvertingPath(sourcePath);
+        try {
+            await videoApi.convertMkvToMp4(sourcePath);
+            await loadDirectory(parent(sourcePath), false, true);
+            setError("");
+        } finally {
+            setConverting(false);
+            setConvertingPath(null);
+        }
+    });
+
+    const cancelConvertMkvToMp4 = async () => {
+        if (!convertingPath) return;
+        try { await videoApi.cancelMkvToMp4(convertingPath); }
+        catch (error) { setError(String(error)); }
+    };
 
     const handleTransferWithConflict = async (action: "move" | "copy", sourcePath: string, targetDir: string, initialOpts: any = {}) => {
         let currentOpts = { ...initialOpts };
@@ -576,6 +596,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
                 <ContextMenu.Item className="ide-menu-item" onSelect={() => void importFromDialog(directory ? path : parent(path))}>导入文件...</ContextMenu.Item>
                 {!directory && <ContextMenu.Item disabled={remote} className="ide-menu-item" onSelect={() => { void openPath(path).catch(error => setError(String(error))); }}>打开文件（系统程序）</ContextMenu.Item>}
                 {!directory && isConvertibleDocument(path) && <ContextMenu.Item disabled={remote || multiple || converting} className="ide-menu-item text-ide-accent" onSelect={() => void handleConvertToMd(path)}>提取为 Markdown...</ContextMenu.Item>}
+                {!directory && /\.mkv$/i.test(path) && <ContextMenu.Item disabled={remote || multiple || converting} className="ide-menu-item text-ide-accent" onSelect={() => void handleConvertMkvToMp4(path)}>转换为 MP4...</ContextMenu.Item>}
                 <ContextMenu.Item disabled={remote} className="ide-menu-item" onSelect={() => {
                     const action = directory ? openPath(path) : revealItemInDir(path);
                     void action.catch(error => setError(`打开目录失败：${String(error)}`));
@@ -736,6 +757,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
                 </Dialog.Root>
             )}
 
+            {convertingPath && <div className="flex items-center gap-2 p-2 text-xs text-gray-400" role="status"><span className="flex-1 truncate">正在转换：{convertingPath.split(/[\\/]/).pop()}</span><button type="button" className="rounded p-1 text-gray-300 hover:bg-white/10" title="取消转码" aria-label="取消转码" onClick={() => void cancelConvertMkvToMp4()}><Square size={13} fill="currentColor" /></button></div>}
             {error && <div role="alert" className="p-2 text-xs text-red-400 break-words">{error}</div>}
             <div ref={containerRef} onKeyDownCapture={speedSearch.onKeyDownCapture} className="relative flex-1 w-full p-1 overflow-hidden">
                 {speedSearch.searchBox}
