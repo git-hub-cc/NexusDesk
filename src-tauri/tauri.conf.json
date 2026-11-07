@@ -43,6 +43,20 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "fileAssociations": [
+      {
+        "ext": ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "mp4", "m4v", "webm", "ogg", "mov", "mkv", "avi", "ogv"],
+        "name": "NexusDeskMedia",
+        "description": "在 NexusDesk 中打开图片和视频",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["txt", "md", "markdown", "mdx", "json", "js", "jsx", "ts", "tsx", "css", "scss", "less", "html", "htm", "xml", "svg", "yaml", "yml", "toml", "csv", "log", "ini", "conf", "env", "rs", "py", "java", "c", "cc", "cpp", "h", "hpp", "go", "php", "rb", "sh", "bat", "cmd", "ps1", "sql", "vue", "svelte"],
+        "name": "NexusDeskText",
+        "description": "在 NexusDesk 中打开文本和代码文件",
+        "role": "Editor"
+      }
+    ],
     "windows": {
       "wix": {
         "template": "installer.wxs"

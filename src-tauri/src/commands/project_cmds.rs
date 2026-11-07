@@ -2,6 +2,7 @@ use std::{ffi::OsString, path::PathBuf, process::Command};
 
 pub struct StartupProject(pub Option<PathBuf>);
 pub struct StartupUrl(pub Option<String>);
+pub struct StartupFile(pub Option<PathBuf>);
 
 pub fn project_argument(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> {
     let mut args = args.into_iter();
@@ -31,6 +32,22 @@ pub fn startup_url_argument(args: impl IntoIterator<Item = OsString>) -> Option<
     None
 }
 
+pub fn startup_file_argument(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> {
+    let mut args = args.into_iter();
+    args.next();
+    while let Some(arg) = args.next() {
+        if arg == "--project" {
+            let _ = args.next();
+            continue;
+        }
+        let value = arg.to_string_lossy();
+        if value.starts_with('-') || value.starts_with("http://") || value.starts_with("https://") { continue; }
+        let path = PathBuf::from(arg);
+        if path.is_file() { return Some(path); }
+    }
+    None
+}
+
 #[tauri::command]
 pub fn startup_project(state: tauri::State<'_, StartupProject>) -> Option<String> {
     state.0.as_ref().map(|path| path.to_string_lossy().into_owned())
@@ -39,6 +56,11 @@ pub fn startup_project(state: tauri::State<'_, StartupProject>) -> Option<String
 #[tauri::command]
 pub fn startup_url(state: tauri::State<'_, StartupUrl>) -> Option<String> {
     state.0.clone()
+}
+
+#[tauri::command]
+pub fn startup_file(state: tauri::State<'_, StartupFile>) -> Option<String> {
+    state.0.as_ref().map(|path| path.to_string_lossy().into_owned())
 }
 
 fn project_command(executable: PathBuf, project: PathBuf) -> Command {

@@ -11,6 +11,8 @@ import { scheduleWindowReveal } from "@/lib/windowStartup";
 import { SearchEverywhere } from "@/components/search/SearchEverywhere";
 import { flushEditorContent, useWorkspaceStore } from "@/store/workspaceStore";
 import { isSnapshot } from "@/lib/snapshot";
+import { isImage, isTextFile, isVideo } from "@/lib/assets";
+import { fsApi } from "@/lib/api";
 
 function App() {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -26,6 +28,7 @@ function App() {
   const tabsRestored = useWorkspaceStore(state => state.pinnedTabsRestored);
   const startup = useRef<Promise<unknown> | null>(null);
   const startupUrlOpened = useRef(false);
+  const startupFileOpened = useRef(false);
   const [startupReady, setStartupReady] = useState(false);
 
   useEffect(() => {
@@ -68,6 +71,18 @@ function App() {
       useWorkspaceStore.getState().openTab({ id, path: id, title: parsed.hostname, browser: { root: rootPath ?? "", url: parsed.href } });
     }).catch(console.error);
   }, [rootPath, startupReady]);
+
+  useEffect(() => {
+    if (!startupReady || !isTauri() || startupFileOpened.current) return;
+    startupFileOpened.current = true;
+    void invoke<string | null>("startup_file").then(async path => {
+      const media = !!path && ((isImage(path) && !/\.svg$/i.test(path)) || isVideo(path));
+      if (!path || (!media && !isTextFile(path))) return;
+      const name = path.split(/[\\/]/).pop() || path;
+      const content = isTextFile(path) ? await fsApi.readFile(path) : "";
+      useWorkspaceStore.getState().openTab({ id: path, path, title: name, content, isDirty: false });
+    }).catch(console.error);
+  }, [startupReady]);
 
   return (
     <div className="flex flex-col h-screen w-screen min-w-[640px] overflow-hidden bg-ide-bg text-ide-fg font-sans">
