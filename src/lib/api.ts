@@ -176,5 +176,12 @@ export const codexSettingsApi = {
     save: (input: { model: string; proxyUrl: string; apiKey?: string; trustMode: boolean; showTooltips: boolean; checkForUpdateOnStartup: boolean }): Promise<void> => invoke("codex_settings_save", { input }),
 };
 export const chatApi = {
-    complete: (requestId: string, messages: { role: "user" | "assistant"; content: string }[]): Promise<void> => invoke("chat_completion", { requestId, messages }),
+    complete: (requestId: string, messages: { role: "user" | "assistant"; content: string }[], overrides?: ChatOverrides): Promise<void> => invoke("chat_completion", { requestId, messages, overrides }),
 };
+
+export interface ChatOverrides {
+    api?: string;
+    key?: string;
+    model?: string;
+    format?: "responses" | "chat";
+}
