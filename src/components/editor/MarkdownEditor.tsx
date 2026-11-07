@@ -5,9 +5,6 @@ import { imageUrl, resolveAsset } from "@/lib/assets";
 import { SvgEditor } from "./SvgEditor";
 import { HtmlEditor } from "./HtmlEditor";
 import { openPath } from "@tauri-apps/plugin-opener";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { markdownRehypePlugins, markdownUrlTransform } from "@/lib/markdownPreview";
 import { Code, Eye, Columns2 } from "lucide-react";
 import { useWorkspaceStore, type Tab } from "@/store/workspaceStore";
 import { TreeGraphPreview } from "./TreeGraphPreview";
@@ -25,7 +22,8 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 // Keep progress outside the component: switching tabs unmounts the player.
 const videoProgress = new Map<string, number>();
 
-function AssetImage({ source, note, alt }: { source: string; note: string; alt?: string }) {
+/* 图片由 worker 生成的 HTML 直接渲染，双击行为在预览容器上统一处理。 */
+/*
   const [version, setVersion] = useState(0);
   const asset = useMemo(() => {
     try {
@@ -56,7 +54,7 @@ function AssetImage({ source, note, alt }: { source: string; note: string; alt?:
         } catch (error) { showError(String(error)); }
       }
     }} title="双击编辑图片" />;
-}
+} */
 
 export function AssetVideo({ source, note, alt, fit = false, active = true, playRequest = 0 }: { source: string; note: string; alt?: string; fit?: boolean; active?: boolean; playRequest?: number }) {
   const playerHostRef = useRef<HTMLDivElement>(null);
@@ -201,7 +199,6 @@ const modes = [
   { id: "preview", label: "预览", icon: Eye },
   { id: "split", label: "双栏", icon: Columns2 },
 ] as const;
-const plugins = [remarkGfm];
 
 function MarkdownPreviewPane({ pane, tabId, previewRef, className, children }: {
   pane: "left" | "right";
@@ -234,7 +231,8 @@ function MarkdownPreviewPane({ pane, tabId, previewRef, className, children }: {
   }}>{children}</div>;
 }
 
-const MarkdownPreview = memo(({ content, path }: { content: string; path: string }) => {
+/*
+const MarkdownPreviewLegacy = memo(({ content, path }: { content: string; path: string }) => {
   // 使用 useMemo 缓存 components，避免每次 content 变化时重新创建组件导致全量卸载重绘
   const components = useMemo(() => ({
     img: ({ src, alt }: any) => {
@@ -248,7 +246,7 @@ const MarkdownPreview = memo(({ content, path }: { content: string; path: string
       if (props.href?.startsWith("#")) {
         event.preventDefault();
         let fragment = props.href.slice(1);
-        try { fragment = decodeURIComponent(fragment); } catch { /* Keep literal malformed fragments. */ }
+        try { fragment = decodeURIComponent(fragment); } catch { }
         const preview = event.currentTarget.closest(".markdown-preview");
         // Sanitization prefixes ids/names to prevent DOM clobbering. Search within this pane.
         const target = Array.from(preview?.querySelectorAll<HTMLElement>("[id], [name]") ?? [])
@@ -270,6 +268,66 @@ const MarkdownPreview = memo(({ content, path }: { content: string; path: string
             : <p className="markdown-empty">暂无内容，在源码模式下开始编写 Markdown。</p>}
       </article>
   );
+});
+
+});
+*/
+
+const MarkdownPreview = memo(({ content, path }: { content: string; path: string }) => {
+  const [html, setHtml] = useState("");
+  const articleRef = useRef<HTMLElement>(null);
+  const workerRef = useRef<Worker | null>(null);
+  const requestRef = useRef(0);
+  useEffect(() => {
+    const worker = new Worker(`${import.meta.env.BASE_URL}markdownPreviewWorker.js`);
+    workerRef.current = worker;
+    worker.onmessage = event => {
+      if (event.data?.id === requestRef.current && event.data.type === "rendered") {
+        const document = new DOMParser().parseFromString(event.data.html, "text/html");
+        document.querySelectorAll<HTMLImageElement | HTMLVideoElement>("img[src], video[src]").forEach(media => {
+          const source = media.getAttribute("src") || "";
+          if (/^(https?:|data:|blob:|tauri:|asset:)/i.test(source)) return;
+          try {
+            media.setAttribute("data-markdown-src", source);
+            media.setAttribute("src", media.tagName === "IMG" ? imageUrl(resolveAsset(path, source)) : convertFileSrc(resolveAsset(path, source)));
+          } catch { /* 无法解析的资源保留原始地址。 */ }
+        });
+        setHtml(document.body.innerHTML);
+      }
+    };
+    worker.onerror = () => setHtml(`<pre>${content.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</pre>`);
+    return () => { worker.terminate(); workerRef.current = null; };
+  }, []);
+  useEffect(() => {
+    requestRef.current += 1;
+    workerRef.current?.postMessage({ type: "render", id: requestRef.current, markdown: content });
+  }, [content]);
+  useEffect(() => {
+    const article = articleRef.current;
+    if (!article) return;
+    const click = (event: MouseEvent) => {
+      const link = (event.target as HTMLElement).closest<HTMLAnchorElement>("a");
+      if (!link) return;
+      const href = link.getAttribute("href") || "";
+      if (href.startsWith("#")) {
+        event.preventDefault();
+        let fragment = href.slice(1); try { fragment = decodeURIComponent(fragment); } catch { /* 保留格式错误的片段。 */ }
+        article.querySelector<HTMLElement>(`#user-content-${CSS.escape(fragment)}`)?.scrollIntoView({ block: "start" });
+      } else if (!/^(https?:|mailto:|#)/i.test(href)) {
+        event.preventDefault();
+        try { void openPath(resolveAsset(path, href)).catch(error => showError(`打开附件失败：${String(error)}`)); } catch (error) { showError(String(error)); }
+      }
+    };
+    const doubleClick = (event: MouseEvent) => {
+      const image = (event.target as HTMLElement).closest<HTMLImageElement>("img");
+      const source = image?.getAttribute("data-markdown-src") || image?.getAttribute("src") || "";
+      if (!image || /^(https?:|data:|blob:|tauri:|asset:)/i.test(source)) return;
+      try { const imagePath = resolveAsset(path, source); void fsApi.readFile(imagePath).then(fileContent => useWorkspaceStore.getState().openTab({ id: imagePath, path: imagePath, title: imagePath.split(/[/\\]/).pop() || imagePath, content: fileContent })); } catch (error) { showError(String(error)); }
+    };
+    article.addEventListener("click", click); article.addEventListener("dblclick", doubleClick);
+    return () => { article.removeEventListener("click", click); article.removeEventListener("dblclick", doubleClick); };
+  }, [path, html]);
+  return <article ref={articleRef} className="markdown-preview" aria-label="Markdown 预览" dangerouslySetInnerHTML={{ __html: html || (content ? "" : '<p class="markdown-empty">暂无内容，在源码模式下开始编写 Markdown。</p>') }} />;
 });
 
 export function MarkdownEditor({ pane, tabId, active }: { pane: "left" | "right"; tabId: string; active: boolean }) {
