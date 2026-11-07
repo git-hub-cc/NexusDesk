@@ -9,7 +9,7 @@ export function isVideo(path: string) {
 }
 
 export function isBinaryAsset(path: string) {
-  return /\.(mp4|m4v|webm|ogg|mov|mkv|avi|ogv|mp3|wav|flac|zip|7z|rar|pdf)$/i.test(path);
+  return /\.(mp4|m4v|webm|ogg|mov|mkv|avi|ogv|mp3|wav|flac|zip|7z|rar|pdf|docx?|xlsx?|pptx?|exe|dll|iso|img|bin|dat|class|wasm|sqlite|db)$/i.test(path);
 }
 
 export function resolveAsset(notePath: string, source: string) {

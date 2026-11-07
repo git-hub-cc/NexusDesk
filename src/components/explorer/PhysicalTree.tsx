@@ -25,7 +25,7 @@ import { selectTreeNode, activateTreeFile } from "./treeInteraction";
 import { useTreeSpeedSearch } from "./useTreeSpeedSearch";
 import { useTreeOpenState } from "./useTreeOpenState";
 import { treeStatusFor, statusLabels } from "@/lib/fileTreeAppearance";
-import { isImage, isVideo } from "@/lib/assets";
+import { isBinaryAsset, isImage, isVideo } from "@/lib/assets";
 import { isRemotePath, remotePath, remoteUri } from "@/lib/remote";
 import { ANDROID_FILE_TYPE, downloadAndroidFiles, parseAndroidFiles, readAndroidClipboard, type AndroidFiles } from "@/lib/androidTransfer";
 
@@ -400,6 +400,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
                     });
                     return;
                 }
+                if (isBinaryAsset(node.data.id)) throw new Error("二进制文件暂不支持文本预览");
                 const content = await fsApi.readFile(node.data.id);
                 openTab({
                     id: node.data.id,

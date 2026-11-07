@@ -86,7 +86,7 @@ export const fsApi = {
     projectDirectoryExists: (path: string): Promise<boolean> => invoke("project_directory_exists", { path }),
     initProjectDb: (path: string): Promise<void> => invoke("init_project_db", { path }),
 
-    readFile: (path: string): Promise<string> => !isRemotePath(path) && /\.(png|jpe?g|webp|gif|bmp|ico|avif)$/i.test(path) ? Promise.resolve("") : invoke("read_file", { path }),
+    readFile: (path: string): Promise<string> => !isRemotePath(path) && /\.(png|jpe?g|webp|gif|bmp|ico|avif|mp4|m4v|webm|ogg|mov|mkv|avi|ogv|mp3|wav|flac|zip|7z|rar|pdf|docx?|xlsx?|pptx?|exe|dll|iso|img|bin|dat|class|wasm|sqlite|db)$/i.test(path) ? Promise.resolve("") : invoke("read_file", { path }),
 
     readTreeFile: (path: string): Promise<string> => readCachedTreeFile(path, fsApi.readFile),
     invalidateTreeFiles,

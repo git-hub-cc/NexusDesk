@@ -3,6 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { fsApi, type LocalHistoryEntry } from "@/lib/api";
 import { flushPendingWrites, restoreLocalVersion, useWorkspaceStore } from "@/store/workspaceStore";
 import { EditableGitDiff } from "./EditableGitDiff";
+import { isBinaryAsset } from "@/lib/assets";
 
 export function LocalHistoryDialog({ path, onClose }: { path: string; onClose: () => void }) {
   const [entries, setEntries] = useState<LocalHistoryEntry[]>([]);
@@ -15,6 +16,7 @@ export function LocalHistoryDialog({ path, onClose }: { path: string; onClose: (
   const request = useRef(0);
   const writes = useRef(Promise.resolve());
   const load = async () => {
+    if (isBinaryAsset(path)) throw new Error("二进制文件不支持本地文本历史");
     await flushPendingWrites();
     const items = await fsApi.localHistory(path);
     setEntries(items); setSelected(items[0]?.id);
@@ -26,6 +28,7 @@ export function LocalHistoryDialog({ path, onClose }: { path: string; onClose: (
   useEffect(() => {
     const token = ++request.current;
     setPatch(""); setContents(undefined); setLoading(true);
+    if (isBinaryAsset(path)) { setLoading(false); return; }
     if (selected === undefined) { setLoading(false); return; }
     void Promise.all([fsApi.historyContent(path, selected), fsApi.readFile(path)])
       .then(async ([left, right]) => {

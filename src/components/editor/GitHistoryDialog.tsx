@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { gitApi } from "@/lib/api";
 import { GitDiffEditor } from "./GitDiffEditor";
+import { isBinaryAsset } from "@/lib/assets";
 
 type History = Awaited<ReturnType<typeof gitApi.pathHistory>>;
 
@@ -33,6 +34,7 @@ export function GitHistoryDialog({ path, onClose }: { path: string; onClose: () 
     setPatch(""); setDiffError("");
     if (!history || !selected || !file) { setDiffLoading(false); return; }
     setDiffLoading(true);
+    if (isBinaryAsset(file)) { setPatch("Binary files are not shown as text"); setDiffLoading(false); return; }
     void gitApi.revisionDiff(history.root, selected, file).then(value => { if (alive) setPatch(value); })
       .catch(e => { if (alive) setDiffError(String(e)); }).finally(() => { if (alive) setDiffLoading(false); });
     return () => { alive = false; };

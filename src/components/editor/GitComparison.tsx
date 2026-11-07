@@ -21,7 +21,7 @@ export function GitComparison({ tab, pane, onChange }: { tab: Tab; pane: "left" 
       const staged = !!tab.diffStaged;
       const files = tab.revision ? await gitApi.revisionChanges(context.root, tab.revision)
         : (await gitApi.status(context.root)).filter(file => !file.conflict && (staged ? file.staged : file.unstaged));
-      const ordered = files.filter(file => !isImage(file.path)).sort((a, b) => a.path.localeCompare(b.path));
+      const ordered = files.filter(file => !isImage(file.path) && !/\.(mp4|m4v|webm|ogg|mov|mkv|avi|ogv|mp3|wav|flac|zip|7z|rar|pdf|docx?|xlsx?|pptx?|exe|dll|iso|img|bin|dat|class|wasm|sqlite|db)$/i.test(file.path)).sort((a, b) => a.path.localeCompare(b.path));
       const current = ordered.findIndex(file => file.path === context.path);
       // Continue in the same comparison scope, without wrapping back to the first file.
       const candidates = current >= 0 ? (direction > 0 ? ordered.slice(current + 1) : ordered.slice(0, current).reverse())

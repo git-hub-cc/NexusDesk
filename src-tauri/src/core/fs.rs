@@ -85,6 +85,23 @@ pub fn read_dir_shallow<P: AsRef<Path>>(path: P) -> Result<Vec<FileNode>, String
 }
 
 pub fn read_markdown_file<P: AsRef<Path>>(path: P) -> Result<String, String> {
+    let path = path.as_ref();
+    const MAX_TEXT_FILE_SIZE: u64 = 100 * 1024 * 1024;
+    let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
+    if metadata.len() > MAX_TEXT_FILE_SIZE {
+        return Err("超过 100 MB 的文件不支持文本编辑".into());
+    }
+    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut header = [0u8; 8192];
+    let count = std::io::Read::read(&mut file, &mut header).map_err(|e| e.to_string())?;
+    let invalid_utf8 = match std::str::from_utf8(&header[..count]) {
+        Ok(_) => false,
+        // 读取边界可能截断合法的多字节字符，完整读取时再做最终校验。
+        Err(error) => error.error_len().is_some(),
+    };
+    if header[..count].contains(&0) || invalid_utf8 {
+        return Err("二进制文件不支持文本编辑".into());
+    }
     fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
@@ -269,6 +286,59 @@ pub fn transfer_entry_named(source: &Path, target_dir: &Path, copy: bool, new_na
     
     // Match the paths returned by read_dir_shallow on Windows (without verbatim prefixes).
     Ok(target.to_string_lossy().trim_start_matches(r"\\?\").to_string())
+}
+
+#[cfg(test)]
+mod read_file_tests {
+    use super::read_markdown_file;
+
+    #[test]
+    fn accepts_utf8_character_split_at_header_boundary() {
+        let path = std::env::temp_dir().join(format!(
+            "nexusdesk-read-boundary-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut bytes = vec![b'a'; 8191];
+        bytes.extend_from_slice("中".as_bytes());
+        std::fs::write(&path, &bytes).unwrap();
+        assert_eq!(read_markdown_file(&path).unwrap(), String::from_utf8(bytes).unwrap());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn rejects_invalid_utf8_in_header() {
+        let path = std::env::temp_dir().join(format!(
+            "nexusdesk-read-invalid-{}-{}.bin",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, [b'a', 0xff]).unwrap();
+        assert!(read_markdown_file(&path).is_err());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn rejects_text_file_over_size_limit() {
+        let path = std::env::temp_dir().join(format!(
+            "nexusdesk-read-large-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(100 * 1024 * 1024 + 1).unwrap();
+        assert!(read_markdown_file(&path).is_err());
+        std::fs::remove_file(path).unwrap();
+    }
 }
 
 fn transfer_recursive(source: &Path, target: &Path, copy: bool, opts: &TransferOptions) -> Result<(), String> {
