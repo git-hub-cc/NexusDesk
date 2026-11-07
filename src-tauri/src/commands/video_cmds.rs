@@ -101,12 +101,18 @@ async fn find_ffmpeg(ytdlp: Option<&Path>) -> Option<PathBuf> {
 }
 
 fn ytdlp_download_command(program: &Path, destination: &Path, url: &reqwest::Url, ffmpeg: Option<&Path>, cookies: Option<&str>) -> Command {
+    ytdlp_download_command_with_format(program, destination, url, ffmpeg, cookies, None)
+}
+
+fn ytdlp_download_command_with_format(program: &Path, destination: &Path, url: &reqwest::Url, ffmpeg: Option<&Path>, cookies: Option<&str>, format: Option<&str>) -> Command {
     let mut command = video_tool_command(program);
     command.args(["--ignore-config", "--no-playlist", "--no-progress", "--windows-filenames", "--hls-prefer-native"])
         // 与内置 WebView2 的浏览器标识保持一致，避免 Cookie 与客户端不匹配。
         .args(["--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"])
         .arg("-P").arg(destination).arg("-o").arg("%(title).180B [%(id)s].%(ext)s");
-    if let Some(ffmpeg) = ffmpeg {
+    if let Some(format) = format {
+        command.arg("-f").arg(format);
+    } else if let Some(ffmpeg) = ffmpeg {
         // yt-dlp invokes this FFmpeg to merge separate tracks; fall back to a
         // combined format for sites that do not offer separate tracks.
         command.arg("--ffmpeg-location").arg(ffmpeg)
@@ -215,6 +221,15 @@ pub async fn download_video(app: tauri::AppHandle, url: String, destination: Str
         let output = ytdlp_download_command(&program, dest, &parsed, ffmpeg.as_deref(), cookies.as_deref()).output().await.map_err(|e| format!("无法启动 yt-dlp：{e}"))?;
         if output.status.success() { return Ok("下载完成".into()); }
         let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("HTTP Error 403") {
+            // 部分视频拒绝分离音视频地址，退回带音频的单文件格式继续下载。
+            let mut retry = ytdlp_download_command_with_format(&program, dest, &parsed, ffmpeg.as_deref(), cookies.as_deref(), Some("best[vcodec!=none][acodec!=none]"));
+            let retry_output = retry.output().await.map_err(|e| format!("无法启动 yt-dlp：{e}"))?;
+            if retry_output.status.success() { return Ok("下载完成".into()); }
+            let retry_stderr = String::from_utf8_lossy(&retry_output.stderr);
+            let detail = retry_stderr.lines().rev().find(|line| !line.trim().is_empty()).unwrap_or("下载失败");
+            return Err(format!("yt-dlp 下载失败：{}", detail.chars().take(240).collect::<String>()));
+        }
         if ffmpeg.is_none() && stderr.contains("Requested format is not available") {
             return Err("该链接未提供自带音频的视频格式，请安装 FFmpeg 后重试，以便分别下载音视频并合并。".into());
         }
