@@ -84,7 +84,7 @@ function saveLocation(pane: "left" | "right", id: string | null | undefined, vie
   });
 }
 
-export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, navigationEnabled = true }) => {
+const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, navigationEnabled = true }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const languageCompartment = useRef(new Compartment());
@@ -980,3 +980,7 @@ export const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({ pane, tabId,
     </>
   );
 };
+
+export const CodeMirrorEditor = React.memo(CodeMirrorEditorImpl, (previous, next) =>
+  previous.pane === next.pane && previous.tabId === next.tabId && previous.navigationEnabled === next.navigationEnabled
+);

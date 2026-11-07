@@ -7,7 +7,7 @@ import { MirrorAudio } from "./mirrorAudio";
 import { AndroidFileManager } from "./AndroidFileManager";
 
 type Device = { serial: string; status: string; model: string };
-type Connection = { id: string; decoder: VideoDecoder; audio?: MirrorAudio; config: Uint8Array; waiting: boolean; ended: boolean; queue: Promise<unknown>; statsTimer: ReturnType<typeof setInterval> | 0; stats: { packets: number; bytes: number; config: number; key: number; delta: number; waitingDrop: number; queueReset: number; submitted: number; output: number } };
+type Connection = { id: string; decoder?: VideoDecoder; worker?: Worker; audio?: MirrorAudio; config: Uint8Array; waiting: boolean; ended: boolean; queue: Promise<unknown>; statsTimer: ReturnType<typeof setInterval> | 0; stats: { packets: number; bytes: number; config: number; key: number; delta: number; waitingDrop: number; queueReset: number; submitted: number; output: number } };
 
 function codecFromConfig(data: Uint8Array): string | undefined {
   for (let i = 0; i + 7 < data.length; i++) {
@@ -41,7 +41,9 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
   const refreshRequest = useRef(0);
   const refreshPending = useRef(false);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const canvasTransferred = useRef(false);
   const connection = useRef<Connection | null>(null);
+  const mirrorWorker = useRef<Worker | null>(null);
   const mounted = useRef(false);
   const visible = useRef(active && !document.hidden);
   const pointer = useRef<number | null>(null);
@@ -70,7 +72,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
     }
   };
 
-  const disconnect = () => {
+  const disconnect = (disposeWorker = false) => {
     const current = connection.current;
     connection.current = null;
     pointer.current = null;
@@ -79,13 +81,21 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
     if (current) {
       current.ended = true;
       clearInterval(current.statsTimer);
-      if (current.decoder.state !== "closed") current.decoder.close();
+      if (current.decoder && current.decoder.state !== "closed") current.decoder.close();
+      current.worker?.postMessage({ type: "stop" });
       current.audio?.close();
       void invoke("mirror_stop", { id: current.id }).catch(reason => {
         if (mounted.current) setError(String(reason));
       });
     }
-    canvas.current?.getContext("2d")?.clearRect(0, 0, canvas.current.width, canvas.current.height);
+    if (disposeWorker) {
+      mirrorWorker.current?.terminate();
+      mirrorWorker.current = null;
+    }
+    // 转移给 OffscreenCanvas 后，主线程不能再获取 2D 上下文。
+    if (!canvasTransferred.current) {
+      canvas.current?.getContext("2d")?.clearRect(0, 0, canvas.current.width, canvas.current.height);
+    }
     frameRate.current = { frames: 0, started: performance.now() };
     if (mounted.current) { setFps(0); setStatus("idle"); setAudioStatus(""); setScreenOff(false); setDimensions({ width: 0, height: 0 }); }
   };
@@ -97,7 +107,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       mounted.current = false;
       refreshRequest.current++;
       refreshPending.current = false;
-      disconnect();
+      disconnect(true);
     };
   }, []);
 
@@ -195,9 +205,27 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       disconnect();
       if (mounted.current) setError(String(reason));
     };
-    let decoder: VideoDecoder;
+    let decoder: VideoDecoder | undefined;
+    let worker: Worker | undefined;
     try {
-      decoder = new VideoDecoder({
+      const targetCanvas = canvas.current;
+      const canUseWorker = Boolean(mirrorWorker.current || (targetCanvas && typeof Worker !== "undefined" && typeof OffscreenCanvas !== "undefined" && "transferControlToOffscreen" in targetCanvas));
+      if (canUseWorker) {
+        worker = mirrorWorker.current ?? undefined;
+        if (!worker) {
+          const offscreen = targetCanvas!.transferControlToOffscreen();
+          canvasTransferred.current = true;
+          worker = new Worker("/androidMirrorWorker.js", { type: "module" });
+          worker.postMessage({ type: "init", canvas: offscreen }, [offscreen]);
+          mirrorWorker.current = worker;
+        }
+        worker.onmessage = event => {
+          if (connection.current?.id !== id) return;
+          if (event.data.type === "dimensions") setDimensions({ width: event.data.width, height: event.data.height });
+          else if (event.data.type === "frame") { frameRate.current.frames++; current.stats.output++; }
+          else if (event.data.type === "error") fail(event.data.message);
+        };
+      } else decoder = new VideoDecoder({
         output: frame => {
           try {
             const target = canvas.current;
@@ -226,12 +254,12 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       setError(String(reason));
       return;
     }
-    const current: Connection = { id, decoder, config: new Uint8Array(), waiting: true, ended: false, queue: Promise.resolve(), statsTimer: 0, stats: { packets: 0, bytes: 0, config: 0, key: 0, delta: 0, waitingDrop: 0, queueReset: 0, submitted: 0, output: 0 } };
+    const current: Connection = { id, decoder, worker, config: new Uint8Array(), waiting: true, ended: false, queue: Promise.resolve(), statsTimer: 0, stats: { packets: 0, bytes: 0, config: 0, key: 0, delta: 0, waitingDrop: 0, queueReset: 0, submitted: 0, output: 0 } };
     connection.current = current;
     current.statsTimer = setInterval(() => {
       if (current.ended || connection.current !== current) return;
       const s = current.stats;
-      console.info("[android-mirror] video", { packets: s.packets, bytes: s.bytes, config: s.config, key: s.key, delta: s.delta, waitingDrop: s.waitingDrop, queueReset: s.queueReset, submitted: s.submitted, output: s.output, decoderQueue: decoder.decodeQueueSize, visible: visible.current });
+      console.info("[android-mirror] video", { packets: s.packets, bytes: s.bytes, config: s.config, key: s.key, delta: s.delta, waitingDrop: s.waitingDrop, queueReset: s.queueReset, submitted: s.submitted, output: s.output, decoderQueue: decoder?.decodeQueueSize ?? 0, visible: visible.current });
       current.stats = { packets: 0, bytes: 0, config: 0, key: 0, delta: 0, waitingDrop: 0, queueReset: 0, submitted: 0, output: 0 };
     }, 1000);
     const audioFailed = (reason: string) => {
@@ -277,12 +305,16 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
           current.config = data.slice();
           const codec = codecFromConfig(data);
           if (!codec) throw new Error("无法读取 H.264 编码参数");
-          decoder.configure({ codec, optimizeForLatency: true });
+          if (current.worker) {
+            const configData = current.config.slice();
+            current.worker.postMessage({ type: "config", data: configData.buffer }, [configData.buffer]);
+          }
+          else decoder?.configure({ codec, optimizeForLatency: true });
           current.waiting = true;
           return;
         }
-        if (!visible.current || decoder.state !== "configured") { current.waiting = true; return; }
-        if (decoder.decodeQueueSize > 3) {
+        if (!visible.current || (!current.worker && decoder?.state !== "configured")) { current.waiting = true; return; }
+        if (!current.worker && decoder && decoder.decodeQueueSize > 3) {
           current.stats.queueReset++;
           decoder.reset();
           const codec = codecFromConfig(current.config);
@@ -295,7 +327,10 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
         if (key) { payload.set(current.config); payload.set(data, current.config.length); }
         const view = new DataView(buffer);
         const timestamp = (view.getUint32(0) & 0x3fffffff) * 4294967296 + view.getUint32(4);
-        decoder.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp, data: payload }));
+        if (current.worker) {
+          const packetData = data.slice();
+          current.worker.postMessage({ type: "packet", key, timestamp, data: packetData.buffer }, [packetData.buffer]);
+        } else decoder?.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp, data: payload }));
         current.stats.submitted++;
         current.waiting = false;
       } catch (reason) { fail(reason); }
@@ -465,5 +500,5 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       {audioStatus && ` · ${audioStatus}`}
     </div>
   </div>;
-  return fullscreen ? createPortal(content, document.body) : content;
+  return fullscreen && typeof createPortal === "function" ? createPortal(content, document.body) : content;
 }

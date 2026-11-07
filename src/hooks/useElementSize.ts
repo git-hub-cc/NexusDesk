@@ -12,18 +12,22 @@ export function useElementSize<T extends HTMLElement = HTMLDivElement>(): [
   const [ref, setRef] = useState<T | null>(null);
   const [size, setSize] = useState<Size>({ width: 0, height: 0 });
   const observer = useRef<ResizeObserver | null>(null);
+  const frame = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     if (!ref) return;
 
     observer.current = new ResizeObserver((entries) => {
-      if (entries[0]) {
-        const { width, height } = entries[0].contentRect;
+      const entry = entries[0];
+      if (!entry || frame.current !== null) return;
+      frame.current = requestAnimationFrame(() => {
+        frame.current = null;
+        const { width, height } = entry.contentRect;
         // A hidden sidebar reports zero size. Keep its tree mounted so that
         // expansion, selection and scroll state survive partition switches.
         if (width <= 0 || height <= 0) return;
-        setSize({ width, height });
-      }
+        setSize(previous => previous.width === width && previous.height === height ? previous : { width, height });
+      });
     });
 
     observer.current.observe(ref);
@@ -32,6 +36,7 @@ export function useElementSize<T extends HTMLElement = HTMLDivElement>(): [
       if (observer.current) {
         observer.current.disconnect();
       }
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
     };
   }, [ref]);
 

@@ -34,7 +34,9 @@ export const Workspace: React.FC = () => {
   const setLeftSidebarWidth = useLayoutStore(state => state.setLeftSidebarWidth);
   const pendingPanelSizes = useRef<Partial<Record<"leftSidebarWidth" | "rightSidebarWidth" | "editorSplitRatio" | "bottomPanelHeight", number>>>({});
   const panelDraggingRef = useRef(false);
+  const tabLayoutUpdater = useRef<(() => void) | null>(null);
   const updatePanelSize = (key: "leftSidebarWidth" | "rightSidebarWidth" | "editorSplitRatio" | "bottomPanelHeight", value: number, update: (value: number) => void) => {
+    workspaceContainer.current?.style.setProperty(`--${key}`, `${value}%`);
     if (panelDraggingRef.current) pendingPanelSizes.current[key] = value;
     else update(value);
   };
@@ -44,6 +46,7 @@ export const Workspace: React.FC = () => {
     if (dragging) {
       panelDraggingRef.current = true;
       setLayoutResizing(true);
+      workspaceContainer.current?.setAttribute("data-panel-dragging", "true");
       return;
     }
     const sizes = pendingPanelSizes.current;
@@ -54,6 +57,8 @@ export const Workspace: React.FC = () => {
     if (sizes.bottomPanelHeight !== undefined) setBottomPanelHeight(sizes.bottomPanelHeight);
     panelDraggingRef.current = false;
     setLayoutResizing(false);
+    workspaceContainer.current?.removeAttribute("data-panel-dragging");
+    tabLayoutUpdater.current?.();
   };
   useEffect(() => () => onPanelDragging(false), []);
   const horizontalContainer = useRef<HTMLDivElement>(null);
@@ -68,6 +73,7 @@ export const Workspace: React.FC = () => {
     const group = horizontalContainer.current?.firstElementChild;
     if (!workspace || !left || !group) return;
     const updateTabLayout = () => {
+      if (panelDraggingRef.current) return;
       const origin = workspace.getBoundingClientRect().left;
       const leftEdge = left.getBoundingClientRect().left - origin;
       const splitEdge = rightEditorContainer.current?.getBoundingClientRect().left;
@@ -75,13 +81,14 @@ export const Workspace: React.FC = () => {
       setTabLayout(previous => previous?.left === leftEdge && previous.split === split
         ? previous : { left: leftEdge, split });
     };
+    tabLayoutUpdater.current = updateTabLayout;
     updateTabLayout();
     const observer = new ResizeObserver(updateTabLayout);
     observer.observe(workspace);
     observer.observe(left);
     // Observe the outer panels too: resizing a sidebar also moves the editors.
     Array.from(group.children).forEach(child => observer.observe(child));
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); if (tabLayoutUpdater.current === updateTabLayout) tabLayoutUpdater.current = null; };
   }, [isSplitMode, leftSidebarVisible, rightSidebarVisible]);
   const [horizontalMinSize, setHorizontalMinSize] = useState(0);
   useLayoutEffect(() => {
