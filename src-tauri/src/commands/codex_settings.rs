@@ -27,9 +27,8 @@ pub struct CodexSettingsInput {
 }
 
 fn codex_dir() -> Result<PathBuf, String> {
-    std::env::var_os("CODEX_HOME")
-        .map(PathBuf::from)
-        .or_else(|| dirs::home_dir().map(|home| home.join(".codex")))
+    // 桌面应用统一读取当前用户的 Codex 配置，避免继承启动进程中的 CODEX_HOME。
+    dirs::home_dir().map(|home| home.join(".codex"))
         .ok_or_else(|| "找不到 Codex 配置目录".into())
 }
 
@@ -51,11 +50,7 @@ fn non_empty_string(value: Option<&JsonValue>) -> Option<String> {
 
 fn auth_credentials(auth: &JsonValue) -> (Option<String>, Option<String>) {
     let tokens = auth.get("tokens");
-    let api_key = std::env::var("OPENAI_API_KEY")
-        .ok()
-        .map(|key| key.trim().to_owned())
-        .filter(|key| !key.is_empty())
-        .or_else(|| non_empty_string(auth.get("OPENAI_API_KEY")))
+    let api_key = non_empty_string(auth.get("OPENAI_API_KEY"))
         .or_else(|| non_empty_string(tokens.and_then(|value| value.get("access_token"))))
         .or_else(|| non_empty_string(auth.get("access_token")));
     let account_id = non_empty_string(tokens.and_then(|value| value.get("account_id")))
@@ -209,6 +204,7 @@ fn update_base_url(config: &mut toml::Value, value: &str) -> Result<(), String> 
     Ok(())
 }
 
+#[allow(dead_code)]
 #[cfg(windows)]
 fn write_user_api_key(value: Option<&str>) -> Result<(), String> {
     use winreg::{
@@ -234,6 +230,7 @@ fn write_user_api_key(value: Option<&str>) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 #[cfg(not(windows))]
 fn write_user_api_key(_value: Option<&str>) -> Result<(), String> {
     Err("当前用户环境变量的持久化目前仅支持 Windows".into())
@@ -347,7 +344,6 @@ pub fn codex_settings_save(input: CodexSettingsInput) -> Result<(), String> {
     write_atomic(&path, source.as_bytes())?;
     if let Some(auth_bytes) = auth_bytes {
         write_atomic(&dir.join("auth.json"), &auth_bytes)?;
-        write_user_api_key(key)?;
     }
     Ok(())
 }
