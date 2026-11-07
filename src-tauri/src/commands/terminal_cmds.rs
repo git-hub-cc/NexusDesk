@@ -370,16 +370,12 @@ pub fn start_terminal(window: tauri::Window, id: String, cwd: Option<String>, co
         // Keep Windows console code pages aligned with UTF-8 output from modern
         // CLI tools. Setting the .NET encodings also makes PowerShell's own
         // stdin/stdout handling consistent with the PTY byte stream.
+        // 保持脚本固定，通过环境变量传递启动命令，避免 PowerShell 二次解析引号。
         let initialize_utf8 = "chcp 65001 > $null; [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [System.Text.UTF8Encoding]::new($false)";
-        if !command.trim().is_empty() {
-            cmd.arg("-NoExit");
-            cmd.arg("-Command");
-            cmd.arg(format!("{initialize_utf8}; {command}"));
-        } else {
-            cmd.arg("-NoExit");
-            cmd.arg("-Command");
-            cmd.arg(initialize_utf8);
-        }
+        let run_startup = "if ($env:NEXUSDESK_STARTUP_COMMAND) { & ([scriptblock]::Create($env:NEXUSDESK_STARTUP_COMMAND)) }";
+        cmd.arg("-NoExit");
+        cmd.arg("-Command");
+        cmd.arg(format!("{initialize_utf8}; {run_startup}"));
         cmd
     };
     #[cfg(not(windows))]
@@ -399,6 +395,11 @@ pub fn start_terminal(window: tauri::Window, id: String, cwd: Option<String>, co
     cmd.env("NODE_CLI_FORCE_UTF8", "1");
     #[cfg(windows)]
     cmd.env("WT_SESSION", "1");
+    #[cfg(windows)]
+    if !command.trim().is_empty() {
+        // 将命令作为数据传递，避免把引号和转义符拼入固定的 PowerShell 启动脚本。
+        cmd.env("NEXUSDESK_STARTUP_COMMAND", &command);
+    }
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
