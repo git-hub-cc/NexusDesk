@@ -37,7 +37,30 @@ pub(super) struct ApiConfig {
     pub model: String,
     pub base_url: String,
     pub api_key: Option<String>,
+    pub account_id: Option<String>,
     pub wire_api: String,
+}
+
+fn non_empty_string(value: Option<&JsonValue>) -> Option<String> {
+    value
+        .and_then(JsonValue::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn auth_credentials(auth: &JsonValue) -> (Option<String>, Option<String>) {
+    let tokens = auth.get("tokens");
+    let api_key = std::env::var("OPENAI_API_KEY")
+        .ok()
+        .map(|key| key.trim().to_owned())
+        .filter(|key| !key.is_empty())
+        .or_else(|| non_empty_string(auth.get("OPENAI_API_KEY")))
+        .or_else(|| non_empty_string(tokens.and_then(|value| value.get("access_token"))))
+        .or_else(|| non_empty_string(auth.get("access_token")));
+    let account_id = non_empty_string(tokens.and_then(|value| value.get("account_id")))
+        .or_else(|| non_empty_string(auth.get("account_id")));
+    (api_key, account_id)
 }
 
 pub(super) fn api_config() -> Result<ApiConfig, String> {
@@ -74,19 +97,12 @@ pub(super) fn api_config() -> Result<ApiConfig, String> {
         .unwrap_or("responses")
         .to_owned();
     let auth = read_json(&dir.join("auth.json"))?;
-    let api_key = std::env::var("OPENAI_API_KEY")
-        .ok()
-        .filter(|key| !key.trim().is_empty())
-        .or_else(|| {
-            auth.get("OPENAI_API_KEY")
-                .and_then(JsonValue::as_str)
-                .filter(|key| !key.trim().is_empty())
-                .map(str::to_owned)
-        });
+    let (api_key, account_id) = auth_credentials(&auth);
     Ok(ApiConfig {
         model,
         base_url,
         api_key,
+        account_id,
         wire_api,
     })
 }
@@ -239,11 +255,8 @@ pub fn codex_settings_read() -> Result<CodexSettings, String> {
         .unwrap_or("")
         .to_owned();
     let auth = read_json(&dir.join("auth.json"))?;
-    let api_key_configured = auth
-        .get("OPENAI_API_KEY")
-        .and_then(JsonValue::as_str)
-        .is_some_and(|key| !key.is_empty())
-        || std::env::var_os("OPENAI_API_KEY").is_some_and(|key| !key.is_empty());
+    let (api_key, _) = auth_credentials(&auth);
+    let api_key_configured = api_key.is_some();
     Ok(CodexSettings {
         model: config
             .get("model")
@@ -341,7 +354,28 @@ pub fn codex_settings_save(input: CodexSettingsInput) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::update_base_url;
+    use super::{auth_credentials, update_base_url};
+
+    #[test]
+    fn reads_oauth_access_token_and_account_id() {
+        let auth = serde_json::json!({
+            "tokens": { "access_token": "oauth-token", "account_id": "acct_123" }
+        });
+        let (key, account_id) = auth_credentials(&auth);
+        assert_eq!(key.as_deref(), Some("oauth-token"));
+        assert_eq!(account_id.as_deref(), Some("acct_123"));
+    }
+
+    #[test]
+    fn ignores_blank_credentials() {
+        let auth = serde_json::json!({
+            "OPENAI_API_KEY": " ",
+            "tokens": { "access_token": " " }
+        });
+        let (key, account_id) = auth_credentials(&auth);
+        assert!(key.is_none());
+        assert!(account_id.is_none());
+    }
 
     #[test]
     fn updating_proxy_changes_only_existing_provider_base_url() {

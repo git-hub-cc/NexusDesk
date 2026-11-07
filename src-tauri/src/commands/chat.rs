@@ -1,167 +1,88 @@
+use futures_util::StreamExt;
 use serde::Deserialize;
 use std::time::Duration;
+use tauri::Emitter;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChatMessage {
-    role: String,
-    content: String,
+pub struct ChatMessage { role: String, content: String }
+
+fn stream_delta(payload: &serde_json::Value, wire_api: &str) -> Option<String> {
+    if wire_api == "responses" {
+        return payload.get("delta").and_then(serde_json::Value::as_str).map(str::to_owned);
+    }
+    payload.pointer("choices.0.delta.content").and_then(serde_json::Value::as_str).map(str::to_owned)
 }
 
-fn response_text(payload: &serde_json::Value) -> Option<String> {
-    if let Some(text) = payload
-        .get("output_text")
-        .and_then(serde_json::Value::as_str)
-    {
-        if !text.trim().is_empty() {
-            return Some(text.to_owned());
-        }
-    }
-    if let Some(text) = payload
-        .pointer("choices.0.message.content")
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| {
-            payload
-                .pointer("choices.0.text")
-                .and_then(serde_json::Value::as_str)
-        })
-    {
-        if !text.trim().is_empty() {
-            return Some(text.to_owned());
-        }
-    }
-
-    let mut parts = Vec::new();
-    if let Some(content) = payload
-        .pointer("choices.0.message.content")
-        .and_then(serde_json::Value::as_array)
-    {
-        parts.extend(content.iter());
-    }
-    if let Some(outputs) = payload.get("output").and_then(serde_json::Value::as_array) {
-        for output in outputs {
-            if let Some(content) = output.get("content").and_then(serde_json::Value::as_array) {
-                parts.extend(content.iter());
-            }
-        }
-    }
-    let text = parts
-        .iter()
-        .filter_map(|part| {
-            part.get("text")
-                .or_else(|| part.get("refusal"))
-                .and_then(serde_json::Value::as_str)
-                .or_else(|| part.as_str())
-        })
-        .collect::<Vec<_>>()
-        .join("");
-    (!text.trim().is_empty()).then_some(text)
+fn emit_error(app: &tauri::AppHandle, request_id: &str, message: String) -> String {
+    let event = format!("chat-stream-error-{request_id}");
+    let _ = app.emit(event.as_str(), message.clone());
+    message
 }
 
 #[tauri::command]
-pub async fn chat_completion(messages: Vec<ChatMessage>) -> Result<String, String> {
-    if messages.is_empty() || messages.len() > 40 {
-        return Err("对话消息数量无效".into());
-    }
-    if messages.iter().any(|message| {
-        !matches!(message.role.as_str(), "user" | "assistant") || message.content.trim().is_empty()
-    }) {
+pub async fn chat_completion(app: tauri::AppHandle, request_id: String, messages: Vec<ChatMessage>) -> Result<(), String> {
+    if request_id.trim().is_empty() || request_id.len() > 128 { return Err("请求标识无效".into()); }
+    if messages.is_empty() || messages.len() > 40 { return Err("对话消息数量无效".into()); }
+    if messages.iter().any(|message| !matches!(message.role.as_str(), "user" | "assistant") || message.content.trim().is_empty()) {
         return Err("对话内容无效".into());
     }
-    if messages
-        .iter()
-        .map(|message| message.content.chars().count())
-        .sum::<usize>()
-        > 32_000
-    {
+    if messages.iter().map(|message| message.content.chars().count()).sum::<usize>() > 32_000 {
         return Err("对话内容过长，请开启新对话".into());
     }
-
     let config = super::codex_settings::api_config()?;
     let mut endpoint = reqwest::Url::parse(&config.base_url).map_err(|_| "Codex API 地址无效")?;
-    if !matches!(endpoint.scheme(), "http" | "https") || endpoint.host_str().is_none() {
-        return Err("Codex API 地址必须是 HTTP 或 HTTPS URL".into());
-    }
+    if !matches!(endpoint.scheme(), "http" | "https") || endpoint.host_str().is_none() { return Err("Codex API 地址必须是 HTTP 或 HTTPS URL".into()); }
     let path = match config.wire_api.as_str() {
         "responses" => ["responses"].as_slice(),
         "chat" | "chat_completions" => ["chat", "completions"].as_slice(),
         _ => return Err("Codex 提供方的 wire_api 配置不受支持".into()),
     };
-    endpoint
-        .path_segments_mut()
-        .map_err(|_| "Codex API 地址无效")?
-        .pop_if_empty()
-        .extend(path.iter().copied());
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .map_err(|_| "无法创建 API 请求")?;
+    endpoint.path_segments_mut().map_err(|_| "Codex API 地址无效")?.pop_if_empty().extend(path.iter().copied());
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(120)).build().map_err(|_| "无法创建 API 请求")?;
     let request_body = if config.wire_api == "responses" {
-        serde_json::json!({
-            "model": config.model,
-            "input": messages.iter().map(|message| serde_json::json!({
-                "role": message.role,
-                "content": message.content,
-            })).collect::<Vec<_>>(),
-            "stream": false,
-        })
+        serde_json::json!({ "model": config.model, "input": messages.iter().map(|message| serde_json::json!({ "role": message.role, "content": message.content })).collect::<Vec<_>>(), "stream": true })
     } else {
-        serde_json::json!({
-            "model": config.model,
-            "messages": messages.iter().map(|message| serde_json::json!({
-                "role": message.role,
-                "content": message.content,
-            })).collect::<Vec<_>>(),
-            "stream": false,
-        })
+        serde_json::json!({ "model": config.model, "messages": messages.iter().map(|message| serde_json::json!({ "role": message.role, "content": message.content })).collect::<Vec<_>>(), "stream": true })
     };
     let mut request = client.post(endpoint).json(&request_body);
-    if let Some(api_key) = config.api_key {
-        request = request.bearer_auth(api_key);
-    }
-    let response = request
-        .send()
-        .await
-        .map_err(|_| "连接 Codex API 失败，请检查请求地址和网络")?;
+    if let Some(api_key) = config.api_key { request = request.bearer_auth(api_key); }
+    if let Some(account_id) = config.account_id { request = request.header("ChatGPT-Account-ID", account_id); }
+    let response = request.send().await.map_err(|_| emit_error(&app, &request_id, "连接 Codex API 失败，请检查请求地址和网络".into()))?;
     let status = response.status();
-    let body = response.bytes().await.map_err(|_| "读取 API 回复失败")?;
     if !status.is_success() {
-        return Err(format!("API 请求失败（HTTP {status}）"));
+        let body = response.text().await.unwrap_or_default();
+        let detail = body.trim().chars().take(300).collect::<String>();
+        let message = if detail.is_empty() { format!("API 请求失败（HTTP {status}）") } else { format!("API 请求失败（HTTP {status}）：{detail}") };
+        return Err(emit_error(&app, &request_id, message));
     }
-    let payload: serde_json::Value =
-        serde_json::from_slice(&body).map_err(|_| "API 返回了无效 JSON")?;
-    response_text(&payload).ok_or_else(|| {
-        let fields = payload
-            .as_object()
-            .map(|object| object.keys().cloned().collect::<Vec<_>>().join(", "))
-            .unwrap_or_else(|| "未知".into());
-        format!("API 已成功响应，但没有识别到文本内容（字段：{fields}）")
-    })
+    let mut buffer = String::new();
+    let mut response_stream = response.bytes_stream();
+    while let Some(chunk) = response_stream.next().await {
+        let chunk = chunk.map_err(|_| emit_error(&app, &request_id, "读取 API 响应失败".into()))?;
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(index) = buffer.find('\n') {
+            let line = buffer[..index].trim_end_matches('\r').to_owned();
+            buffer.drain(..=index);
+            let Some(data) = line.strip_prefix("data:").map(str::trim) else { continue };
+            if data == "[DONE]" { continue; }
+            let Ok(payload) = serde_json::from_str::<serde_json::Value>(data) else { continue };
+            if let Some(delta) = stream_delta(&payload, &config.wire_api) { if !delta.is_empty() { let event = format!("chat-stream-{request_id}"); let _ = app.emit(event.as_str(), delta); } }
+        }
+    }
+    if let Some(data) = buffer.trim().strip_prefix("data:").map(str::trim) {
+        if let Ok(payload) = serde_json::from_str::<serde_json::Value>(data) { if let Some(delta) = stream_delta(&payload, &config.wire_api) { let event = format!("chat-stream-{request_id}"); let _ = app.emit(event.as_str(), delta); } }
+    }
+    let event = format!("chat-stream-done-{request_id}");
+    let _ = app.emit(event.as_str(), ());
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::response_text;
-
+    use super::stream_delta;
     #[test]
-    fn parses_responses_api_output_text() {
-        let payload = serde_json::json!({
-            "output": [
-                { "type": "reasoning", "summary": [] },
-                { "content": [{ "type": "output_text", "text": "hello" }] }
-            ]
-        });
-        assert_eq!(response_text(&payload).as_deref(), Some("hello"));
-    }
-
+    fn parses_responses_delta() { let payload = serde_json::json!({"delta": "hello"}); assert_eq!(stream_delta(&payload, "responses").as_deref(), Some("hello")); }
     #[test]
-    fn parses_chat_completion_text_parts() {
-        let payload = serde_json::json!({
-            "choices": [{ "message": { "content": [
-                { "type": "text", "text": "hello " }, { "type": "text", "text": "world" }
-            ] } }]
-        });
-        assert_eq!(response_text(&payload).as_deref(), Some("hello world"));
-    }
+    fn parses_chat_delta() { let payload = serde_json::json!({"choices": [{"delta": {"content": "hello"}}]}); assert_eq!(stream_delta(&payload, "chat").as_deref(), Some("hello")); }
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, MessageCircle, Plus, Send } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import { chatApi, codexSettingsApi, type CodexSettings } from "@/lib/api";
 
 type Message = { role: "user" | "assistant"; content: string };
@@ -35,12 +36,28 @@ export function ChatEditor({ active }: { active: boolean }) {
     setInput("");
     setBusy(true);
     setError("");
+    const requestId = `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const assistantIndex = next.length;
+    let reply = "";
+    setMessages([...next, { role: "assistant", content: "" }]);
+    const unlisten = await listen<string>(`chat-stream-${requestId}`, event => {
+      reply += event.payload;
+      setMessages(current => {
+        const updated = [...current];
+        updated[assistantIndex] = { role: "assistant", content: reply };
+        return updated;
+      });
+    });
+    const unlistenDone = await listen(`chat-stream-done-${requestId}`, () => { void unlisten(); void unlistenDone(); });
+    const unlistenError = await listen<string>(`chat-stream-error-${requestId}`, event => setError(event.payload));
     try {
-      const reply = await chatApi.complete(next.slice(-40));
-      setMessages([...next, { role: "assistant", content: reply }]);
+      await chatApi.complete(requestId, next.slice(-40));
     } catch (reason) {
       setError(String(reason).replace(/^Error: /, ""));
     } finally {
+      void unlisten();
+      void unlistenDone();
+      void unlistenError();
       setBusy(false);
       composer.current?.focus();
     }

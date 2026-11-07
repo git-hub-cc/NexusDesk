@@ -171,5 +171,5 @@ export const codexSettingsApi = {
     save: (input: { model: string; proxyUrl: string; apiKey?: string; trustMode: boolean; showTooltips: boolean; checkForUpdateOnStartup: boolean }): Promise<void> => invoke("codex_settings_save", { input }),
 };
 export const chatApi = {
-    complete: (messages: { role: "user" | "assistant"; content: string }[]): Promise<string> => invoke("chat_completion", { messages }),
+    complete: (requestId: string, messages: { role: "user" | "assistant"; content: string }[]): Promise<void> => invoke("chat_completion", { requestId, messages }),
 };
