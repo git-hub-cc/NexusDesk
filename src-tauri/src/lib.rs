@@ -192,8 +192,6 @@ pub fn run() {
                 return true;
             }
             let handler: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool> = Box::new(tauri::generate_handler![
-            stt_shortcut_register,
-            stt_shortcut_unregister,
             commands::android_mirror::mirror_devices,
             commands::android_mirror::mirror_connect_wifi,
             commands::android_mirror::mirror_list_files,
@@ -221,6 +219,8 @@ pub fn run() {
             commands::capture_cmds::capture_start,
             commands::capture_cmds::capture_cancel,
             commands::capture_cmds::capture_copy_text,
+            stt_shortcut_register,
+            stt_shortcut_unregister,
             commands::browser_cmds::create_browser,
             commands::browser_extensions::browser_install_extension,
             commands::browser_extensions::browser_list_extensions,
