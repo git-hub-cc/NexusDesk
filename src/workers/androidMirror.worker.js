@@ -3,6 +3,7 @@ let context;
 let decoder;
 let config = new Uint8Array();
 let waiting = true;
+let dimensionsReady = false;
 function codecFromConfig(data) {
   for (let i = 0; i + 7 < data.length; i++) {
     const prefix = data[i] === 0 && data[i + 1] === 0 ? data[i + 2] === 1 ? 3 : data[i + 2] === 0 && data[i + 3] === 1 ? 4 : 0 : 0;
@@ -17,8 +18,15 @@ function configure(data) {
   decoder = new VideoDecoder({
     output(frame) {
       try {
-        if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
-          canvas.width = frame.displayWidth; canvas.height = frame.displayHeight;
+        const dimensionsChanged = canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight;
+        if (dimensionsChanged) {
+          canvas.width = frame.displayWidth;
+          canvas.height = frame.displayHeight;
+        }
+        // 断开后主线程会清空显示尺寸，但 OffscreenCanvas 会保留旧尺寸。
+        // 新会话首帧即使分辨率相同，也必须再次通知主线程恢复画面。
+        if (dimensionsChanged || !dimensionsReady) {
+          dimensionsReady = true;
           self.postMessage({ type: "dimensions", width: frame.displayWidth, height: frame.displayHeight });
         }
         context.drawImage(frame, 0, 0); self.postMessage({ type: "frame" });
@@ -26,7 +34,9 @@ function configure(data) {
     },
     error(error) { self.postMessage({ type: "error", message: String(error) }); },
   });
-  decoder.configure({ codec, optimizeForLatency: true }); waiting = true;
+  decoder.configure({ codec, optimizeForLatency: true });
+  waiting = true;
+  dimensionsReady = false;
 }
 self.onmessage = event => {
   const message = event.data;
