@@ -391,8 +391,9 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
           }, preventDefault: isSnapshot },
           { key: "Ctrl-Alt-l", preventDefault: true, run: view => {
             const tab = tabRef.current;
+            console.info("[format-chain] shortcut", { tabId: tab?.id ?? null, path: tab?.path ?? null, docLength: view.state.doc.length, selectionFrom: view.state.selection.main.from, selectionTo: view.state.selection.main.to });
             if (tab) void formatCode(view, tab.path, () => viewRef.current === view && tabRef.current?.id === tab.id)
-              .catch(error => setAssetError(`格式化失败：${error instanceof Error ? error.message : String(error)}`));
+              .catch(error => { console.error("[format-chain] command failed", { path: tab.path, error: String(error) }); setAssetError(`格式化失败：${error instanceof Error ? error.message : String(error)}`); });
             return true;
           } },
           { key: "Mod-w", run: expandSelection, preventDefault: true },

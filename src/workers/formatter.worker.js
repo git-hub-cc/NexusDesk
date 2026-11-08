@@ -32,12 +32,16 @@ async function formatHttp(source, selection) {
 
 self.onmessage = async ({ data }) => {
   const { id, source, extension, selection } = data;
+  const normalizedSelection = { ...selection, empty: selection.from === selection.to };
+  console.info("[format-chain-worker] request", { id, extension, sourceLength: source.length, selection });
   try {
     const formatted = extension === "http" || extension === "rest"
-      ? await formatHttp(source, selection)
-      : await prettierStandalone.format(source, { parser: parsers[extension], plugins, tabWidth: 2, endOfLine: "lf", proseWrap: "preserve", ...(!selection.empty ? { rangeStart: selection.from, rangeEnd: selection.to } : {}) });
+      ? await formatHttp(source, normalizedSelection)
+      : await prettierStandalone.format(source, { parser: parsers[extension], plugins, tabWidth: 2, endOfLine: "lf", proseWrap: "preserve", ...(!normalizedSelection.empty ? { rangeStart: normalizedSelection.from, rangeEnd: normalizedSelection.to } : {}) });
+    console.info("[format-chain-worker] success", { id, extension, formattedLength: formatted.length });
     self.postMessage({ id, type: "formatted", formatted });
   } catch (error) {
+    console.error("[format-chain-worker] failure", { id, extension, error: String(error) });
     self.postMessage({ id, type: "error", message: error instanceof Error ? error.message : String(error) });
   }
 };
