@@ -15,6 +15,7 @@ export function ChatEditor({ active }: { active: boolean }) {
   const [error, setError] = useState("");
   const conversation = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const conversationScroll = useRef({ top: 0, atBottom: true });
 
   useEffect(() => {
     if (!active) return;
@@ -22,7 +23,36 @@ export function ChatEditor({ active }: { active: boolean }) {
     void codexSettingsApi.read().then(value => { if (!disposed) setSettings(value); }).catch(reason => { if (!disposed) setError(String(reason)); });
     return () => { disposed = true; };
   }, [active]);
-  useEffect(() => { const container = conversation.current; if (container) container.scrollTop = container.scrollHeight; }, [messages, busy]);
+  useEffect(() => {
+    const container = conversation.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+    conversationScroll.current = { top: container.scrollTop, atBottom: true };
+  }, [messages, busy]);
+
+  useEffect(() => {
+    const container = conversation.current;
+    if (!container) return;
+    const rememberScroll = () => {
+      const distanceFromBottom = container.scrollHeight - container.clientHeight - container.scrollTop;
+      conversationScroll.current = { top: container.scrollTop, atBottom: distanceFromBottom <= 24 };
+    };
+    const restoreScroll = () => {
+      const saved = conversationScroll.current;
+      requestAnimationFrame(() => {
+        if (saved.atBottom) container.scrollTop = container.scrollHeight;
+        else container.scrollTop = saved.top;
+      });
+    };
+    const observer = new ResizeObserver(restoreScroll);
+    container.addEventListener("scroll", rememberScroll, { passive: true });
+    observer.observe(container);
+    rememberScroll();
+    return () => {
+      container.removeEventListener("scroll", rememberScroll);
+      observer.disconnect();
+    };
+  }, []);
   const updateOverride = (key: keyof ChatOverrides, value: string) => setOverrides(current => ({ ...current, [key]: value || undefined }));
 
   const send = async (event: React.FormEvent) => {

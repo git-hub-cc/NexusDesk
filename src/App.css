@@ -84,7 +84,7 @@
 .chat-config-title { display: flex; align-items: center; justify-content: space-between; color: #e8eaee; }
 .chat-config-title .chat-icon-button { margin: -6px -6px -6px 0; }
 .chat-config-hint { color: #7f8692; line-height: 1.5; }
-.chat-conversation { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 18px; overflow-y: auto; padding: 28px max(20px, calc((100% - 820px) / 2)); }
+.chat-conversation { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 18px; overflow-y: auto; overflow-anchor: none; padding: 28px max(20px, calc((100% - 820px) / 2)); }
 .chat-empty { display: flex; flex: 1; align-items: center; justify-content: center; flex-direction: column; gap: 10px; color: #737984; text-align: center; }
 .chat-empty > svg { color: #8bb9ff; }
 .chat-empty h3 { color: #d7d9de; font-size: 14px; font-weight: 600; }
