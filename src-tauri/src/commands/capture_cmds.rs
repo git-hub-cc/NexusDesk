@@ -174,13 +174,3 @@ pub(crate) fn complete(
         app.state::<CaptureState>().active.store(false, Ordering::SeqCst);
     });
 }
-#[tauri::command]
-pub fn capture_copy_text(text: String) -> Result<(), String> {
-    arboard::Clipboard::new()
-        .and_then(|mut c| c.set_text(text))
-        .map_err(|e| e.to_string())
-}
-#[tauri::command]
-pub fn capture_shortcut_status(state: tauri::State<CaptureState>) -> Option<String> {
-    state.shortcut_error.lock().unwrap().clone()
-}

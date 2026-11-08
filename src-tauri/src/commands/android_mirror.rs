@@ -264,25 +264,6 @@ pub async fn mirror_push_file(
 }
 
 #[tauri::command]
-pub async fn mirror_pull_file(
-    serial: String,
-    remote_path: String,
-    local_path: String,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        self::remote_path(&remote_path)?;
-        if !std::path::Path::new(&local_path).is_absolute() {
-            return Err("请选择本地绝对路径".into());
-        }
-        let mut command = adb();
-        command.args(["-s", &serial, "pull", &remote_path, &local_path]);
-        output_with_timeout(command, Duration::from_secs(1800)).map(|_| ())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
 pub async fn mirror_download_file(serial: String, remote_path: String, local_dir: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         self::remote_path(&remote_path)?;

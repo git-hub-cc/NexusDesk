@@ -37,23 +37,6 @@ pub fn native_menu_close(window: tauri::Window, request: Option<String>) {
     dismiss_owner_menu(window.app_handle(), window.label());
 }
 
-// WebView2 can move native focus before delivering pointerdown to the popup.
-// Keep the owner's action listener mounted while that click is in flight.
-#[tauri::command]
-pub fn native_menu_contains_pointer(window: tauri::Window) -> bool {
-    let app = window.app_handle();
-    let state = app.state::<MenuSessionState>();
-    let owned_suggestions = state.lock().ok().is_some_and(|state| {
-        state.as_ref().is_some_and(|session| session.owner == window.label() && session.passive)
-    });
-    if !owned_suggestions { return false; }
-    let Some(popup) = app.get_webview_window(MENU_LABEL) else { return false; };
-    let (Ok(pointer), Ok(origin), Ok(size)) = (app.cursor_position(), popup.outer_position(), popup.outer_size()) else { return false; };
-    pointer.x >= origin.x as f64 && pointer.y >= origin.y as f64
-        && pointer.x < origin.x as f64 + size.width as f64
-        && pointer.y < origin.y as f64 + size.height as f64
-}
-
 #[cfg(target_os = "windows")]
 fn disable_window_transitions(window: &tauri::WebviewWindow) {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};

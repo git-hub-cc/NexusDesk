@@ -204,38 +204,6 @@ fn update_base_url(config: &mut toml::Value, value: &str) -> Result<(), String> 
     Ok(())
 }
 
-#[allow(dead_code)]
-#[cfg(windows)]
-fn write_user_api_key(value: Option<&str>) -> Result<(), String> {
-    use winreg::{
-        RegKey,
-        enums::{HKEY_CURRENT_USER, KEY_SET_VALUE},
-    };
-    let environment = RegKey::predef(HKEY_CURRENT_USER)
-        .open_subkey_with_flags("Environment", KEY_SET_VALUE)
-        .map_err(|error| format!("无法打开当前用户环境变量：{error}"))?;
-    match value {
-        Some(key) => {
-            environment
-                .set_value("OPENAI_API_KEY", &key)
-                .map_err(|error| format!("无法更新当前用户 OPENAI_API_KEY：{error}"))?;
-            unsafe { std::env::set_var("OPENAI_API_KEY", key) };
-            Ok(())
-        }
-        None => match environment.delete_value("OPENAI_API_KEY") {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(format!("无法删除当前用户 OPENAI_API_KEY：{error}")),
-        },
-    }
-}
-
-#[allow(dead_code)]
-#[cfg(not(windows))]
-fn write_user_api_key(_value: Option<&str>) -> Result<(), String> {
-    Err("当前用户环境变量的持久化目前仅支持 Windows".into())
-}
-
 #[tauri::command]
 pub fn codex_settings_read() -> Result<CodexSettings, String> {
     let dir = codex_dir()?;

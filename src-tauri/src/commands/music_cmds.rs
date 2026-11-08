@@ -246,26 +246,6 @@ async fn save_artwork(client: &reqwest::Client, track: MusicTrack) -> MusicTrack
 }
 
 #[tauri::command]
-pub async fn search_music(query: String, offset: u32) -> Result<Vec<MusicTrack>, String> {
-    let query = query.trim();
-    if query.is_empty() { return Ok(Vec::new()); }
-    let client = music_client()?;
-    let response = client.get("https://music.163.com/api/search/get/web")
-        .query(&[("s", query), ("type", "1"), ("limit", "30"), ("offset", &offset.to_string())])
-        .header("Referer", "https://music.163.com/").send().await.map_err(|_| "搜索失败，请检查网络连接".to_string())?;
-    if !response.status().is_success() { return Err(format!("搜索服务返回 HTTP {}", response.status().as_u16())); }
-    let data: serde_json::Value = response.json().await.map_err(|_| "搜索结果格式无效".to_string())?;
-    let songs = data.pointer("/result/songs").and_then(serde_json::Value::as_array).ok_or("搜索服务未返回歌曲")?;
-    Ok(songs.iter().filter_map(|song| {
-        let id = song.get("id")?.as_i64()?.to_string();
-        let title = song.get("name")?.as_str()?.to_string();
-        let artists = song.get("artists").or_else(|| song.get("ar"))?.as_array()?;
-        let artist = artists.iter().filter_map(|item| item.get("name")?.as_str()).collect::<Vec<_>>().join(" / ");
-        Some(MusicTrack { id, title, artist, album: song.pointer("/album/name").or_else(|| song.pointer("/al/name")).and_then(serde_json::Value::as_str).unwrap_or("未知专辑").to_string(), duration: song.get("duration").or_else(|| song.get("dt")).and_then(serde_json::Value::as_u64).unwrap_or(0), path: None, cover_path: None })
-    }).collect())
-}
-
-#[tauri::command]
 pub async fn music_service_resource(path: String) -> Result<String, String> {
     let url = reqwest::Url::parse(&format!("https://music.gdstudio.org{path}")).map_err(|e| e.to_string())?;
     if url.scheme() != "https" || url.host_str() != Some("music.gdstudio.org")

@@ -21,7 +21,7 @@ pub fn allowed_command(command: &str) -> bool {
         | "get_git_status" | "get_git_tree_status" | "is_git_repository" | "is_git_installed"
         | "get_git_log" | "get_git_diff" | "get_git_image_diff" | "get_git_revision_files"
         | "get_git_revision_content" | "get_git_revision_changes" | "get_git_revision_diff"
-        | "native_menu_open" | "native_menu_close" | "native_menu_contains_pointer"
+        | "native_menu_open" | "native_menu_close"
         | "write_file_clipboard" | "write_text_clipboard" | "write_console_logs" | "start_html_preview" | "stop_html_preview")
 }
 
