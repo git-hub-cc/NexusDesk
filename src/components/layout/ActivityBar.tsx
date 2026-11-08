@@ -145,7 +145,7 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
       <div data-tauri-drag-region className="drag-region mt-auto flex flex-col gap-1">
         {bottomPanelModes.map(({ mode, label, icon: Icon }) => (
           <button key={mode} type="button" className="activity-bar-button no-drag-region"
-            aria-label={label} title={label} aria-pressed={bottomPanelWidth === mode}
+            aria-label={label} title={label} aria-pressed={bottomPanelVisible && bottomPanelWidth === mode}
             onClick={() => {
               setBottomPanelWidth(mode);
               const layout = useLayoutStore.getState();

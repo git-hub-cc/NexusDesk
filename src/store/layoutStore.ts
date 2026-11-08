@@ -46,7 +46,9 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   bottomPanelWidth: "full",
 
   toggleLeftSidebar: () => set((state) => ({ leftSidebarVisible: !state.leftSidebarVisible })),
-  toggleBottomPanel: () => set((state) => ({ bottomPanelVisible: !state.bottomPanelVisible })),
+  toggleBottomPanel: () => set((state) => state.bottomPanelVisible
+    ? { bottomPanelVisible: false }
+    : { bottomPanelVisible: true, ...(state.bottomPanelWidth === "sidebar" ? { leftSidebarVisible: true } : {}) }),
   openBottomPanel: (tab) => set({ bottomPanelVisible: true, bottomPanelTab: tab }),
   setBottomPanelTab: (tab) => set({ bottomPanelTab: tab }),
   toggleRightSidebar: () => set((state) => ({ rightSidebarVisible: !state.rightSidebarVisible })),
