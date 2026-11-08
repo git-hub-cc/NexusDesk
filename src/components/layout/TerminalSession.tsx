@@ -319,7 +319,26 @@ export function TerminalSession({ session, active, onExit }: {
         resizePending = false;
         if (disposed || exited || !element.clientWidth || !element.clientHeight) return;
         if (panelDragging) return;
+        // xterm 重排网格时可能把视口重置到第一行，这里保留 PTY 调整前的位置。
+        const buffer = terminal.buffer.active;
+        const normalBuffer = buffer.type === "normal";
+        const viewport = normalBuffer ? element.querySelector<HTMLElement>(".xterm-viewport") : null;
+        const distanceFromBottom = viewport
+          ? Math.max(0, viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop)
+          : 0;
+        const wasAtBottom = normalBuffer && distanceFromBottom <= 2;
+        const restoreViewport = () => {
+          if (!normalBuffer || disposed || terminal.buffer.active.type !== "normal") return;
+          const currentViewport = element.querySelector<HTMLElement>(".xterm-viewport");
+          if (currentViewport) {
+            currentViewport.scrollTop = wasAtBottom
+              ? currentViewport.scrollHeight
+              : Math.max(0, currentViewport.scrollHeight - currentViewport.clientHeight - distanceFromBottom);
+          }
+          if (wasAtBottom) terminal.scrollToBottom();
+        };
         fit.fit();
+        restoreViewport();
         const size = dimensions();
         const key = sizeKey(size);
         // ConPTY only uses rows/columns. Pixel-only changes must not trigger a
@@ -332,6 +351,8 @@ export function TerminalSession({ session, active, onExit }: {
         } finally {
           resizeTasks--;
           flushDeferredOutput();
+          restoreViewport();
+          requestAnimationFrame(restoreViewport);
         }
       }).catch(error => { lastSize = ""; report(error); });
     };
