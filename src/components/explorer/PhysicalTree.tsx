@@ -767,7 +767,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
                                 <div
                                     style={style}
                                     className={`flex items-center gap-1 px-1 text-sm cursor-default rounded-sm ${
-                                        dragOverPath === (node.isLeaf ? parent(node.data.id) : node.data.id) ? "bg-sky-500/30 ring-1 ring-inset ring-sky-400/70" : node.isSelected ? "bg-ide-selection text-white" : "hover:bg-ide-tree-hover"
+                                        !node.isLeaf && dragOverPath === node.data.id ? "bg-sky-500/30 ring-1 ring-inset ring-sky-400/70" : node.isSelected ? "bg-ide-selection text-white" : "hover:bg-ide-tree-hover"
                                     }`}
                                     tabIndex={-1}
                                     data-tree-path={node.data.id}

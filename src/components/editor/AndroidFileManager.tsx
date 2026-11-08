@@ -40,7 +40,7 @@ function AndroidFileNode({ node, style, dragHandle }: NodeRendererProps<FileNode
     onContextMenu={event => { event.stopPropagation(); if (!node.isSelected) node.select(); }}
     onClick={event => { if (!disabled) selectTreeNode(event, node); }}
     onDoubleClick={event => { if (!disabled) activateTreeFile(event, node); }}
-    className={`flex h-full items-center gap-1 px-2 ${dropTarget === directory ? "bg-sky-500/30 ring-1 ring-inset ring-sky-400/70" : node.isSelected ? "bg-ide-tab-active-bg" : "hover:bg-ide-tab-hover"}`}>
+    className={`flex h-full items-center gap-1 px-2 ${node.data.is_dir && dropTarget === directory ? "bg-sky-500/30 ring-1 ring-inset ring-sky-400/70" : node.isSelected ? "bg-ide-tab-active-bg" : "hover:bg-ide-tab-hover"}`}>
     {node.data.is_dir ? <button aria-label={node.isOpen ? "折叠目录" : "展开目录"} aria-expanded={node.isOpen} disabled={disabled} onClick={event => { event.stopPropagation(); node.select(); node.toggle(); }}><ChevronRight size={13} className={node.isOpen ? "rotate-90" : ""} /></button> : <span className="w-[13px] shrink-0" />}<FileIcon name={node.data.name} directory={node.data.is_dir} open={node.isOpen} /><span className="truncate">{node.data.name}</span>
   </div></ContextMenu.Trigger><ContextMenu.Portal><ContextMenu.Content className="ide-menu w-48 text-xs">
     <ContextMenu.Item className="ide-menu-item" disabled={disabled} onSelect={() => copy(selectedEntries())}>复制 <span className="ml-auto text-gray-500">Ctrl+C</span></ContextMenu.Item>
