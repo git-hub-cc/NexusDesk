@@ -1040,6 +1040,12 @@ pub async fn mirror_control(
                 && data.len() <= 305
                 && u32::from_be_bytes(data[1..5].try_into().unwrap()) as usize == data.len() - 5
         }
+        Some(9) => {
+            data.len() >= 14
+                && data.len() <= (1 << 18)
+                && u32::from_be_bytes(data[10..14].try_into().unwrap()) as usize == data.len() - 14
+                && data[9] <= 1
+        }
         Some(2) => data.len() == 32,
         Some(10) => data.len() == 2 && data[1] <= 1,
         Some(11) => data.len() == 1,

@@ -7,7 +7,6 @@ import { AndroidFileManager } from "./AndroidFileManager";
 
 type Device = { serial: string; status: string; model: string };
 type Connection = { id: string; decoder?: VideoDecoder; worker?: Worker; audio?: MirrorAudio; config: Uint8Array; waiting: boolean; ended: boolean; queue: Promise<unknown>; statsTimer: ReturnType<typeof setInterval> | 0; stats: { packets: number; bytes: number; config: number; key: number; delta: number; waitingDrop: number; queueReset: number; submitted: number; output: number } };
-
 function codecFromConfig(data: Uint8Array): string | undefined {
   for (let i = 0; i + 7 < data.length; i++) {
     const prefix = data[i] === 0 && data[i + 1] === 0
@@ -37,6 +36,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
   const previousWindow = useRef<{ fullscreen: boolean; maximized: boolean } | null>(null);
   const [screenOff, setScreenOff] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
+  const mirrorStage = useRef<HTMLDivElement>(null);
   const refreshRequest = useRef(0);
   const refreshPending = useRef(false);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -49,6 +49,51 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
   const pendingMove = useRef<number | null>(null);
   const lastMove = useRef<Uint8Array | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const imeInput = useRef<HTMLInputElement>(null);
+  const imeComposingRef = useRef(false);
+  const imeTextRef = useRef("");
+  const imeCommittedRef = useRef("");
+  const clipboardSequence = useRef(0n);
+  const [imeOpen, setImeOpen] = useState(false);
+  const [imeText, setImeText] = useState("");
+  const [imePosition, setImePosition] = useState({ x: 50, y: 50 });
+
+  const sendText = (text: string) => {
+    if (!text) return;
+    const encoded = new TextEncoder().encode(text);
+    const useClipboardPaste = /[^\x00-\x7f]/.test(text);
+    if (useClipboardPaste && encoded.length > (1 << 18) - 14) return;
+    const bytes = new Uint8Array((useClipboardPaste ? 14 : 5) + encoded.length);
+    const view = new DataView(bytes.buffer);
+    if (useClipboardPaste) {
+      bytes[0] = 9;
+      view.setBigUint64(1, ++clipboardSequence.current);
+      bytes[9] = 1;
+      view.setUint32(10, encoded.length);
+      bytes.set(encoded, 14);
+    } else {
+      if (encoded.length > 300) return;
+      bytes[0] = 1;
+      view.setUint32(1, encoded.length);
+      bytes.set(encoded, 5);
+    }
+    send(bytes);
+  };
+  const sendAndroidBack = () => {
+    // scrcpy 的返回键既可收起系统输入法，也用于投屏画面的右键返回操作。
+    key(4);
+  };
+  const activateIme = () => {
+    if (!connected) return;
+    if (imeOpen) {
+      imeInput.current?.focus();
+      return;
+    }
+    setImeOpen(true);
+    setTimeout(() => imeInput.current?.focus(), 0);
+    // 先收起手机端输入法，再把焦点交给电脑端输入框。
+    sendAndroidBack();
+  };
 
   const refresh = async (recover = false) => {
     if (refreshPending.current) return;
@@ -75,6 +120,10 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
     const current = connection.current;
     connection.current = null;
     pointer.current = null;
+    imeComposingRef.current = false;
+    imeCommittedRef.current = "";
+    imeTextRef.current = "";
+    if (mounted.current) { setImeOpen(false); setImeText(""); }
     if (pendingMove.current !== null) cancelAnimationFrame(pendingMove.current);
     pendingMove.current = null; lastMove.current = null;
     if (current) {
@@ -401,6 +450,23 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
     pointer.current = null;
   };
   const connected = status === "connected";
+  const clearImeInput = (input: HTMLInputElement) => {
+    input.value = "";
+    imeTextRef.current = "";
+    setImeText("");
+  };
+  const insertImeText = (text: string) => {
+    setImeOpen(true);
+    setTimeout(() => {
+      const input = imeInput.current;
+      if (!input) { sendText(text); return; }
+      input.focus();
+      const start = input.selectionStart ?? input.value.length;
+      const end = input.selectionEnd ?? start;
+      input.setRangeText(text, start, end, "end");
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
+    }, 0);
+  };
   const content = <div ref={panel} data-mirror-fullscreen={fullscreen ? "true" : undefined}
     className={`${fullscreen ? "fixed z-[10000] bg-black" : "absolute bg-ide-bg"} inset-0 flex flex-col ${active ? "" : "hidden"}`}
     style={fullscreen ? { inset: 0 } : undefined}
@@ -437,7 +503,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
     {fullscreen && <button aria-label="退出投屏全屏" title="退出全屏（Esc）" className="absolute right-4 top-4 z-10 rounded bg-black/60 p-2 text-white opacity-40 hover:opacity-100 focus:opacity-100" onClick={toggleFullscreen}><Minimize size={20} /></button>}
     {error && <div role="alert" className="shrink-0 break-words border-b border-ide-panel-border p-2 text-xs text-red-400">{error}</div>}
     <div className="flex min-h-0 min-w-0 flex-1">
-    <div className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden" style={{ containerType: "size" }}>
+    <div ref={mirrorStage} className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden" style={{ containerType: "size" }}>
       {connected && <div className="pointer-events-none absolute left-2 top-2 z-10 select-none rounded bg-black/60 px-2 py-1 font-mono text-xs tabular-nums text-white" title="每秒实际绘制的投屏帧数">
         {fps} FPS
       </div>}
@@ -454,7 +520,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
         onPointerDown={e => {
           if (!connected || pointer.current !== null) return;
           e.preventDefault(); e.currentTarget.focus();
-          if (e.button === 2) { key(4); return; }
+          if (e.button === 2) { sendAndroidBack(); return; }
           if (e.button !== 0) return;
           pointer.current = e.pointerId; e.currentTarget.setPointerCapture(e.pointerId); send(touch(e, 0));
         }}
@@ -465,7 +531,21 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
             pendingMove.current = null; if (lastMove.current) send(lastMove.current); lastMove.current = null;
           });
         }}
-        onPointerUp={e => { if (pointer.current === e.pointerId) { lastTouch.current = touch(e, 1); releasePointer(); } }}
+        onPointerUp={e => {
+          if (pointer.current === e.pointerId) {
+            lastTouch.current = touch(e, 1);
+            releasePointer();
+            const stage = mirrorStage.current;
+            if (stage) {
+              const rect = stage.getBoundingClientRect();
+              setImePosition({
+                x: Math.max(8, Math.min(92, ((e.clientX - rect.left) / rect.width) * 100)),
+                y: Math.max(4, Math.min(88, ((e.clientY - rect.top) / rect.height) * 100)),
+              });
+            }
+            activateIme();
+          }
+        }}
         onPointerCancel={releasePointer} onLostPointerCapture={releasePointer} onBlur={releasePointer}
         onKeyDown={e => {
           if (!connected || e.nativeEvent.isComposing) return;
@@ -478,11 +558,90 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
           if (keys[e.key]) { e.preventDefault(); key(keys[e.key]); }
           else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
             e.preventDefault();
-            const text = new TextEncoder().encode(e.key);
-            const bytes = new Uint8Array(5 + text.length); bytes[0] = 1;
-            new DataView(bytes.buffer).setUint32(1, text.length); bytes.set(text, 5); send(bytes);
+            insertImeText(e.key);
           }
         }} />
+      {connected && imeOpen && <div
+          className={`absolute z-20 flex -translate-x-1/2 items-center rounded border border-ide-panel-border bg-ide-bg p-1 text-xs text-white shadow-lg ${imeText.length ? "" : "pointer-events-none opacity-0"}`}
+          style={{
+            left: `${imePosition.x}%`,
+            top: `calc(${imePosition.y}% + 12px)`,
+            width: imeText.length ? `min(calc(${imeText.length}ch + 1rem), calc(100% - 1rem))` : "1px",
+            padding: imeText.length ? undefined : 0,
+            borderWidth: imeText.length ? undefined : 0,
+            boxShadow: imeText.length ? undefined : "none",
+          }}
+        >
+        <input
+          ref={imeInput}
+          aria-label="电脑端中文输入"
+          autoComplete="off"
+          className={`w-full min-w-0 bg-transparent outline-none focus:border-ide-accent ${imeText.length ? "px-1 py-1" : "p-0"}`}
+          onCompositionStart={event => {
+            imeComposingRef.current = true;
+            // 组合输入框只保留当前拼音，避免上一次确认的汉字成为下一次输入内容。
+            clearImeInput(event.currentTarget);
+          }}
+          onCompositionUpdate={event => setImeText(event.currentTarget.value || event.data)}
+          onCompositionEnd={event => {
+            imeComposingRef.current = false;
+            const committed = event.data;
+            if (committed && /[^\x00-\x7f]/.test(committed)) {
+              imeCommittedRef.current = committed;
+              sendText(committed);
+              // 汉字已经发送到手机，悬浮框继续显示拼音会让用户误以为它仍可修改。
+              clearImeInput(event.currentTarget);
+              setTimeout(() => { if (imeCommittedRef.current === committed) imeCommittedRef.current = ""; }, 0);
+            } else {
+              clearImeInput(event.currentTarget);
+            }
+          }}
+          onInput={event => {
+            const input = event.currentTarget;
+            const previous = imeTextRef.current;
+            const next = input.value;
+            imeTextRef.current = next;
+            if (imeComposingRef.current || event.nativeEvent.isComposing) {
+              setImeText(next);
+              return;
+            }
+            setImeText("");
+            if (event.nativeEvent.inputType === "deleteContentBackward" || event.nativeEvent.inputType === "deleteContentForward") {
+              clearImeInput(input);
+              key(event.nativeEvent.inputType === "deleteContentForward" ? 112 : 67);
+              return;
+            }
+            const inserted = event.nativeEvent.data || (next.startsWith(previous) ? next.slice(previous.length) : "");
+            if (inserted === imeCommittedRef.current) {
+              imeCommittedRef.current = "";
+              clearImeInput(input);
+            } else if (inserted) {
+              sendText(inserted);
+              // 普通字符已经直接发送到手机，不应留在候选输入框中。
+              clearImeInput(input);
+            }
+          }}
+          onKeyDown={event => {
+            if (imeComposingRef.current || event.nativeEvent.isComposing) return;
+            const keys: Record<string, number> = { Enter: 66, Backspace: 67, Delete: 112, Escape: 4, Tab: 61, " ": 62, ArrowUp: 19, ArrowDown: 20, ArrowLeft: 21, ArrowRight: 22, Home: 3 };
+            const code = keys[event.key];
+            if (code === undefined) return;
+            if (event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home") {
+              key(code);
+              return;
+            }
+            event.preventDefault();
+            if (event.key === "Escape") {
+              event.currentTarget.blur(); clearImeInput(event.currentTarget); setImeOpen(false); return;
+            }
+            // 这些按键由 Android 处理，输入框只作为电脑端焦点，不保留按键字符。
+            if (event.key === "Backspace" || event.key === "Delete" || event.key === "Enter" || event.key === "Tab" || event.key === " ") {
+              clearImeInput(event.currentTarget);
+            }
+            key(code);
+          }}
+        />
+      </div>}
       {!dimensions.width && <div role="status" className="max-w-sm p-4 text-center text-xs leading-6 text-gray-400">
         <Smartphone size={40} className="mx-auto mb-3 opacity-40" />
         {status === "connecting" ? "正在连接设备…" : connected ? "等待手机画面…" : "连接 Android 手机，开启 USB 调试并在手机上允许此电脑。刷新设备列表后选择设备并连接。"}
