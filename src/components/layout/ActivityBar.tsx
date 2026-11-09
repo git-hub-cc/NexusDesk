@@ -156,8 +156,13 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
           <button key={mode} type="button" className="activity-bar-button no-drag-region"
             aria-label={label} title={label} aria-pressed={bottomPanelVisible && bottomPanelWidth === mode}
             onClick={() => {
-              setBottomPanelWidth(mode);
               const layout = useLayoutStore.getState();
+              if (layout.bottomPanelVisible && layout.bottomPanelWidth === mode) {
+                layout.toggleBottomPanel();
+                onLeaveSettings();
+                return;
+              }
+              setBottomPanelWidth(mode);
               if (mode === "sidebar" && !layout.leftSidebarVisible) layout.toggleLeftSidebar();
               layout.openBottomPanel(layout.bottomPanelTab);
               onLeaveSettings();
