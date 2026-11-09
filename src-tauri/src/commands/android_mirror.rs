@@ -572,6 +572,26 @@ pub async fn mirror_connect_wifi(serial: String) -> Result<String, String> {
     .map_err(|error| error.to_string())?
 }
 
+fn brightness_pulse_values(brightness: u8) -> [u8; 2] {
+    if brightness == u8::MAX { [brightness - 1, brightness] } else { [brightness + 1, brightness] }
+}
+
+#[tauri::command]
+pub async fn mirror_refresh_brightness(serial: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut get = adb();
+        get.args(["-s", &serial, "shell", "settings", "get", "system", "screen_brightness"]);
+        let value = output(get)?.parse::<u8>().map_err(|_| "无法读取手机当前亮度值".to_owned())?;
+        for brightness in brightness_pulse_values(value) {
+            let mut set = adb();
+            set.args(["-s", &serial, "shell", "settings", "put", "system", "screen_brightness", &brightness.to_string()]);
+            output(set)?;
+            thread::sleep(Duration::from_millis(100));
+        }
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
+}
+
 fn tool_directories() -> Vec<PathBuf> {
     let paths: Vec<_> =
         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect();
@@ -1025,6 +1045,15 @@ pub fn mirror_visible(
     Ok(())
 }
 
+fn valid_display_power_mode(mode: u8) -> bool {
+    matches!(mode, 0..=4 | 6)
+}
+
+#[cfg(test)]
+fn brightness_pulse_test_values(brightness: u8) -> [u8; 2] {
+    if brightness == u8::MAX { [brightness - 1, brightness] } else { [brightness + 1, brightness] }
+}
+
 #[tauri::command]
 pub async fn mirror_control(
     window: tauri::Window,
@@ -1047,7 +1076,7 @@ pub async fn mirror_control(
                 && data[9] <= 1
         }
         Some(2) => data.len() == 32,
-        Some(10) => data.len() == 2 && data[1] <= 1,
+        Some(10) => data.len() == 2 && valid_display_power_mode(data[1]),
         Some(11) => data.len() == 1,
         _ => false,
     };
@@ -1071,6 +1100,13 @@ pub async fn mirror_control(
 mod tests {
     use super::*;
     use std::{io::Cursor, net::TcpListener};
+
+    #[test]
+    fn display_power_control_accepts_normal_mode() {
+        assert!(valid_display_power_mode(0));
+        assert!(valid_display_power_mode(2));
+        assert!(!valid_display_power_mode(5));
+    }
 
     #[test]
     fn deletion_rejects_root_and_traversal_and_quotes_special_names() {

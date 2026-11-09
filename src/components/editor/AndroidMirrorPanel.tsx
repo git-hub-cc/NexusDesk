@@ -412,11 +412,12 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
 
   const send = (bytes: Uint8Array) => {
     const current = connection.current;
-    if (!current || current.ended) return;
+    if (!current || current.ended) return Promise.resolve();
     // Serialize controls so a release can never overtake its press.
     current.queue = current.queue.then(() => {
       if (!current.ended) return invoke("mirror_control", { id: current.id, data: Array.from(bytes) });
     }).catch(reason => { if (mounted.current && connection.current === current) { setError(String(reason)); disconnect(); } });
+    return current.queue;
   };
   const key = (code: number) => {
     for (const action of [0, 1]) {
@@ -494,8 +495,13 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       {([["返回", ArrowLeft, () => key(4)], ["主页", House, () => key(3)], ["最近任务", Square, () => key(187)]] as const).map(([label, Icon, action]) =>
         <button key={label} aria-label={label} title={label} disabled={!connected} onClick={action}><Icon size={14} /></button>)}
       <button aria-label={screenOff ? "点亮手机屏幕" : "关闭手机屏幕（投屏继续）"} title={screenOff ? "点亮手机屏幕" : "关闭手机屏幕（投屏继续）"} disabled={!connected} onClick={() => {
-        send(new Uint8Array([10, screenOff ? 1 : 0]));
+        const waking = screenOff;
+        const queued = send(new Uint8Array([10, waking ? 2 : 0]));
         setScreenOff(!screenOff);
+        if (waking) void queued.then(async () => {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          if (connection.current && !connection.current.ended) await invoke("mirror_refresh_brightness", { serial });
+        }).catch(reason => { if (mounted.current) setError(`手机亮度恢复失败：${String(reason)}`); });
       }}><Power size={14} /></button>
       <button aria-label="投屏全屏" title="投屏全屏（Esc 退出）" disabled={!connected} onClick={toggleFullscreen}><Maximize size={14} /></button>
       <button aria-label="文件管理" title="文件管理" aria-pressed={filesOpen} disabled={!serial} onClick={() => setFilesOpen(!filesOpen)}><FolderOpen size={14} /><span>文件管理</span></button>

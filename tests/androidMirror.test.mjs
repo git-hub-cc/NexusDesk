@@ -194,7 +194,7 @@ test("one screen power button alternates off and on, then resets after disconnec
   tree = h.render();
   tree.find(node => node.props["aria-label"] === "点亮手机屏幕").props.onClick();
   await tick();
-  assert.deepEqual(h.calls.filter(call => call.command === "mirror_control").map(call => call.args.data), [[10, 0], [10, 1]]);
+  assert.deepEqual(h.calls.filter(call => call.command === "mirror_control").map(call => call.args.data), [[10, 0], [10, 2]]);
   tree = h.render();
   tree.find(node => node.props["aria-label"] === "关闭手机屏幕（投屏继续）").props.onClick();
   tree = h.render();
