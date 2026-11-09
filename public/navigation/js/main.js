@@ -132,6 +132,29 @@ async function init() {
 }
 
 function setupStaticEventListeners() {
+    const addressForm = document.getElementById('address-form');
+    const addressInput = document.getElementById('address-input');
+    const sanitizeAddress = value => value.replace(/[^A-Za-z0-9:/?#[\]@!$&'()*+,;=%._~-]/g, '');
+    addressInput?.addEventListener('input', () => {
+        const sanitized = sanitizeAddress(addressInput.value);
+        if (sanitized !== addressInput.value) addressInput.value = sanitized;
+    });
+    addressForm?.addEventListener('submit', event => {
+        event.preventDefault();
+        const value = sanitizeAddress(addressInput.value).trim();
+        addressInput.value = value;
+        if (!value || /\s/.test(value)) return;
+
+        try {
+            const address = /^(https?):\/\//i.test(value) ? value : `https://${value}`;
+            const url = new URL(address);
+            if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) return;
+            window.open(url.href, '_blank', 'noopener');
+        } catch {
+            addressInput.focus();
+        }
+    });
+
     // 移动端菜单控制
     if (dom.mobileMenuBtn) {
         dom.mobileMenuBtn.addEventListener('click', (e) => {

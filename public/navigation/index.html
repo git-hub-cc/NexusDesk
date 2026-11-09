@@ -142,6 +142,13 @@
             <!-- Hero 区域：搜索 -->
             <header class="hero-section">
                 <div class="search-container">
+                    <form id="address-form" class="address-box" aria-label="网址导航">
+                        <svg class="icon address-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2Zm7.938 9h-3.006a15.89 15.89 0 0 0-1.112-5.043A8.02 8.02 0 0 1 19.938 11ZM12 4c.79 0 2.52 2.63 2.88 7H9.12C9.48 6.63 11.21 4 12 4ZM9.12 13h5.76c-.36 4.37-2.09 7-2.88 7s-2.52-2.63-2.88-7ZM8.18 5.957A15.89 15.89 0 0 0 7.068 11H4.062a8.02 8.02 0 0 1 4.118-5.043ZM4.062 13h3.006a15.89 15.89 0 0 0 1.112 5.043A8.02 8.02 0 0 1 4.062 13Zm11.758 5.043A15.89 15.89 0 0 0 16.932 13h3.006a8.02 8.02 0 0 1-4.118 5.043Z" fill="currentColor"></path></svg>
+                        <input type="text" id="address-input" autocomplete="url" inputmode="url" aria-label="网址" placeholder="输入网址，例如 example.com">
+                        <button type="submit" class="address-submit" aria-label="打开网址" title="打开网址">
+                            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z" fill="currentColor"></path></svg>
+                        </button>
+                    </form>
                     <div id="search-category-buttons" class="search-tabs"></div>
                     <form id="search-form" class="search-box">
                         <div class="search-input-group">
