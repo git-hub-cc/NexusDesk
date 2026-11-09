@@ -489,7 +489,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
         {status === "idle" && scanned && !devices.length && <p className="mt-2 text-amber-400">ADB 未发现设备。请重新插拔 USB 数据线，确认已开启 USB 调试并解锁手机；若出现授权弹窗，请选择允许。设备列表会自动更新，也可点击刷新尝试恢复连接。</p>}
         {status === "idle" && devices.some(device => device.status === "unauthorized") && <p className="mt-2 text-amber-400">请在手机上允许此电脑进行 USB 调试，授权后设备列表会自动更新。</p>}
         {status === "idle" && devices.some(device => device.status === "offline") && <p className="mt-2 text-amber-400">设备处于离线状态，请点击刷新恢复连接；若仍离线，请重新插拔数据线。</p>}
-        <p className="mt-2 text-gray-500">需要 scrcpy 3.3.4 或 5.0.1，支持自动识别 Scoop 安装。画面支持点击、拖拽和基础键盘输入。Android 11 及以上支持通过电脑播放手机声音，Android 11 请先解锁手机。</p>
+        <p className="mt-2 text-gray-500">需要 scrcpy 5.0.0 或更高版本，支持自动识别 Scoop 安装。画面支持点击、拖拽和基础键盘输入。Android 11 及以上支持通过电脑播放手机声音，Android 11 请先解锁手机。</p>
       </div>}
     </div>
     {filesOpen && serial && <div className={fullscreen ? "hidden" : "contents"}><AndroidFileManager key={serial} serial={serial} onClose={() => setFilesOpen(false)} /></div>}

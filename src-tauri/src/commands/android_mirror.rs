@@ -1,4 +1,4 @@
-//! scrcpy 3.3.4 / 5.0.1 wire protocols, normalized to one frontend packet format.
+//! scrcpy 5.0.0+ 协议，统一转换为前端数据包格式。
 use std::{
     collections::HashMap,
     io::{Read, Write},
@@ -14,19 +14,17 @@ use std::{
 };
 use tauri::ipc::{Channel, Response};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Protocol {
-    Legacy,
-    SessionMetadata,
-}
-
-fn protocol(version: &str) -> Result<Protocol, String> {
-    match version {
-        "3.3.4" => Ok(Protocol::Legacy),
-        "5.0.1" => Ok(Protocol::SessionMetadata),
-        _ => Err(format!(
-            "暂不支持 scrcpy {version}，当前支持 3.3.4 和 5.0.1"
-        )),
+fn validate_version(version: &str) -> Result<(), String> {
+    let mut parts = version.split('.');
+    let major = parts.next().and_then(|part| part.parse::<u32>().ok());
+    let minor = parts.next().and_then(|part| part.parse::<u32>().ok());
+    let patch = parts.next().and_then(|part| part.parse::<u32>().ok());
+    if parts.next().is_none()
+        && matches!((major, minor, patch), (Some(major), Some(minor), Some(patch)) if (major, minor, patch) >= (5, 0, 0))
+    {
+        Ok(())
+    } else {
+        Err(format!("暂不支持 scrcpy {version}，需要 5.0.0 或更高版本"))
     }
 }
 type Sessions = Arc<Mutex<HashMap<String, Arc<Session>>>>;
@@ -624,7 +622,7 @@ fn find_server(explicit: Option<PathBuf>, directories: &[PathBuf]) -> Result<Pat
             .find(|path| path.is_file())
     });
     path.filter(|path| path.is_file()).ok_or_else(||
-        "未找到 scrcpy-server，请安装 scrcpy，或将 NEXUSDESK_SCRCPY_SERVER 指向该文件（支持 3.3.4 / 5.0.1）".into())
+        "未找到 scrcpy-server，请安装 scrcpy 5.0.0 或更高版本，或将 NEXUSDESK_SCRCPY_SERVER 指向该文件".into())
 }
 
 fn parse_version(output: &str) -> Result<String, String> {
@@ -633,11 +631,11 @@ fn parse_version(output: &str) -> Result<String, String> {
         .find_map(|line| line.trim().strip_prefix("scrcpy "))
         .and_then(|line| line.split_whitespace().next())
         .ok_or("无法读取 scrcpy 版本")?;
-    protocol(version)?;
+    validate_version(version)?;
     Ok(version.into())
 }
 
-fn server_tools() -> Result<(PathBuf, String, Protocol), String> {
+fn server_tools() -> Result<(PathBuf, String), String> {
     let server = find_server(
         std::env::var_os("NEXUSDESK_SCRCPY_SERVER").map(PathBuf::from),
         &tool_directories(),
@@ -651,14 +649,14 @@ fn server_tools() -> Result<(PathBuf, String, Protocol), String> {
             "scrcpy"
         });
         if !executable.is_file() {
-            return Err("scrcpy-server 同目录下缺少 scrcpy 可执行文件；单独配置 server 时请同时设置 NEXUSDESK_SCRCPY_VERSION（3.3.4 或 5.0.1）".into());
+            return Err("scrcpy-server 同目录下缺少 scrcpy 可执行文件；单独配置 server 时请同时设置 NEXUSDESK_SCRCPY_VERSION（5.0.0 或更高版本）".into());
         }
         let mut command = hidden_command(executable);
         command.arg("--version");
         parse_version(&output(command)?)?
     };
-    let protocol = protocol(&version)?;
-    Ok((server, version, protocol))
+    validate_version(&version)?;
+    Ok((server, version))
 }
 
 static NEXT_ID: AtomicU32 = AtomicU32::new(1);
@@ -669,9 +667,9 @@ fn start(
     channel: Channel<Response>,
     audio_channel: Channel<Response>,
 ) -> Result<(), String> {
-    let (server, version, protocol) = server_tools()?;
+    let (server, version) = server_tools()?;
     let adb_path = resolve_adb();
-    log::info!(target: "android_mirror", "start serial={} max_size={} adb={} scrcpy={} server={} protocol={protocol:?}", session.serial, max_size, adb_path.display(), version, server.display());
+    log::info!(target: "android_mirror", "start serial={} max_size={} adb={} scrcpy={} server={}", session.serial, max_size, adb_path.display(), version, server.display());
     let scid = std::process::id()
         .wrapping_mul(65537)
         .wrapping_add(NEXT_ID.fetch_add(1, Ordering::Relaxed))
@@ -797,15 +795,15 @@ fn start(
             }
             *slot = Some(control);
         }
-        // v5 moves the dimensions out of the initial header into session packets.
-        let mut metadata = vec![0; if protocol == Protocol::Legacy { 76 } else { 68 }];
+        // scrcpy 5 将尺寸从初始头移动到会话数据包中。
+        let mut metadata = vec![0; 68];
         log::info!(target: "android_mirror", "stage=read-video-metadata serial={}", session.serial);
         video.read_exact(&mut metadata).map_err(|e| e.to_string())?;
         if &metadata[64..68] != b"h264" {
             return Err("设备未提供 H.264 视频".into());
         }
         // Static screens may produce no frames for an arbitrary period.
-        log::info!(target: "android_mirror", "video metadata serial={} header_bytes={} protocol={protocol:?}", session.serial, metadata.len());
+        log::info!(target: "android_mirror", "video metadata serial={} header_bytes={}", session.serial, metadata.len());
         video.set_read_timeout(None).map_err(|e| e.to_string())?;
         let audio_session = session.clone();
         thread::spawn(move || {
@@ -816,7 +814,7 @@ fn start(
                 read_audio_header(&mut audio)?;
                 audio.set_read_timeout(None).map_err(|e| e.to_string())?;
                 loop {
-                    let packet = read_audio_packet(&mut audio, protocol)?;
+                    let packet = read_audio_packet(&mut audio)?;
                     audio_channel
                         .send(Response::new(packet))
                         .map_err(|e| e.to_string())?;
@@ -844,7 +842,7 @@ fn start(
             let result = (|| -> Result<(), String> {
                 loop {
                     let read_started = Instant::now();
-                    let packet = read_packet(&mut video, protocol)?;
+                    let packet = read_packet(&mut video)?;
                     read_ms += read_started.elapsed().as_millis() as u64;
                     packets += 1;
                     bytes += packet.len() as u64;
@@ -898,8 +896,8 @@ fn read_audio_header(reader: &mut impl Read) -> Result<(), String> {
     }
 }
 
-fn read_audio_packet(reader: &mut impl Read, protocol: Protocol) -> Result<Vec<u8>, String> {
-    let packet = read_packet(reader, protocol)?;
+fn read_audio_packet(reader: &mut impl Read) -> Result<Vec<u8>, String> {
+    let packet = read_packet(reader)?;
     // scrcpy raw audio is 48 kHz stereo signed 16-bit PCM, up to 1024 frames.
     let size = packet.len() - 12;
     if size == 0 || size > 4096 || size % 4 != 0 || packet[0] & 0x80 != 0 {
@@ -908,15 +906,12 @@ fn read_audio_packet(reader: &mut impl Read, protocol: Protocol) -> Result<Vec<u
     Ok(packet)
 }
 
-fn read_packet(reader: &mut impl Read, protocol: Protocol) -> Result<Vec<u8>, String> {
+fn read_packet(reader: &mut impl Read) -> Result<Vec<u8>, String> {
     let mut header = [0; 12];
     loop {
         reader.read_exact(&mut header).map_err(|e| e.to_string())?;
-        if protocol != Protocol::SessionMetadata {
-            break;
-        }
         if header[0] & 0x80 == 0 {
-            // v5: config=bit 62, key=bit 61. The frontend uses the v3 bit layout.
+            // scrcpy 5 使用第 62 位表示配置帧、第 61 位表示关键帧，前端使用统一后的标志位。
             header[0] = (header[0] & 0x1f) | ((header[0] & 0x60) << 1);
             break;
         }
@@ -1193,16 +1188,16 @@ mod tests {
     }
 
     #[test]
-    fn versions_are_explicit_and_scoop_server_discovery_honors_overrides() {
+    fn versions_require_scrcpy_5_or_newer_and_scoop_server_discovery_honors_overrides() {
         assert_eq!(
-            parse_version("scrcpy 5.0.1 <https://github.com/Genymobile/scrcpy>\nDependencies:")
+            parse_version("scrcpy 5.0.0 <https://github.com/Genymobile/scrcpy>\nDependencies:")
                 .unwrap(),
-            "5.0.1"
+            "5.0.0"
         );
-        assert_eq!(protocol("3.3.4").unwrap(), Protocol::Legacy);
-        assert_eq!(protocol("5.0.1").unwrap(), Protocol::SessionMetadata);
+        assert!(parse_version("scrcpy 5.1.0").is_ok());
+        assert!(parse_version("scrcpy 4.4.0").is_err());
         assert!(parse_version("scrcpy 99.0").is_err());
-        assert!(parse_version("unrelated tool 5.0.1").is_err());
+        assert!(parse_version("unrelated tool 5.0.0").is_err());
         let root = std::env::temp_dir().join(format!(
             "nexusdesk-mirror-discovery-{}-{}",
             std::process::id(),
@@ -1251,20 +1246,16 @@ mod tests {
             .concat(),
         );
         for expected in [0x80, 0x40, 0x80, 0x40] {
-            let frame = read_packet(&mut stream, Protocol::SessionMetadata).unwrap();
+            let frame = read_packet(&mut stream).unwrap();
             assert_eq!(frame[0], expected);
             assert_eq!(frame[7], 123);
             assert_eq!(frame.len(), 17);
         }
-        assert!(read_packet(&mut stream, Protocol::SessionMetadata).is_err());
+        assert!(read_packet(&mut stream).is_err());
         assert!(
-            read_packet(
-                &mut Cursor::new(session_header(0, 720)),
-                Protocol::SessionMetadata
-            )
-            .is_err()
+            read_packet(&mut Cursor::new(session_header(0, 720))).is_err()
         );
-        assert!(read_packet(&mut Cursor::new(&config[..13]), Protocol::SessionMetadata).is_err());
+        assert!(read_packet(&mut Cursor::new(&config[..13])).is_err());
     }
 
     #[test]
@@ -1272,7 +1263,7 @@ mod tests {
     fn installed_scrcpy_streams_h264_and_pcm_and_releases_its_forward() {
         let serial =
             std::env::var("NEXUSDESK_MIRROR_TEST_SERIAL").expect("set NEXUSDESK_MIRROR_TEST_SERIAL");
-        let (_, version, _) = server_tools().unwrap();
+        let (_, version) = server_tools().unwrap();
         let session = Arc::new(Session {
             serial,
             ..Arc::try_unwrap(session("smoke-test")).ok().unwrap()
@@ -1342,43 +1333,41 @@ mod tests {
     }
 
     #[test]
-    fn packets_preserve_flags_and_boundaries_and_reject_truncation() {
+    fn packets_normalize_flags_and_reject_truncation() {
         let mut frame = vec![0; 12];
-        frame[0] = 0xc0;
+        frame[0] = 0x60;
         frame[11] = 3;
         frame.extend_from_slice(&[0, 1, 2]);
         let mut stream = Cursor::new([frame.clone(), frame.clone()].concat());
-        assert_eq!(read_packet(&mut stream, Protocol::Legacy).unwrap(), frame);
-        assert_eq!(read_packet(&mut stream, Protocol::Legacy).unwrap(), frame);
-        assert!(read_packet(&mut stream, Protocol::Legacy).is_err());
-        assert!(read_packet(&mut Cursor::new(&frame[..14]), Protocol::Legacy).is_err());
+        assert_eq!(read_packet(&mut stream).unwrap()[0], 0xc0);
+        assert_eq!(read_packet(&mut stream).unwrap()[0], 0xc0);
+        assert!(read_packet(&mut stream).is_err());
+        assert!(read_packet(&mut Cursor::new(&frame[..14])).is_err());
         frame[8..12].copy_from_slice(&u32::MAX.to_be_bytes());
         assert_eq!(
-            read_packet(&mut Cursor::new(frame), Protocol::Legacy).unwrap_err(),
+            read_packet(&mut Cursor::new(frame)).unwrap_err(),
             "scrcpy 视频包过大"
         );
     }
 
     #[test]
-    fn raw_audio_headers_and_packets_support_both_protocols() {
+    fn raw_audio_headers_and_packets_are_validated() {
         assert!(read_audio_header(&mut Cursor::new(b"\0raw")).is_ok());
         for header in [b"\0\0\0\0", b"\0\0\0\x01", b"opus", b"\0raw".split_at(3).0] {
             assert!(read_audio_header(&mut Cursor::new(header)).is_err());
         }
-        for protocol in [Protocol::Legacy, Protocol::SessionMetadata] {
-            let mut packet = vec![0; 12];
-            packet[11] = 8;
-            packet.extend_from_slice(&[0, 128, 255, 127, 0, 0, 255, 255]);
-            let mut stream = Cursor::new([packet.clone(), packet.clone()].concat());
-            assert_eq!(read_audio_packet(&mut stream, protocol).unwrap(), packet);
-            assert_eq!(read_audio_packet(&mut stream, protocol).unwrap(), packet);
-            assert!(read_audio_packet(&mut stream, protocol).is_err());
-            assert!(read_audio_packet(&mut Cursor::new(&packet[..19]), protocol).is_err());
-            for size in [0u32, 3, 4100] {
-                let mut invalid = vec![0; 12 + size as usize];
-                invalid[8..12].copy_from_slice(&size.to_be_bytes());
-                assert!(read_audio_packet(&mut Cursor::new(invalid), protocol).is_err());
-            }
+        let mut packet = vec![0; 12];
+        packet[11] = 8;
+        packet.extend_from_slice(&[0, 128, 255, 127, 0, 0, 255, 255]);
+        let mut stream = Cursor::new([packet.clone(), packet.clone()].concat());
+        assert_eq!(read_audio_packet(&mut stream).unwrap(), packet);
+        assert_eq!(read_audio_packet(&mut stream).unwrap(), packet);
+        assert!(read_audio_packet(&mut stream).is_err());
+        assert!(read_audio_packet(&mut Cursor::new(&packet[..19])).is_err());
+        for size in [0u32, 3, 4100] {
+            let mut invalid = vec![0; 12 + size as usize];
+            invalid[8..12].copy_from_slice(&size.to_be_bytes());
+            assert!(read_audio_packet(&mut Cursor::new(invalid)).is_err());
         }
     }
 
