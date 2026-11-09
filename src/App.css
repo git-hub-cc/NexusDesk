@@ -151,7 +151,6 @@
 .music-track-row, .video-list-row { cursor: pointer; }
 .music-track-row.is-missing { cursor: not-allowed; }
 .music-track-row.is-missing .music-track-main strong { text-decoration: line-through; }
-.music-track-index:disabled, .music-track-main:disabled { cursor: not-allowed; }
 .music-context-menu { z-index: 1000; min-width: 190px; padding: 4px; color: #dfe1e5; background: #292c31; border: 1px solid #454951; border-radius: 5px; box-shadow: 0 8px 24px #0008; }
 .music-context-label { padding: 5px 8px; color: #858a94; font-size: 10px; }
 .music-context-item { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; border-radius: 3px; font-size: 11px; outline: none; }
