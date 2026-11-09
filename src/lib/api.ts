@@ -61,6 +61,7 @@ export interface LocalVideo { path: string; name: string; size: number; modified
 export const videoApi = {
     status: (): Promise<VideoToolStatus> => invoke("video_tool_status"),
     local: (): Promise<LocalVideo[]> => invoke("list_local_videos"),
+    delete: (path: string): Promise<void> => invoke("delete_local_video", { path }),
     download: (url: string, destination: string): Promise<string> => invoke("download_video", { url, destination }),
     convertMkvToMp4: (path: string): Promise<string> => invoke("convert_mkv_to_mp4", { path }),
     cancelMkvToMp4: (path: string): Promise<void> => invoke("cancel_mkv_to_mp4", { path }),

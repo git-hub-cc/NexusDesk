@@ -252,6 +252,7 @@ pub fn run() {
             commands::software_manager::managed_software_install,
             commands::software_manager::managed_software_uninstall,
             commands::video_cmds::list_local_videos,
+            commands::video_cmds::delete_local_video,
             commands::video_cmds::download_video,
             commands::http_cmds::send_http_request,
             commands::http_cmds::cancel_http_request,

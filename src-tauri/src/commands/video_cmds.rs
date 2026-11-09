@@ -89,10 +89,39 @@ pub fn list_local_videos() -> Result<Vec<LocalVideo>, String> {
         if !path.is_file() || !path.extension().and_then(|v| v.to_str()).is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "mp4" | "m4v" | "webm" | "mov" | "mkv" | "avi" | "ogv")) { continue; }
         let meta = entry.metadata().map_err(|e| e.to_string())?;
         let modified = meta.modified().ok().and_then(|v| v.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |v| v.as_secs());
-        videos.push(LocalVideo { path: path.to_string_lossy().into_owned(), name: entry.file_name().to_string_lossy().into_owned(), size: meta.len(), modified });
+        let filename = entry.file_name().to_string_lossy().into_owned();
+        let name = video_title(&path).unwrap_or(filename);
+        videos.push(LocalVideo { path: path.to_string_lossy().into_owned(), name, size: meta.len(), modified });
     }
     videos.sort_by(|a, b| b.modified.cmp(&a.modified).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
     Ok(videos)
+}
+
+#[tauri::command]
+pub async fn delete_local_video(path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let video = PathBuf::from(path);
+        let metadata = std::fs::symlink_metadata(&video).map_err(|error| error.to_string())?;
+        if !metadata.is_file() { return Err("视频文件不存在或无法访问".into()); }
+        let stem = video.file_stem().ok_or("无效的视频文件路径")?;
+        let info = video.with_file_name(format!("{}.info.json", stem.to_string_lossy()));
+        match std::fs::remove_file(&info) {
+            Ok(()) => {},
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+            Err(error) => return Err(error.to_string()),
+        }
+        std::fs::remove_file(video).map_err(|error| error.to_string())
+    }).await.map_err(|error| error.to_string())?
+}
+
+fn video_title(path: &Path) -> Option<String> {
+    let stem = path.file_stem()?.to_str()?;
+    let info_path = path.with_file_name(format!("{stem}.info.json"));
+    let info: serde_json::Value = serde_json::from_slice(&std::fs::read(info_path).ok()?).ok()?;
+    let title = info.get("title")?.as_str()?.trim();
+    if title.is_empty() { return None; }
+    let extension = path.extension()?.to_str()?;
+    Some(format!("{title}.{extension}"))
 }
 
 fn candidates() -> Vec<PathBuf> {
@@ -126,6 +155,7 @@ fn candidates() -> Vec<PathBuf> {
 fn video_tool_command(program: &Path) -> Command {
     let mut command = Command::new(program);
     command.stdin(Stdio::null()).kill_on_drop(true);
+    command.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8");
     #[cfg(windows)]
     command.creation_flags(0x08000000); // CREATE_NO_WINDOW
     command
@@ -205,10 +235,10 @@ fn ytdlp_download_command(program: &Path, destination: &Path, url: &reqwest::Url
 
 fn ytdlp_download_command_with_format(program: &Path, destination: &Path, url: &reqwest::Url, ffmpeg: Option<&Path>, cookies: Option<&str>, format: Option<&str>, cookie_file: Option<&Path>) -> Command {
     let mut command = video_tool_command(program);
-    command.args(["--ignore-config", "--no-playlist", "--no-progress", "--windows-filenames", "--hls-prefer-native"])
+    command.args(["--ignore-config", "--no-playlist", "--no-progress", "--write-info-json", "--windows-filenames", "--hls-prefer-native"])
         // 与内置 WebView2 的浏览器标识保持一致，避免 Cookie 与客户端不匹配。
         .args(["--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"])
-        .arg("-P").arg(destination).arg("-o").arg("%(title).180B [%(id)s].%(ext)s");
+        .arg("-P").arg(destination).arg("-o").arg("%(id)s.%(ext)s");
     if let Some(format) = format {
         command.arg("-f").arg(format);
     } else if let Some(ffmpeg) = ffmpeg {
@@ -511,6 +541,7 @@ mod tests {
         let args = |command: Command| command.as_std().get_args()
             .map(|arg| arg.to_string_lossy().into_owned()).collect::<Vec<_>>();
         let without = args(ytdlp_download_command(program, destination, &url, None, None));
+        assert!(without.windows(2).any(|pair| pair == ["-o", "%(id)s.%(ext)s"]));
         assert!(without.windows(2).any(|pair| pair == ["-f", "best[vcodec!=none][acodec!=none]"]));
         assert!(!without.iter().any(|arg| arg == "--ffmpeg-location"));
 

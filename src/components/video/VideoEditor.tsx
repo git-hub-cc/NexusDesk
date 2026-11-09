@@ -3,7 +3,7 @@ import { homeDir, join } from "@tauri-apps/api/path";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Download, FolderOpen, Import, LoaderCircle, Search, Trash2, Video } from "lucide-react";
 import { importMedia, importSummary } from "@/lib/mediaImport";
-import { fsApi, videoApi, type LocalVideo, type VideoToolStatus } from "@/lib/api";
+import { videoApi, type LocalVideo, type VideoToolStatus } from "@/lib/api";
 import { AssetVideo } from "@/components/editor/MarkdownEditor";
 import { useVirtualList } from "@/hooks/useVirtualList";
 
@@ -100,7 +100,7 @@ export function VideoEditor({ active }: { active: boolean }) {
   };
   const deleteVideo = async (video: LocalVideo) => {
     try {
-      await fsApi.deleteEntry(video.path);
+      await videoApi.delete(video.path);
       if (current?.path === video.path) setCurrent(null);
       setMessage(`已删除：${video.name}`); setError(false);
       await refresh();
