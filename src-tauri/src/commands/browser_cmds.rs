@@ -366,7 +366,7 @@ fn observe_browser_navigation(view: &tauri::Webview, window: tauri::Window) -> R
 }
 
 #[tauri::command]
-pub async fn create_browser(window: tauri::Window, label: String, url: String, x: f64, y: f64, width: f64, height: f64, visible: bool) -> Result<(), String> {
+pub async fn create_browser(window: tauri::Window, label: String, url: String, x: f64, y: f64, width: f64, height: f64, visible: bool, suppress_initial_downloads: bool) -> Result<(), String> {
     let create_started = std::time::Instant::now();
     if !label.starts_with(&format!("{}-browser-", window.label())) { return Err("无效的网页标签".into()); }
     let directory = browser_directory(window.app_handle())?;
@@ -507,7 +507,7 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
                 Ok(window) => {
                     #[cfg(windows)]
                     if let Some(view) = app_handle.get_webview(&popup_label) {
-                        let _ = super::browser_downloads::observe(&view, popup_owner.clone(), popup_parent_label.clone());
+                        let _ = super::browser_downloads::observe(&view, popup_owner.clone(), popup_parent_label.clone(), suppress_initial_downloads);
                     }
                     log::info!(target: "browser", "label={popup_label} popup-created parent={label}");
                     let event_label = popup_label.clone();
@@ -535,7 +535,7 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
     #[cfg(target_os = "windows")]
     observe_browser_navigation(&view, window.clone())?;
     #[cfg(target_os = "windows")]
-    super::browser_downloads::observe(&view, window.clone(), view.label().into())?;
+    super::browser_downloads::observe(&view, window.clone(), view.label().into(), suppress_initial_downloads)?;
     #[cfg(target_os = "windows")]
     if let Err(error) = install_browser_blackhole(&view) {
         log::warn!(target: "browser", "optional resource filter failed: {error}");

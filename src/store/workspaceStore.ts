@@ -32,6 +32,7 @@ export interface Tab {
   markdownMode?: "source" | "preview" | "split"; // 适用于 Markdown, Tree, HTTP 文件的视图模式
   htmlRoot?: string;
   browser?: { root: string; url: string };
+  suppressInitialDownloads?: boolean;
   isPinned?: boolean;
   isExternal?: boolean;
   readOnly?: boolean;
@@ -45,7 +46,7 @@ export const MIRROR_HOME = "nexusdesk:mirror";
 
 function persistedPinnedTabs(tabs: Tab[]): Tab[] {
   return tabs.filter(tab => tab.isPinned).map(tab => {
-    const { content, isDirty, saveError, ...metadata } = tab;
+    const { content, isDirty, saveError, suppressInitialDownloads, ...metadata } = tab;
     // Virtual views need their snapshot; ordinary files are read again at startup.
     return tab.reverseTree || tab.revision || tab.diff !== undefined ? { ...metadata, content } : metadata;
   });
@@ -65,7 +66,7 @@ type ProjectSession = {
 function sessionsByProject(state: WorkspaceState) {
   if (!state.rootPath || !state.pinnedTabsRestored) return state.projectSessions;
   const metadata = (tabs: Tab[]) => tabs.map(tab => {
-    const { content, isDirty, saveError, ...rest } = tab;
+    const { content, isDirty, saveError, suppressInitialDownloads, ...rest } = tab;
     return tab.reverseTree || tab.revision || tab.diff !== undefined ? { ...rest, content } : rest;
   });
   return { ...state.projectSessions, [savedPathKey(state.rootPath)]: {
@@ -513,7 +514,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           try {
             const content = tab.browser || tab.reverseTree || tab.revision || tab.diff !== undefined || tab.path === MUSIC_HOME || tab.path === VIDEO_HOME
               ? tab.content : await fsApi.readFile(tab.path);
-            return { ...tab, content, isPinned: session ? !!tab.isPinned : true, isDirty: false, saveError: undefined };
+            return { ...tab, content, isPinned: session ? !!tab.isPinned : true, isDirty: false, saveError: undefined,
+              suppressInitialDownloads: !!tab.browser };
           } catch (error) {
             console.error("Failed to restore pinned tab:", tab.path, error);
             return null;

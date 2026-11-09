@@ -288,7 +288,7 @@ async fn parallel_download(
 }
 
 #[cfg(windows)]
-pub fn observe(view: &tauri::Webview, window: tauri::Window, event_label: String) -> Result<(), String> {
+pub fn observe(view: &tauri::Webview, window: tauri::Window, event_label: String, suppress_initial_downloads: bool) -> Result<(), String> {
     use std::{cell::RefCell, sync::atomic::{AtomicBool, AtomicU64, Ordering}};
     use windows::core::{Interface, PWSTR};
     use webview2_com::{*, Microsoft::Web::WebView2::Win32::*};
@@ -305,9 +305,15 @@ pub fn observe(view: &tauri::Webview, window: tauri::Window, event_label: String
         let setup = (|| -> windows::core::Result<()> {
             let core = platform.controller().CoreWebView2()?;
             let navigation = Arc::new(AtomicU64::new(0));
+            let initial_navigation = Arc::new(AtomicU64::new(0));
             let current = navigation.clone();
+            let initial = initial_navigation.clone();
             core.add_NavigationStarting(&NavigationStartingEventHandler::create(Box::new(move |_, args| {
-                if let Some(args) = args { let mut id = 0; args.NavigationId(&mut id)?; current.store(id, Ordering::Relaxed); }
+                if let Some(args) = args {
+                    let mut id = 0; args.NavigationId(&mut id)?;
+                    current.store(id, Ordering::Relaxed);
+                    let _ = initial.compare_exchange(0, id, Ordering::Relaxed, Ordering::Relaxed);
+                }
                 Ok(())
             })), &mut 0)?;
             // Preserve POST/blob/authenticated downloads in the native engine.
@@ -329,6 +335,16 @@ pub fn observe(view: &tauri::Webview, window: tauri::Window, event_label: String
                 let Some(args) = args else { return Ok(()); };
                 // Install handlers before releasing even a cached/instant response.
                 let mut deferral = StartingDeferral(Some(args.GetDeferral()?));
+                let nav = navigation.load(Ordering::Relaxed);
+                {
+                    let mut ids = navigation_downloads().lock().unwrap();
+                    if ids.len() >= 256 { ids.clear(); }
+                    ids.insert((view_handle.label().into(), nav));
+                }
+                if suppress_initial_downloads && navigation.load(Ordering::Relaxed) == initial_navigation.load(Ordering::Relaxed) {
+                    args.SetCancel(true)?;
+                    return Ok(());
+                }
                 let operation = args.DownloadOperation()?;
                 let mut uri = PWSTR::null(); let mut path = PWSTR::null(); let mut total = 0;
                 operation.Uri(&mut uri)?; args.ResultFilePath(&mut path)?; operation.TotalBytesToReceive(&mut total)?;
@@ -337,12 +353,6 @@ pub fn observe(view: &tauri::Webview, window: tauri::Window, event_label: String
                 // downloads; do not leave a second native download dialog open.
                 args.SetHandled(true)?;
                 let id = format!("{}-{}", std::process::id(), NEXT_ID.fetch_add(1, Ordering::Relaxed));
-                let nav = navigation.load(Ordering::Relaxed);
-                {
-                    let mut ids = navigation_downloads().lock().unwrap();
-                    if ids.len() >= 256 { ids.clear(); }
-                    ids.insert((view_handle.label().into(), nav));
-                }
                 super::browser_cmds::clear_download_error(&window, view_handle.label());
                 let crx = path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("crx"))
                     || tauri::Url::parse(&url).is_ok_and(|url| url.path().to_ascii_lowercase().ends_with(".crx")

@@ -183,7 +183,7 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
       const nativeStarted = performance.now();
       if (warm && !loaded) {
         await invoke("browser_action", { label, action: "navigate", url: tab.browser!.url });
-      } else if (!warm) await invoke("create_browser", { label, url: tab.browser!.url, x: initialRect?.x ?? 0, y: initialRect?.y ?? 0, width: initialRect?.width ?? 1, height: initialRect?.height ?? 1, visible: browserVisibility(activeRef.current, initialRect?.width ?? 0, initialRect?.height ?? 0).visible });
+      } else if (!warm) await invoke("create_browser", { label, url: tab.browser!.url, x: initialRect?.x ?? 0, y: initialRect?.y ?? 0, width: initialRect?.width ?? 1, height: initialRect?.height ?? 1, visible: browserVisibility(activeRef.current, initialRect?.width ?? 0, initialRect?.height ?? 0).visible, suppressInitialDownloads: !!tab.suppressInitialDownloads });
       logStage(warm ? (loaded ? "reuse-view" : "navigate-view") : "create-view", nativeStarted, `url=${browserDiagnosticUrl(tab.browser!.url)}`);
       if (disposed) {
         if (!retainedViews.current.includes(label)) await invoke("browser_action", { label, action: "close" });
