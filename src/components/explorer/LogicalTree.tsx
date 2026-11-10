@@ -185,7 +185,17 @@ export const LogicalTree: React.FC = React.memo(() => {
           return;
       }
       
-      void moveLogicalNode(pathsToMove, node.data.name);
+      void (async () => {
+        const physicalPaths = physicalFilesStr || physical ? pathsToMove : [];
+        const numericNames = physicalPaths.filter(path => /\p{N}/u.test(path.split(/[\\/]/).pop()?.[0] ?? ""));
+        if (numericNames.length && !await confirmDelete({
+          title: "名称以数字开头",
+          description: "这些文件或目录的名称以数字开头。后续新增、删除或调整内容时，可能需要批量重命名才能保持顺序。仍要移入该逻辑分区吗？",
+          paths: numericNames,
+          confirmLabel: "仍然移动",
+        })) return;
+        await moveLogicalNode(pathsToMove, node.data.name);
+      })();
     }
   };
 
