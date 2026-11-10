@@ -8,3 +8,4 @@
 
 # 由构建脚本从 sherpa-onnx 依赖复制的语音运行库
 /resources/stt-runtime/
+/resources/stt-model/
