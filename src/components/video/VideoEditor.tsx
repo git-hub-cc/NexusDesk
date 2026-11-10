@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { homeDir, join } from "@tauri-apps/api/path";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { Download, FolderOpen, Import, LoaderCircle, Search, Trash2, Video } from "lucide-react";
+import { Download, FolderOpen, Import, LoaderCircle, Maximize, Minimize, Search, Trash2, Video } from "lucide-react";
 import { importMedia, importSummary } from "@/lib/mediaImport";
 import { videoApi, type LocalVideo, type VideoToolStatus } from "@/lib/api";
 import { AssetVideo } from "@/components/editor/MarkdownEditor";
@@ -12,6 +12,7 @@ const size = (value: number) => value > 1024 ** 3 ? `${(value / 1024 ** 3).toFix
 export function VideoEditor({ active }: { active: boolean }) {
   const [videos, setVideos] = useState<LocalVideo[]>([]);
   const [current, setCurrent] = useState<LocalVideo | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [selection, setSelection] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<HTMLElement>(null);
@@ -25,6 +26,22 @@ export function VideoEditor({ active }: { active: boolean }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
   const [toolStatus, setToolStatus] = useState<VideoToolStatus | null>(null);
+  useEffect(() => {
+    if (!active || !expanded) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"], [role="menu"], [role="menuitem"]')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setExpanded(false);
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [active, expanded]);
+  useEffect(() => {
+    if (!active) setExpanded(false);
+  }, [active]);
   const refresh = useCallback(async () => {
     try { setVideos(await videoApi.local()); }
     catch (reason) { setMessage(String(reason)); setError(true); }
@@ -121,7 +138,7 @@ export function VideoEditor({ active }: { active: boolean }) {
     finally { importInFlight.current = false; setImporting(false); }
   };
   return <div className={`music-page video-library absolute inset-0 bg-ide-bg text-gray-200 ${active ? "" : "hidden"}`}>
-    <div className="video-library-layout">
+    <div className={`video-library-layout ${expanded ? "is-expanded" : ""}`}>
       <aside className="video-list-panel">
         <div className="video-search-row">
           <form className="music-search-form" onSubmit={event => event.preventDefault()}>
@@ -175,6 +192,9 @@ export function VideoEditor({ active }: { active: boolean }) {
         </footer>
       </aside>
       <section className="video-view-panel" ref={playerRef} aria-label="视频播放器">
+        <button type="button" className="video-expand-button" aria-label={expanded ? "收起播放器" : "扩展播放器"} aria-pressed={expanded} title={expanded ? "收起播放器（Esc）" : "扩展播放器"} disabled={!current} onClick={() => setExpanded(value => !value)}>
+          {expanded ? <Minimize size={16} /> : <Maximize size={16} />}
+        </button>
         {current && <AssetVideo source={current.path} note={current.path} alt={current.name} fit active={active} playRequest={playRequest} />}
       </section>
     </div>
