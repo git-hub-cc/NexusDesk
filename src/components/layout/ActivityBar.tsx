@@ -1,4 +1,4 @@
-import { PanelRight, PanelBottom, Settings, Mic, PanelLeft } from "lucide-react";
+import { PanelRight, Settings, Mic, PanelLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SVGProps } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -45,7 +45,7 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
   speechOpenRef.current = speechOpen;
   const {
     leftSidebarVisible, rightSidebarVisible, bottomPanelVisible, bottomPanelWidth,
-    toggleLeftSidebar, toggleRightSidebar, toggleBottomPanel, setBottomPanelWidth,
+    toggleLeftSidebar, toggleRightSidebar, setBottomPanelWidth,
   } = useLayoutStore();
 
   useEffect(() => {
@@ -126,7 +126,6 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
   const panels = [
     { label: "左侧面板", icon: PanelLeft, visible: leftSidebarVisible, toggle: toggleLeftSidebar },
     { label: "右侧面板", icon: PanelRight, visible: rightSidebarVisible, toggle: toggleRightSidebar },
-    { label: "底部面板", icon: PanelBottom, visible: bottomPanelVisible, toggle: toggleBottomPanel },
   ];
   const bottomPanelModes = [
     { mode: "sidebar", label: "底部面板与左侧面板等宽", icon: SidebarBottomPanelIcon },
@@ -158,7 +157,7 @@ export function ActivityBar({ settingsOpen, onLeaveSettings }: { settingsOpen: b
             onClick={() => {
               const layout = useLayoutStore.getState();
               if (layout.bottomPanelVisible && layout.bottomPanelWidth === mode) {
-                layout.toggleBottomPanel();
+                useLayoutStore.setState({ bottomPanelVisible: false });
                 onLeaveSettings();
                 return;
               }
