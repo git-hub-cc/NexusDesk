@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { ExternalLink, Globe, Moon, Plus, Search, Sun, Trash2, X } from "lucide-react";
+import { ExternalLink, Globe, Plus, Search, Trash2, X } from "lucide-react";
 import engineConfigUrl from "@/assets/navigation/data/00engines.json?url";
 import sprite01 from "@/assets/navigation/img/sprite-01.webp";
 import sprite02 from "@/assets/navigation/img/sprite-02.webp";
@@ -34,8 +34,6 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
   const [proxyMode, setProxyMode] = useState(localStorage.getItem("proxy-mode-preference") === "true");
   const [dark, setDark] = useState(true);
   const [editing, setEditing] = useState<{ categoryId: string; site: NavigationSite } | null>(null);
-  const [addingCategory, setAddingCategory] = useState(false);
-  const [categoryName, setCategoryName] = useState("");
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -79,13 +77,6 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
     }
   };
 
-  const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
-    localStorage.setItem("theme-preference", next ? "dark" : "light");
-    window.dispatchEvent(new Event("nexusdesk-navigation-preferences-changed"));
-  };
-
   const toggleProxy = () => {
     const next = !proxyMode;
     setProxyMode(next);
@@ -115,17 +106,6 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
     setEditing(null);
   };
 
-  const addCategory = (event: FormEvent) => {
-    event.preventDefault();
-    const name = categoryName.trim();
-    if (!name) return;
-    const category: NavigationCategory = { categoryId: `custom-${crypto.randomUUID()}`, categoryName: name, sites: [] };
-    commit({ categories: [...data.categories, category] });
-    setActiveCategory(category.categoryId);
-    setCategoryName("");
-    setAddingCategory(false);
-  };
-
   const deleteSite = (categoryId: string, siteId: string) => {
     if (!window.confirm("删除这个网站？")) return;
     commit({ categories: data.categories.map(category => category.categoryId === categoryId ? { ...category, sites: category.sites.filter(site => site.id !== siteId) } : category) });
@@ -138,16 +118,13 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
   return <div data-theme={dark ? "dark" : "light"} className="nav-home h-full min-h-0 overflow-hidden">
     <div className="nav-layout flex h-full min-h-0">
       <aside className="nav-sidebar flex w-[210px] shrink-0 flex-col border-r">
-        <div className="px-5 py-5 text-sm font-semibold tracking-wide">NexusDesk <span className="font-normal opacity-60">导航</span></div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
           {visibleCategories.map(category => <button key={category.categoryId} type="button" onClick={() => { setActiveCategory(category.categoryId); document.getElementById(category.categoryId)?.scrollIntoView({ behavior: "smooth", block: "start" }); }} className={`nav-category block w-full truncate rounded px-3 py-2 text-left text-xs ${activeCategory === category.categoryId ? "active" : ""}`}>
             {category.categoryName}
           </button>)}
-          <button type="button" onClick={() => setAddingCategory(true)} className="nav-category mt-2 flex w-full items-center gap-2 rounded px-3 py-2 text-left text-xs"><Plus size={14} />新增分类</button>
         </div>
         <div className="nav-footer flex items-center justify-between border-t px-3 py-3">
           <button type="button" title={proxyMode ? "关闭代理资源显示" : "显示代理资源"} aria-label="切换代理资源显示" onClick={toggleProxy} className={`nav-icon-button ${proxyMode ? "selected" : ""}`}><Globe size={16} /></button>
-          <button type="button" title="切换主题" aria-label="切换主题" onClick={toggleTheme} className="nav-icon-button">{dark ? <Sun size={16} /> : <Moon size={16} />}</button>
         </div>
       </aside>
       <main className="min-w-0 flex-1 overflow-y-auto">
@@ -187,19 +164,16 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
         </div>
       </main>
     </div>
-    {(editing || addingCategory) && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) { setEditing(null); setAddingCategory(false); } }}>
+    {editing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setEditing(null); }}>
       <section role="dialog" aria-modal="true" className="nav-dialog w-full max-w-md rounded-md border p-5 shadow-2xl">
-        <header className="mb-5 flex items-center justify-between"><h2 className="text-base font-semibold">{editing ? editing.site.title ? "编辑网站" : "新增网站" : "新增分类"}</h2><button type="button" aria-label="关闭" onClick={() => { setEditing(null); setAddingCategory(false); }}><X size={18} /></button></header>
-        {editing ? <form onSubmit={saveSite} className="space-y-3">
+        <header className="mb-5 flex items-center justify-between"><h2 className="text-base font-semibold">{editing.site.title ? "编辑网站" : "新增网站"}</h2><button type="button" aria-label="关闭" onClick={() => setEditing(null)}><X size={18} /></button></header>
+        <form onSubmit={saveSite} className="space-y-3">
           <label className="block text-xs">名称<input name="title" required autoFocus defaultValue={editing.site.title} className="nav-field mt-1 block w-full rounded border px-3 py-2 text-sm" /></label>
           <label className="block text-xs">网址<input name="url" required defaultValue={editing.site.url} className="nav-field mt-1 block w-full rounded border px-3 py-2 text-sm" /></label>
           <label className="block text-xs">描述<input name="desc" defaultValue={editing.site.desc} className="nav-field mt-1 block w-full rounded border px-3 py-2 text-sm" /></label>
           <label className="flex items-center gap-2 text-xs"><input name="proxy" type="checkbox" defaultChecked={editing.site.proxy} />需要代理</label>
           <footer className="flex justify-end gap-2 pt-2"><button type="button" className="nav-secondary rounded px-3 py-2 text-xs" onClick={() => setEditing(null)}>取消</button><button className="nav-primary rounded px-3 py-2 text-xs">保存</button></footer>
-        </form> : <form onSubmit={addCategory} className="space-y-4">
-          <label className="block text-xs">分类名称<input value={categoryName} onChange={event => setCategoryName(event.target.value)} required autoFocus className="nav-field mt-1 block w-full rounded border px-3 py-2 text-sm" /></label>
-          <footer className="flex justify-end gap-2"><button type="button" className="nav-secondary rounded px-3 py-2 text-xs" onClick={() => setAddingCategory(false)}>取消</button><button className="nav-primary rounded px-3 py-2 text-xs">新增分类</button></footer>
-        </form>}
+        </form>
       </section>
     </div>}
   </div>;
