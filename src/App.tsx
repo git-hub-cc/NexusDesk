@@ -38,6 +38,27 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const preventTabNavigation = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || (event.target instanceof Element && event.target.closest(".cm-editor"))) return;
+      const fields = [...document.querySelectorAll<HTMLElement>(
+        'input:not([type="hidden"]):not(:disabled), textarea:not(:disabled), select:not(:disabled), [contenteditable="true"]',
+      )].filter(field => field.offsetParent !== null && !field.closest('[aria-hidden="true"], [inert]'));
+      if (!fields.length) {
+        event.preventDefault();
+        return;
+      }
+      const index = fields.indexOf(document.activeElement as HTMLElement);
+      const nextIndex = index < 0
+        ? (event.shiftKey ? fields.length - 1 : 0)
+        : (index + (event.shiftKey ? -1 : 1) + fields.length) % fields.length;
+      event.preventDefault();
+      fields[nextIndex].focus();
+    };
+    window.addEventListener("keydown", preventTabNavigation, true);
+    return () => window.removeEventListener("keydown", preventTabNavigation, true);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     if (!startup.current) {
       const projectPath = new URLSearchParams(window.location.search).get("project");
