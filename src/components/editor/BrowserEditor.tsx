@@ -44,14 +44,14 @@ function updateBrowserTabs(tabs: Tab[], id: string, url: string, title?: string)
   } : item);
 }
 
-export function BrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
+export function BrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "right"; active: boolean }) {
   if (tab.browser?.url === MUSIC_HOME) return <MusicEditor active={active} />;
   if (tab.browser?.url === VIDEO_HOME) return <VideoEditor active={active} />;
   if (tab.browser?.url === CHAT_HOME) return <ChatEditor active={active} />;
-  return tab.browser?.url === BROWSER_HOME ? <NavigationEditor tab={tab} active={active} /> : <NativeBrowserEditor tab={tab} active={active} />;
+  return tab.browser?.url === BROWSER_HOME ? <NavigationEditor tab={tab} pane={pane} active={active} /> : <NativeBrowserEditor tab={tab} pane={pane} active={active} />;
 }
 
-function NavigationEditor({ tab, active }: { tab: Tab; active: boolean }) {
+function NavigationEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "right"; active: boolean }) {
   const frame = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
     const receive = (event: MessageEvent) => {
@@ -80,18 +80,18 @@ function NavigationEditor({ tab, active }: { tab: Tab; active: boolean }) {
         const url = new URL(event.data.url);
         if (!["https:", "http:"].includes(url.protocol)) return;
         const state = useWorkspaceStore.getState();
-        state.setFocusedPane(state.rightTabs.some(item => item.id === tab.id) ? "right" : "left");
+        state.setFocusedPane(pane);
         const id = `browser:${crypto.randomUUID()}`;
         state.openTab({ id, path: id, title: url.hostname, browser: { root: tab.browser!.root, url: url.href } });
       } catch { /* Ignore invalid website addresses. */ }
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [tab.id, tab.browser!.root, active]);
+  }, [tab.id, tab.browser!.root, active, pane]);
   return <div className={`absolute inset-0 flex flex-col bg-ide-bg ${active ? "" : "hidden"}`}><iframe ref={frame} title="导航工作台" src={`${import.meta.env.BASE_URL}navigation/index.html`} className="min-h-0 w-full flex-1 border-0 bg-ide-bg" /></div>;
 }
 
-function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
+function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "right"; active: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const addressInput = useRef<HTMLInputElement>(null);
   const currentUrl = useRef(tab.browser!.url);
@@ -163,8 +163,10 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
         if (disposed) return;
         const url = new URL(event.payload);
         if (!['http:', 'https:', 'chrome-extension:'].includes(url.protocol)) return;
+        const state = useWorkspaceStore.getState();
+        state.setFocusedPane(pane);
         const id = `browser:${crypto.randomUUID()}`;
-        useWorkspaceStore.getState().openTab({
+        state.openTab({
           id, path: id, title: url.hostname,
           browser: { root: tab.browser!.root, url: url.href },
         });
@@ -302,7 +304,7 @@ function NativeBrowserEditor({ tab, active }: { tab: Tab; active: boolean }) {
         void invoke("browser_layout", { label, x: 0, y: 0, width: 0, height: 0, visible: false }).catch(() => {});
       }
     };
-  }, [tab.id, tab.browser!.root, viewGeneration]);
+  }, [tab.id, tab.browser!.root, viewGeneration, pane]);
 
   const action = async (name: string, url?: string) => {
     try {

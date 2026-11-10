@@ -54,7 +54,7 @@ export const EditorGroupPanel: React.FC<EditorGroupPanelProps> = ({ groupId }) =
       onClick={() => { setFocusedPane(pane); }}
     >
       <div className="flex-1 overflow-hidden relative" data-editor-mirror-host={pane}>
-        {browserTabs.filter(tab => tab.browser?.url !== MIRROR_HOME).map(tab => <BrowserEditor key={tab.id} tab={tab} active={tab.id === activeTabId} />)}
+        {browserTabs.filter(tab => tab.browser?.url !== MIRROR_HOME).map(tab => <BrowserEditor key={tab.id} tab={tab} pane={pane} active={tab.id === activeTabId} />)}
         {videoTabs.map(tab => <VideoTabPreview key={tab.id} tab={tab} active={tab.id === activeTabId} />)}
         {imageTabs.map(tab => <div key={tab.id} className={`absolute inset-0 ${tab.id === activeTabId ? "" : "hidden"}`}>
           <ImageEditor path={tab.path} sourceUrl={tab.path.startsWith("android://") ? tab.content : undefined} />
