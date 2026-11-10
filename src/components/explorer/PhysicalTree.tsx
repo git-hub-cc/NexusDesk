@@ -412,7 +412,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
                 if (remote && (isImage(node.data.id) || isVideo(node.data.id))) throw new Error("暂不支持远程媒体预览");
                 if ((isImage(node.data.id) && !/\.svg$/i.test(node.data.id)) || isVideo(node.data.id)) {
                     openTab({
-                        id: node.data.id,
+                        id: node.data.id.replace(/\\/g, "/").replace(/\/$/, ""),
                         title: node.data.name,
                         path: node.data.id,
                         content: "",
@@ -423,7 +423,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
                 if (isBinaryAsset(node.data.id)) throw new Error("二进制文件暂不支持文本预览");
                 const content = await fsApi.readFile(node.data.id);
                 openTab({
-                    id: node.data.id,
+                    id: node.data.id.replace(/\\/g, "/").replace(/\/$/, ""),
                     title: node.data.name,
                     path: node.data.id,
                     content: content,
@@ -551,7 +551,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
         if (isCreating === "file") {
             await createPhysicalFile(path);
             if (useWorkspaceStore.getState().rootPath !== project) return;
-            openTab({ id: path, title: name, path, content: "", isDirty: false });
+            openTab({ id: path.replace(/\\/g, "/").replace(/\/$/, ""), title: name, path, content: "", isDirty: false });
         } else await createPhysicalFolder(path);
         if (useWorkspaceStore.getState().rootPath === project) treeRef.current?.get(targetDir)?.open();
     };
