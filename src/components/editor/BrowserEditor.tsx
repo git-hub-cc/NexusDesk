@@ -35,18 +35,36 @@ function browserDiagnosticUrl(value: string): string {
 
 function updateBrowserTabs(tabs: Tab[], id: string, url: string, title?: string): Tab[] {
   const fallback = new URL(url).hostname || "网页";
-  return tabs.map(item => item.id === id && item.browser ? {
-    ...item,
-    title: title !== undefined ? title.trim() || fallback : item.title,
-    browser: { ...item.browser, url },
-  } : item);
+  return tabs.map(item => {
+    if (item.id !== id || !item.browser) return item;
+    if (item.browser.url === BROWSER_HOME && item.browser.homeHistory) {
+      return {
+        ...item,
+        browser: { ...item.browser, homeHistory: {
+          url,
+          title: title !== undefined ? title.trim() || fallback : item.browser.homeHistory.title,
+        } },
+      };
+    }
+    return {
+      ...item,
+      title: title !== undefined ? title.trim() || fallback : item.title,
+      browser: {
+        ...item.browser,
+        url,
+        homeHistory: item.browser.homeHistory?.url === url ? item.browser.homeHistory : undefined,
+      },
+    };
+  });
 }
 
 export function BrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "right"; active: boolean }) {
   if (tab.browser?.url === MUSIC_HOME) return <MusicEditor active={active} />;
   if (tab.browser?.url === VIDEO_HOME) return <VideoEditor active={active} />;
   if (tab.browser?.url === CHAT_HOME) return <ChatEditor active={active} />;
-  return tab.browser?.url === BROWSER_HOME ? <NavigationEditor tab={tab} pane={pane} active={active} /> : <NativeBrowserEditor tab={tab} pane={pane} active={active} />;
+  return tab.browser?.url === BROWSER_HOME && !tab.browser.homeHistory
+    ? <NavigationEditor tab={tab} pane={pane} active={active} />
+    : <NativeBrowserEditor tab={tab} pane={pane} active={active} />;
 }
 
 function NavigationEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "right"; active: boolean }) {
@@ -118,26 +136,33 @@ function NavigationEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "rig
       onExtensionInstalled={async () => { if (extensionLabel.current) await invoke("browser_action", { label: extensionLabel.current, action: "reload" }); }}
       canGoBack={false} canGoForward={false} />
     {error && <div role="status" className="border-b border-ide-panel-border px-3 py-2 text-xs text-red-400">{error}</div>}
-    <NavigationHome key={refreshKey} onNavigate={openUrl} />
+    <div className="min-h-0 flex-1"><NavigationHome key={refreshKey} onNavigate={openUrl} /></div>
   </div>;
 }
 
 function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "right"; active: boolean }) {
   const host = useRef<HTMLDivElement>(null);
-  const currentUrl = useRef(tab.browser!.url);
+  const isHome = tab.browser!.url === BROWSER_HOME;
+  const initialUrl = isHome ? tab.browser!.homeHistory!.url : tab.browser!.url;
+  const currentUrl = useRef(initialUrl);
   const activeRef = useRef(active);
-  activeRef.current = active;
-  const [address, setAddress] = useState(tab.browser!.url === "about:blank" ? "" : tab.browser!.url);
+  activeRef.current = active && !isHome;
+  const [address, setAddress] = useState(initialUrl === "about:blank" ? "" : initialUrl);
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
+  const [nativeHistory, setNativeHistory] = useState({ back: false, forward: false });
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [homeAddress, setHomeAddress] = useState("");
   const editingRef = useRef(false);
   const labelRef = useRef("");
   const syncLayout = useRef<() => void>(() => {});
+  const refreshNativeHistory = useRef<() => void>(() => {});
   const [viewGeneration, setViewGeneration] = useState(0);
   const pendingView = useRef<ReturnType<typeof reserveBrowser> | undefined>(undefined);
   const retainedViews = useRef<string[]>([]);
   const retainedIndex = useRef(-1);
   const switching = useRef(false);
+  const homeTransitioning = useRef(false);
 
   useEffect(() => () => {
     for (const label of retainedViews.current) {
@@ -147,7 +172,7 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
     pendingView.current = undefined;
   }, []);
 
-  useEffect(() => { syncLayout.current(); }, [active, error]);
+  useEffect(() => { syncLayout.current(); }, [active, error, isHome]);
 
   useEffect(() => {
     let disposed = false;
@@ -160,7 +185,7 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
     let unlistenLoad: (() => void) | undefined;
     let unlistenFocus: (() => void) | undefined;
     let fullscreen = false;
-    const { label, warm, loaded } = pendingView.current ?? reserveBrowser(tab.browser!.url);
+    const { label, warm, loaded } = pendingView.current ?? reserveBrowser(initialUrl);
     const setupStarted = performance.now();
     const logStage = (stage: string, started: number, details = "") => {
       console.info("[browser]", `label=${label}`, `stage=${stage}`, `elapsed_ms=${Math.round(performance.now() - started)}`, details);
@@ -171,13 +196,24 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
       retainedIndex.current = retainedViews.current.length - 1;
     }
     labelRef.current = label;
+    setNativeHistory({ back: false, forward: false });
     console.info("[browser]", `label=${label}`, "stage=open-start", `url=${browserDiagnosticUrl(tab.browser!.url)}`, `warm=${warm}`, `loaded=${loaded ?? false}`);
     const setup = async () => {
       const listenersStarted = performance.now();
+      const updateNativeHistory = () => {
+        void Promise.all([
+          invoke<boolean>("browser_can_go", { label, forward: false }),
+          invoke<boolean>("browser_can_go", { label, forward: true }),
+        ]).then(([back, forward]) => {
+          if (!disposed && labelRef.current === label) setNativeHistory({ back, forward });
+        }).catch(() => {});
+      };
+      refreshNativeHistory.current = updateNativeHistory;
       const updatePage = (url: string, title?: string) => {
         if (disposed) return;
         currentUrl.current = url;
         if (!editingRef.current) setAddress(url === "about:blank" ? "" : url);
+        updateNativeHistory();
         useWorkspaceStore.setState(state => ({
           leftTabs: updateBrowserTabs(state.leftTabs, tab.id, url, title),
           rightTabs: updateBrowserTabs(state.rightTabs, tab.id, url, title),
@@ -214,8 +250,8 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
       const initialRect = host.current?.getBoundingClientRect();
       const nativeStarted = performance.now();
       if (warm && !loaded) {
-        await invoke("browser_action", { label, action: "navigate", url: tab.browser!.url });
-      } else if (!warm) await invoke("create_browser", { label, url: tab.browser!.url, x: initialRect?.x ?? 0, y: initialRect?.y ?? 0, width: initialRect?.width ?? 1, height: initialRect?.height ?? 1, visible: browserVisibility(activeRef.current, initialRect?.width ?? 0, initialRect?.height ?? 0).visible, suppressInitialDownloads: !!tab.suppressInitialDownloads });
+        await invoke("browser_action", { label, action: "navigate", url: initialUrl });
+      } else if (!warm) await invoke("create_browser", { label, url: initialUrl, x: initialRect?.x ?? 0, y: initialRect?.y ?? 0, width: initialRect?.width ?? 1, height: initialRect?.height ?? 1, visible: browserVisibility(activeRef.current, initialRect?.width ?? 0, initialRect?.height ?? 0).visible, suppressInitialDownloads: !!tab.suppressInitialDownloads });
       logStage(warm ? (loaded ? "reuse-view" : "navigate-view") : "create-view", nativeStarted, `url=${browserDiagnosticUrl(tab.browser!.url)}`);
       if (disposed) {
         if (!retainedViews.current.includes(label)) await invoke("browser_action", { label, action: "close" });
@@ -231,6 +267,7 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
       if (disposed) return;
       switching.current = false;
       setReady(true);
+      updateNativeHistory();
       logStage("editor-ready", setupStarted, `url=${browserDiagnosticUrl(tab.browser!.url)}`);
       let previousX = NaN, previousY = NaN, previousWidth = NaN, previousHeight = NaN;
       let previousVisible: boolean | undefined;
@@ -321,6 +358,7 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
     });
     return () => {
       disposed = true;
+      refreshNativeHistory.current = () => {};
       cleanupLayout?.();
       unlisten?.();
       unlistenTitle?.();
@@ -336,10 +374,56 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
     };
   }, [tab.id, tab.browser!.root, viewGeneration, pane]);
 
+  const openNavigationUrl = (value: string) => {
+    try {
+      const url = new URL(value);
+      if (!["https:", "http:", "chrome-extension:"].includes(url.protocol)) throw new Error("请输入网页或扩展页面地址");
+      const state = useWorkspaceStore.getState();
+      state.setFocusedPane(pane);
+      const id = `browser:${crypto.randomUUID()}`;
+      state.openTab({ id, path: id, title: url.hostname, browser: { root: tab.browser!.root, url: url.href } });
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "请输入有效的网址"); }
+  };
+  const navigateFromHome = (value: string) => {
+    try {
+      openNavigationUrl(validateBrowserAddress(value));
+      setHomeAddress("");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "请输入有效的网址"); }
+  };
+  const returnToPage = () => {
+    const history = tab.browser!.homeHistory;
+    if (!history) return;
+    const update = (tabs: Tab[]) => tabs.map(item => item.id === tab.id && item.browser
+      ? { ...item, title: history.title, browser: { ...item.browser, url: history.url } }
+      : item);
+    useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
+    refreshNativeHistory.current();
+  };
+  const showHome = async () => {
+    if (homeTransitioning.current) return;
+    homeTransitioning.current = true;
+    try {
+      await invoke("browser_layout", { label: labelRef.current, x: 0, y: 0, width: 0, height: 0, visible: false });
+      const url = currentUrl.current;
+      const update = (tabs: Tab[]) => tabs.map(item => item.id === tab.id && item.browser && item.browser.url !== BROWSER_HOME ? {
+        ...item,
+        title: "导航",
+        browser: { ...item.browser, url: BROWSER_HOME, homeHistory: { url, title: item.title } },
+      } : item);
+      useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
+      setError("");
+    } catch (reason) { setError(String(reason)); }
+    finally { homeTransitioning.current = false; }
+  };
+
   const action = async (name: string, url?: string) => {
     try {
       setError("");
       if (switching.current) return;
+      if (name === "forward" && tab.browser?.homeHistory) {
+        await showHome();
+        return;
+      }
       const activate = (view: ReturnType<typeof reserveBrowser>) => {
         switching.current = true;
         setReady(false);
@@ -357,6 +441,10 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
         }
       }
       if (name === "navigate" && url) {
+        const clearHomeHistory = (tabs: Tab[]) => tabs.map(item => item.id === tab.id && item.browser?.homeHistory
+          ? { ...item, browser: { ...item.browser, homeHistory: undefined } }
+          : item);
+        useWorkspaceStore.setState(state => ({ leftTabs: clearHomeHistory(state.leftTabs), rightTabs: clearHomeHistory(state.rightTabs) }));
         // A new navigation invalidates the retained forward chain.
         for (const old of retainedViews.current.splice(retainedIndex.current + 1)) {
           void invoke("browser_action", { label: old, action: "close" }).catch(() => {});
@@ -365,6 +453,7 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
       // Failed redirects can leave the native view on its previous document.
       const retryUrl = name === "reload" && error ? address : undefined;
       await invoke("browser_action", { label: labelRef.current, action: retryUrl ? "navigate" : name, url: retryUrl ?? url });
+      refreshNativeHistory.current();
     } catch (reason) { setError(String(reason)); }
   };
   const navigate = (value: string) => {
@@ -379,23 +468,30 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
   };
 
   return <div className={`absolute inset-0 flex flex-col bg-ide-bg ${active ? "" : "hidden"}`}>
-    <BrowserToolbar address={address} currentUrl={currentUrl.current} ready getLabel={() => labelRef.current}
-      onAddressChange={setAddress} onNavigate={navigate} onBack={() => void action("back")} onForward={() => void action("forward")}
-      onReload={() => void action("reload")} onHome={() => {
-        const update = (tabs: Tab[]) => tabs.map(item => item.id === tab.id && item.browser ? {
-          ...item, title: "导航", browser: { ...item.browser, url: BROWSER_HOME },
-        } : item);
-        useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
-      }} onAutofill={async () => { await action("autofill"); }}
-      onOpenStore={async url => { await action("navigate", url); }} onExtensionInstalled={async () => { await action("reload"); }}
-      onAddressFocus={() => { editingRef.current = true; }} onAddressBlur={() => { editingRef.current = false; }} />
-    {error && <div data-browser-error role="status" className="px-3 py-2 text-xs text-red-400 border-b border-ide-panel-border">{error} <button type="button" className="ml-2 underline" onClick={() => void action("reload")}>重新加载</button> <button type="button" className="ml-2 underline" onClick={() => {
+    {isHome ? <BrowserToolbar address={homeAddress} currentUrl="" ready extensionsReady={ready} getLabel={() => labelRef.current}
+      onAddressChange={setHomeAddress} onNavigate={navigateFromHome} onBack={returnToPage} onForward={() => {}}
+      onReload={() => setRefreshKey(value => value + 1)} onHome={() => { setHomeAddress(""); setError(""); setRefreshKey(value => value + 1); }}
+      onAutofill={async () => { await action("autofill"); }} onOpenStore={async url => { openNavigationUrl(url); }}
+      onExtensionInstalled={async () => { await action("reload"); }} canGoBack={ready} canGoForward={false} />
+      : <BrowserToolbar address={address} currentUrl={currentUrl.current} ready getLabel={() => labelRef.current}
+        onAddressChange={setAddress} onNavigate={navigate} onBack={() => void action("back")} onForward={() => void action("forward")}
+        onReload={() => void action("reload")} onHome={() => { void showHome(); }}
+        onAutofill={async () => { await action("autofill"); }}
+        onOpenStore={async url => { await action("navigate", url); }} onExtensionInstalled={async () => { await action("reload"); }}
+        onAddressFocus={() => { editingRef.current = true; }} onAddressBlur={() => { editingRef.current = false; }}
+        canGoBack={ready && (nativeHistory.back || retainedIndex.current > 0)}
+        canGoForward={ready && (!!tab.browser?.homeHistory || nativeHistory.forward || retainedIndex.current < retainedViews.current.length - 1)} />}
+    {error && (isHome ? <div role="status" className="border-b border-ide-panel-border px-3 py-2 text-xs text-red-400">{error}</div>
+      : <div data-browser-error role="status" className="px-3 py-2 text-xs text-red-400 border-b border-ide-panel-border">{error} <button type="button" className="ml-2 underline" onClick={() => void action("reload")}>重新加载</button> <button type="button" className="ml-2 underline" onClick={() => {
       try {
         const url = new URL(address);
         if (["https:", "http:"].includes(url.protocol)) void openUrl(url.href).catch(reason => setError(String(reason)));
       } catch { setError("请输入有效的网页地址"); }
-    }}>在系统浏览器中打开</button></div>}
-    <BrowserDownloads labels={retainedViews.current} />
-    <div ref={host} className="min-h-0 flex-1">{!ready && !error && <div className="p-4 text-sm text-gray-500">正在打开网页…</div>}</div>
+    }}>在系统浏览器中打开</button></div>)}
+    <div className={isHome ? "hidden" : ""}><BrowserDownloads labels={retainedViews.current} /></div>
+    {isHome && <div className="min-h-0 flex-1"><NavigationHome key={refreshKey} onNavigate={openNavigationUrl} /></div>}
+    <div ref={host} className={`min-h-0 flex-1 ${isHome ? "hidden" : ""}`}>
+      {!ready && !error && <div className="p-4 text-sm text-gray-500">正在打开网页…</div>}
+    </div>
   </div>;
 }

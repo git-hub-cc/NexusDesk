@@ -47,12 +47,14 @@ export function BrowserToolbar({
     <BrowserExtensions disabled={!extensionsReady} getLabel={getLabel}
       onOpenStore={() => onOpenStore(CHROME_EXTENSION_STORE_URL)} onInstalled={onExtensionInstalled} />
     {([
-      ["后退", ArrowLeft, onBack, canGoBack],
-      ["前进", ArrowRight, onForward, canGoForward],
-      ["刷新", RotateCw, onReload, ready],
-      ["主页", House, onHome, ready],
-    ] as const).map(([title, Icon, onClick, enabled]) => <button key={title} type="button" title={title} aria-label={title}
-      disabled={!enabled} onClick={onClick} className="rounded p-1.5 hover:bg-white/10 hover:text-white disabled:opacity-40">
+      ["后退", ArrowLeft, onBack, canGoBack, true],
+      ["前进", ArrowRight, onForward, canGoForward, true],
+      ["刷新", RotateCw, onReload, ready, false],
+      ["主页", House, onHome, ready, false],
+    ] as const).map(([title, Icon, onClick, enabled, historyButton]) => <button key={title} type="button" title={title} aria-label={title}
+      disabled={!enabled} onClick={onClick} className={`rounded p-1.5 ${historyButton
+        ? enabled ? "hover:bg-white/10 hover:text-white" : "cursor-not-allowed text-gray-500/60"
+        : "hover:bg-white/10 hover:text-white disabled:opacity-40"}`}>
       <Icon size={15} />
     </button>)}
     <div className="relative ml-1 flex h-7 min-w-0 flex-1 items-center gap-2 rounded border border-ide-panel-border bg-ide-tab-bg px-2 focus-within:border-ide-accent">

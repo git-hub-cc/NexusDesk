@@ -11,9 +11,12 @@ const source = readFileSync(new URL('../src/components/editor/BrowserEditor.tsx'
 const compiled = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React },
 }).outputText;
-const context = { exports: {}, URL };
+const context = {
+  exports: {}, URL, React: { createElement: (type, props) => ({ type, props }) },
+  MUSIC_HOME: 'nexusdesk:music', VIDEO_HOME: 'nexusdesk:video', CHAT_HOME: 'nexusdesk:chat',
+};
 vm.runInNewContext(compiled, context);
-const { updateBrowserTabs } = context.exports;
+const { BrowserEditor, updateBrowserTabs } = context.exports;
 const url = 'https://example.com/start';
 const tab = { id: 'browser:one', title: 'example.com', browser: { root: '/', url } };
 
@@ -56,4 +59,39 @@ test('title updates affect only the matching browser tab', () => {
   const tabs = updateBrowserTabs([tab, other, file], tab.id, url, '网页标题');
   assert.equal(tabs[1], other);
   assert.equal(tabs[2], file);
+});
+
+test('hidden browser updates preserve the navigation page and its return target', () => {
+  const home = {
+    ...tab,
+    title: '导航',
+    browser: { ...tab.browser, url: 'nexusdesk:nav', homeHistory: { url, title: 'Original page' } },
+  };
+  const nextUrl = 'https://example.com/next';
+  const updated = updateBrowserTabs([home], home.id, nextUrl, 'Next page')[0];
+  assert.equal(updated.browser.url, 'nexusdesk:nav');
+  assert.equal(updated.title, '导航');
+  assert.equal(updated.browser.homeHistory.url, nextUrl);
+  assert.equal(updated.browser.homeHistory.title, 'Next page');
+});
+
+test('navigating away from the restored page clears the home forward target', () => {
+  const restored = {
+    ...tab,
+    browser: { ...tab.browser, homeHistory: { url, title: tab.title } },
+  };
+  assert.equal(updateBrowserTabs([restored], restored.id, url)[0].browser.homeHistory.url, url);
+  assert.equal(updateBrowserTabs([restored], restored.id, 'https://example.com/next')[0].browser.homeHistory, undefined);
+});
+
+test('opening home keeps the native browser component mounted for the return trip', () => {
+  const page = BrowserEditor({ tab, pane: 'left', active: true });
+  const homeTab = {
+    ...tab,
+    browser: { ...tab.browser, url: 'nexusdesk:nav', homeHistory: { url, title: tab.title } },
+  };
+  const home = BrowserEditor({ tab: homeTab, pane: 'left', active: true });
+  const freshHome = BrowserEditor({ tab: { ...homeTab, browser: { ...homeTab.browser, homeHistory: undefined } }, pane: 'left', active: true });
+  assert.equal(home.type, page.type);
+  assert.notEqual(freshHome.type, page.type);
 });

@@ -20,6 +20,8 @@ for (const loaded of [false, true]) {
     const context = {
       setReady: value => ready.push(value), pendingView: {}, retainedViews,
       retainedIndex: {}, labelRef: {}, activeRef: { current: true },
+      initialUrl: 'https://example.com', setNativeHistory: () => {}, refreshNativeHistory: { current: () => {} },
+      performance: { now: () => 0 }, browserDiagnosticUrl: value => value,
       tab: { id: 'tab', browser: { root: 'project', url: 'https://example.com' } },
       reserveBrowser: () => ({ label: 'main-browser-test', warm: loaded, loaded }),
       getCurrentWindow: () => ({ listen: async () => () => {}, onFocusChanged: async () => () => {} }),

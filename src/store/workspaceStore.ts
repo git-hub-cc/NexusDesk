@@ -31,7 +31,7 @@ export interface Tab {
   saveError?: string;
   markdownMode?: "source" | "preview" | "split"; // 适用于 Markdown, Tree, HTTP 文件的视图模式
   htmlRoot?: string;
-  browser?: { root: string; url: string };
+  browser?: { root: string; url: string; homeHistory?: { url: string; title: string } };
   suppressInitialDownloads?: boolean;
   isPinned?: boolean;
   isExternal?: boolean;
