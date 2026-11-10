@@ -294,6 +294,11 @@ function RepositoryPanel({ root }: { root: string }) {
             { title: "撤销并推送", confirmLabel: "撤销并推送", cancelLabel: "取消" }
         );
         if (!confirmed) return;
+        const riskConfirmed = await confirmAction(
+            "最后确认：继续会重写远程分支历史并删除该提交。其他人可能已基于该提交继续工作；若远端在验证后再次变化，推送仍可能被拒绝。请确认团队已协调并接受此风险。",
+            { title: "确认强制更新远程", confirmLabel: "确认撤销并强推", cancelLabel: "取消" }
+        );
+        if (!riskConfirmed) return;
         await run(async () => {
             await gitApi.undoPushedCommit(root, commit.id);
             if (revision) returnToLocal();

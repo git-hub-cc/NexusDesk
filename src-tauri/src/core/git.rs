@@ -215,6 +215,36 @@ fn push_ref(repo_path: &str, force: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_pushed_commit(repo: &Repository, branch: &str, remote_ref: &str, expected: git2::Oid) -> Result<(), String> {
+    let config = repo.config().map_err(|e| e.to_string())?;
+    let remote_name = config.get_string(&format!("branch.{branch}.remote")).unwrap_or_else(|_| "origin".into());
+    if remote_name == "." { return Err("当前分支配置为推送到本地仓库，暂不支持此操作".into()); }
+    let mut remote = repo.find_remote(&remote_name).map_err(|e| format!("无法找到远程仓库 {remote_name}: {e}"))?;
+    let (saved_username, saved_token) = load_credentials(repo)?;
+    let proxy_url = config.get_string("http.proxy").ok().filter(|url| !url.trim().is_empty());
+    let mut callbacks = RemoteCallbacks::new();
+    callbacks.credentials(move |url, username, allowed| {
+        if allowed.contains(CredentialType::USER_PASS_PLAINTEXT) {
+            push_https_credentials(&config, url, username, &saved_username, &saved_token)
+        } else if allowed.contains(CredentialType::USERNAME) {
+            Cred::username(if saved_username.trim().is_empty() { username.unwrap_or("git") } else { saved_username.trim() })
+        } else if allowed.contains(CredentialType::SSH_KEY) {
+            Cred::ssh_key_from_agent(username.unwrap_or("git"))
+        } else if allowed.contains(CredentialType::DEFAULT) {
+            Cred::default()
+        } else {
+            Err(git2::Error::from_str("No supported credentials available"))
+        }
+    });
+    let mut proxy = ProxyOptions::new();
+    if let Some(url) = proxy_url { proxy.url(&url); }
+    let connection = remote.connect_auth(git2::Direction::Push, Some(callbacks), Some(proxy)).map_err(|e| format!("远程连接验证失败：{e}"))?;
+    let advertised = connection.list().map_err(|e| format!("读取远程分支失败：{e}"))?
+        .iter().find(|head| head.name() == remote_ref).map(|head| head.oid());
+    if advertised != Some(expected) { return Err("远程分支已变化或不可见，请刷新远程状态后重试；本地提交未修改".into()); }
+    Ok(())
+}
+
 fn push_https_credentials(config: &git2::Config, url: &str, username: Option<&str>, saved_username: &str, token: &str) -> Result<Cred, git2::Error> {
     let https = url.get(..8).is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://"));
     if !token.trim().is_empty() {
@@ -394,6 +424,7 @@ pub fn undo_pushed_commit(repo_path: &str, commit_id: &str) -> Result<(), String
     if repo.find_reference(&tracking_ref).ok().and_then(|reference| reference.target()) != Some(oid) {
         return Err("本地远程跟踪信息未确认远程分支正好位于该提交，请先刷新远程状态".into());
     }
+    validate_pushed_commit(&repo, branch, &remote_ref, oid)?;
     let path = patch_path(&repo, parent.id())?;
     if path.exists() { return Err("该提交已有待恢复补丁".into()); }
     let root = repo.workdir().ok_or("裸仓库不支持补丁撤销")?;
