@@ -7,12 +7,7 @@ import { useEffect, useRef, useState } from "react";
 const STORE_URL = "https://chromewebstore.google.com/?hl=zh-CN";
 interface ExtensionInfo { id: string; name: string; enabled: boolean; removable: boolean; options_url: string | null; popup_url: string | null }
 
-function isStoreDetail(value: string) {
-  try { const url = new URL(value); return url.protocol === "https:" && url.hostname === "chromewebstore.google.com" && url.pathname.startsWith("/detail/"); }
-  catch { return false; }
-}
-
-export function BrowserExtensions({ getLabel, currentUrl, onOpenStore, onInstalled }: { getLabel: () => string; currentUrl: string; onOpenStore: () => Promise<void>; onInstalled: () => Promise<void> }) {
+export function BrowserExtensions({ getLabel, onOpenStore, onInstalled }: { getLabel: () => string; onOpenStore: () => Promise<void>; onInstalled: () => Promise<void> }) {
   const [opened, setOpened] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -48,15 +43,6 @@ export function BrowserExtensions({ getLabel, currentUrl, onOpenStore, onInstall
   }, []);
   useEffect(() => { if (opened) void refresh(); }, [opened]);
   if (!navigator.userAgent.includes("Windows")) return null;
-  const install = async () => {
-    setOpened(true); setBusy(true); setMessage(""); setError("");
-    try {
-      const id = await invoke<string>("browser_install_extension", { label: getLabel(), source: currentUrl });
-      setMessage(`已安装扩展 ${id}，保存在当前项目中。请刷新需要使用扩展的网页。`);
-      await refresh();
-    } catch (reason) { setError(String(reason)); }
-    finally { setBusy(false); }
-  };
   const openPage = async (extension: ExtensionInfo, page: "options" | "popup") => {
     setBusy(true); setError("");
     try {
@@ -76,7 +62,6 @@ export function BrowserExtensions({ getLabel, currentUrl, onOpenStore, onInstall
   };
   return <Dialog.Root open={opened} onOpenChange={value => { if (!busy) { setOpened(value); setError(""); setMessage(""); } }}>
     <Dialog.Trigger asChild><button type="button" title="Chrome 扩展" aria-label="Chrome 扩展" className="rounded p-1.5 text-gray-400 hover:bg-white/10 hover:text-white"><Puzzle size={15} /></button></Dialog.Trigger>
-    {isStoreDetail(currentUrl) && <button type="button" disabled={busy} onClick={() => void install()} className="shrink-0 rounded bg-ide-accent px-2 py-1 text-xs text-white disabled:opacity-50">安装此扩展</button>}
     <Dialog.Portal>
       <Dialog.Overlay className="search-overlay" />
       <Dialog.Content className="create-name-dialog" style={{ width: "min(520px, 92vw)" }} onKeyDown={event => event.stopPropagation()} onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}>

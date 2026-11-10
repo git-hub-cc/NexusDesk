@@ -352,7 +352,7 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
   return <div className={`absolute inset-0 flex flex-col bg-ide-bg ${active ? "" : "hidden"}`}>
     <form className="flex h-10 shrink-0 items-center gap-1 border-b border-ide-panel-border px-2 text-gray-400" onSubmit={event => { event.preventDefault(); navigate(address); }}>
       <BrowserPasswords onImported={async () => { await action("autofill"); }} />
-      <BrowserExtensions getLabel={() => labelRef.current} currentUrl={currentUrl.current} onOpenStore={async () => { await action("navigate", CHROME_EXTENSION_STORE_URL); }} onInstalled={async () => { await action("reload"); }} />
+      <BrowserExtensions getLabel={() => labelRef.current} onOpenStore={async () => { await action("navigate", CHROME_EXTENSION_STORE_URL); }} onInstalled={async () => { await action("reload"); }} />
       {([
         ["后退", ArrowLeft, () => void action("back")],
         ["前进", ArrowRight, () => void action("forward")],
