@@ -8,7 +8,12 @@
     "nexusdesk.codex.autoReview",
     "nexusdesk.codex.autoReviewPrompt",
     "nexusdesk.navigation.githubToken",
-    "nexusdesk.navigation.githubRepo"
+    "nexusdesk.navigation.githubRepo",
+    "nexusdesk.navigation.gitlabToken",
+    "nexusdesk.navigation.gitlabRepo",
+    "nexusdesk.navigation.giteeToken",
+    "nexusdesk.navigation.giteeRepo",
+    "nexusdesk.navigation.provider"
   ],
   "prefixes": ["sftp-profile:", "sftp-label:", "nexusdesk-ui:"]
 }

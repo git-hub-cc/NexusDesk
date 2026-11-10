@@ -29,7 +29,6 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
   const [searchType, setSearchType] = useState("");
   const [selectedEngines, setSelectedEngines] = useState<string[]>([]);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("");
   const [activeCategory, setActiveCategory] = useState("");
   const [proxyMode, setProxyMode] = useState(localStorage.getItem("proxy-mode-preference") === "true");
   const [dark, setDark] = useState(true);
@@ -112,8 +111,8 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
   };
 
   const canEdit = (category: NavigationCategory) => category.categoryId === CUSTOM_CATEGORY_ID || category.categoryId.startsWith("custom-");
-  const visibleCategories = data.categories.filter(category => !filter || category.categoryName.toLocaleLowerCase().includes(filter.toLocaleLowerCase())
-    || category.sites.some(site => `${site.title} ${site.desc || ""} ${site.url}`.toLocaleLowerCase().includes(filter.toLocaleLowerCase())));
+  const visibleCategories = data.categories.filter(category => !query.trim() || category.categoryName.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
+    || category.sites.some(site => `${site.title} ${site.desc || ""} ${site.url}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
 
   return <div data-theme={dark ? "dark" : "light"} className="nav-home h-full min-h-0 overflow-hidden">
     <div className="nav-layout flex h-full min-h-0">
@@ -137,7 +136,6 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
               <button type="submit" aria-label="开始搜索" className="nav-icon-button"><ExternalLink size={17} /></button>
             </form>
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">{engines.map(engine => <label key={engine.name} title={engine.desc} className="flex items-center gap-1.5 text-xs opacity-70"><input type="checkbox" checked={selectedEngines.includes(engine.name)} onChange={event => setSelectedEngines(current => event.target.checked ? [...current, engine.name] : current.filter(name => name !== engine.name))} />{engine.name}</label>)}</div>
-            <div className="mt-4 flex max-w-md items-center gap-2 border-b px-1 pb-2 opacity-75"><Search size={14} /><input value={filter} onChange={event => setFilter(event.target.value)} placeholder="筛选导航网站" className="min-w-0 flex-1 bg-transparent text-xs outline-none" /></div>
           </section>
           {!ready ? <div className="py-12 text-sm opacity-60">正在加载导航...</div> : visibleCategories.map(category => <section id={category.categoryId} key={category.categoryId} className="nav-section mb-9 scroll-mt-6">
             <header className="mb-4 flex items-center justify-between border-b pb-2">
@@ -145,7 +143,7 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
               {canEdit(category) && <button type="button" className="nav-add-button flex items-center gap-1 rounded px-2 py-1 text-xs" onClick={() => setEditing({ categoryId: category.categoryId, site: newSite() })}><Plus size={14} />新增网站</button>}
             </header>
             <div className="nav-card-grid grid grid-cols-[repeat(auto-fill,minmax(195px,1fr))] gap-2.5">
-              {category.sites.filter(site => (proxyMode || !site.proxy) && (!filter || `${site.title} ${site.desc || ""} ${site.url}`.toLocaleLowerCase().includes(filter.toLocaleLowerCase()))).map(site => <article key={site.id || site.url} className="nav-card group relative min-h-[98px] rounded-md border p-3" onDoubleClick={() => onNavigate(site.url)}>
+              {category.sites.filter(site => (proxyMode || !site.proxy) && (!query.trim() || `${site.title} ${site.desc || ""} ${site.url}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))).map(site => <article key={site.id || site.url} className="nav-card group relative min-h-[98px] rounded-md border p-3" onDoubleClick={() => onNavigate(site.url)}>
                 {site.proxy && <span title="需代理" className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-amber-400" />}
                 <button type="button" onClick={() => onNavigate(site.url)} className="w-full text-left" title={site.url}>
                   <div className="flex min-w-0 items-center gap-2.5">

@@ -1,17 +1,20 @@
 import { settingsStorage } from "@/lib/globalSettings";
 import { loadNavigationData, mergeNavigationData, saveNavigationData, type NavigationCategory, type NavigationData } from "./navigationData";
 
-const TOKEN_KEY = "nexusdesk.navigation.githubToken";
-const REPO_KEY = "nexusdesk.navigation.githubRepo";
+export type NavigationSyncProvider = "github" | "gitlab" | "gitee";
+const TOKEN_KEYS: Record<NavigationSyncProvider, string> = { github: "nexusdesk.navigation.githubToken", gitlab: "nexusdesk.navigation.gitlabToken", gitee: "nexusdesk.navigation.giteeToken" };
+const REPO_KEYS: Record<NavigationSyncProvider, string> = { github: "nexusdesk.navigation.githubRepo", gitlab: "nexusdesk.navigation.gitlabRepo", gitee: "nexusdesk.navigation.giteeRepo" };
+const PROVIDER_KEY = "nexusdesk.navigation.provider";
 const LEGACY_TOKEN_KEY = "navhub-github-token";
 const LEGACY_REPO_KEY = "navhub-github-repo";
 const DATA_FILE = "navhub-data.json";
 type SyncStatus = "disconnected" | "connecting" | "connected" | "syncing" | "error" | "conflict";
-export type NavigationSyncState = { status: SyncStatus; user: string; repo: string; lastSync: number | null; error: string };
+export type NavigationSyncState = { status: SyncStatus; provider: NavigationSyncProvider; user: string; repo: string; lastSync: number | null; error: string };
 
-let current: NavigationSyncState = { status: "disconnected", user: "", repo: "", lastSync: null, error: "" };
+let current: NavigationSyncState = { status: "disconnected", provider: "github", user: "", repo: "", lastSync: null, error: "" };
 let token = "";
 let remoteSha: string | null = null;
+let remoteFileExists = false;
 let ready = false;
 let suppressSave = false;
 let saveTimer: number | undefined;
@@ -31,15 +34,19 @@ export function subscribeNavigationSync(listener: (state: NavigationSyncState) =
 }
 
 async function request<T>(url: string, method = "GET", body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (current.provider === "github") Object.assign(headers, { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" });
+  else if (current.provider === "gitlab") headers["PRIVATE-TOKEN"] = token;
+  else headers.Authorization = `token ${token}`;
   const response = await fetch(url, {
     method,
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json", "X-GitHub-Api-Version": "2022-11-28" },
+    headers,
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!response.ok) {
     const details = await response.json().catch(() => ({})) as { message?: string };
     if (response.status === 409 || response.status === 422) throw new Error("云端版本已变化，请重新同步后重试。");
-    throw new Error(details.message || `GitHub 请求失败 (${response.status})`);
+    throw new Error(details.message || `${current.provider} 请求失败 (${response.status})`);
   }
   return response.json() as Promise<T>;
 }
@@ -62,13 +69,14 @@ function legacyRemoteData(value: Record<string, unknown>): NavigationData | null
 }
 
 async function readRemote(): Promise<{ data: NavigationData | null; sha: string | null }> {
-  const result = await fetch(`https://api.github.com/repos/${current.repo}/contents/${DATA_FILE}?t=${Date.now()}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
-  });
+  const path = encodeURIComponent(DATA_FILE);
+  const url = current.provider === "github" ? `https://api.github.com/repos/${current.repo}/contents/${path}?t=${Date.now()}` : current.provider === "gitlab" ? `https://gitlab.com/api/v4/projects/${encodeURIComponent(current.repo)}/repository/files/${path}?ref=main&t=${Date.now()}` : `https://gitee.com/api/v5/repos/${current.repo}/contents/${path}?ref=master&t=${Date.now()}`;
+  const headers: Record<string, string> = current.provider === "github" ? { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } : current.provider === "gitlab" ? { "PRIVATE-TOKEN": token } : { Authorization: `token ${token}` };
+  const result = await fetch(url, { headers });
   if (result.status === 404) return { data: null, sha: null };
   if (!result.ok) throw new Error(`读取 GitHub 数据失败 (${result.status})`);
-  const file = await result.json() as { content: string; sha: string; download_url?: string };
-  let raw = file.content ? decodeBase64(file.content) : "";
+  const file = await result.json() as { content: string; sha?: string; blob_id?: string; last_commit_id?: string; encoding?: string; download_url?: string };
+  let raw = file.content ? (current.provider === "gitlab" && file.encoding !== "base64" ? file.content : decodeBase64(file.content)) : "";
   if (!raw && file.download_url) {
     const download = await fetch(file.download_url, { headers: { Authorization: `Bearer ${token}` } });
     if (!download.ok) throw new Error(`下载 GitHub 数据失败 (${download.status})`);
@@ -85,8 +93,9 @@ async function readRemote(): Promise<{ data: NavigationData | null; sha: string 
     window.dispatchEvent(new CustomEvent("nexusdesk-navigation-preferences-changed", { detail: preferences }));
     suppressSave = previous;
   }
-  if (data && Array.isArray(data.categories)) return { data, sha: file.sha };
-  return { data: legacyRemoteData(parsed), sha: file.sha };
+  const sha = file.sha || file.last_commit_id || file.blob_id || null;
+  if (data && Array.isArray(data.categories)) return { data, sha };
+  return { data: legacyRemoteData(parsed), sha };
 }
 
 async function push(data: NavigationData) {
@@ -102,10 +111,19 @@ async function push(data: NavigationData) {
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
   const encoded = btoa(binary);
-  const result = await request<{ content: { sha: string } }>(`https://api.github.com/repos/${current.repo}/contents/${DATA_FILE}`, "PUT", {
-    message: "同步 NexusDesk 导航数据", content: encoded, branch: "main", ...(remoteSha ? { sha: remoteSha } : {}),
-  });
-  remoteSha = result.content.sha;
+  let sha = remoteSha;
+  if (current.provider === "github") {
+    const result = await request<{ content: { sha: string } }>(`https://api.github.com/repos/${current.repo}/contents/${DATA_FILE}`, "PUT", { message: "同步 NexusDesk 导航数据", content: encoded, branch: "main", ...(remoteSha ? { sha: remoteSha } : {}) });
+    sha = result.content.sha;
+  } else if (current.provider === "gitlab") {
+    const path = encodeURIComponent(DATA_FILE);
+    await request(`https://gitlab.com/api/v4/projects/${encodeURIComponent(current.repo)}/repository/files/${path}`, remoteFileExists ? "PUT" : "POST", { branch: "main", commit_message: "同步 NexusDesk 导航数据", content: JSON.stringify(content) });
+  } else {
+    const result = await request<{ content: { sha: string } }>(`https://gitee.com/api/v5/repos/${current.repo}/contents/${encodeURIComponent(DATA_FILE)}`, remoteFileExists ? "PUT" : "POST", { message: "同步 NexusDesk 导航数据", content: encoded, branch: "master", ...(remoteSha ? { sha: remoteSha } : {}) });
+    sha = result.content.sha;
+  }
+  remoteSha = sha;
+  remoteFileExists = true;
   update({ status: "connected", lastSync: Date.now(), error: "" });
 }
 
@@ -128,30 +146,35 @@ window.addEventListener("nexusdesk-navigation-preferences-changed", () => {
   if (!suppressSave) queuePush();
 });
 
-async function connect(tokenValue: string, repoValue: string, createIfMissing: boolean) {
+async function connect(tokenValue: string, repoValue: string, createIfMissing: boolean, provider = current.provider) {
+  current = { ...current, provider };
   token = tokenValue.trim();
   if (!token) throw new Error("请输入 GitHub Token。");
   update({ status: "connecting", error: "" });
   try {
-    const user = await request<{ login: string }>("https://api.github.com/user");
-    let repo = repoValue.trim() || `${user.login}/navhub-data`;
-    if (!repo.includes("/")) repo = `${user.login}/${repo}`;
+    const user = provider === "github" ? await request<{ login: string }>("https://api.github.com/user") : provider === "gitlab" ? await request<{ username: string }>("https://gitlab.com/api/v4/user") : await request<{ login: string }>("https://gitee.com/api/v5/user");
+    const username = "login" in user ? user.login : user.username;
+    let repo = repoValue.trim() || `${username}/navhub-data`;
+    if (!repo.includes("/")) repo = `${username}/${repo}`;
     const repoParts = repo.split("/");
     if (repoParts.length !== 2 || repoParts.some(part => !/^[A-Za-z0-9_.-]+$/.test(part) || part === "." || part === "..")) {
       throw new Error("仓库名称应为 owner/repository 格式。");
     }
-    repo = repoParts.map(encodeURIComponent).join("/");
-    const repoResponse = await fetch(`https://api.github.com/repos/${repo}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } });
-    if (repoResponse.status === 404 && createIfMissing) {
+    const repoPath = repoParts.map(encodeURIComponent).join("/");
+    const repoResponse = provider === "github" ? await fetch(`https://api.github.com/repos/${repoPath}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } }) : provider === "gitlab" ? await fetch(`https://gitlab.com/api/v4/projects/${encodeURIComponent(repo)}`, { headers: { "PRIVATE-TOKEN": token } }) : await fetch(`https://gitee.com/api/v5/repos/${repoPath}`, { headers: { Authorization: `token ${token}` } });
+    if (repoResponse.status === 404 && createIfMissing && provider === "github") {
       const repoName = repo.slice(repo.lastIndexOf("/") + 1);
       await request("https://api.github.com/user/repos", "POST", { name: repoName, description: "NexusDesk 导航数据", private: true, auto_init: true });
     } else if (!repoResponse.ok) throw new Error(`无法访问仓库 ${repo} (${repoResponse.status})`);
-    settingsStorage.setItem(TOKEN_KEY, token);
-    settingsStorage.setItem(REPO_KEY, repo);
-    current = { ...current, user: user.login, repo, status: "connected", error: "" };
+    repo = repoPath;
+    settingsStorage.setItem(TOKEN_KEYS[provider], token);
+    settingsStorage.setItem(REPO_KEYS[provider], repo);
+    settingsStorage.setItem(PROVIDER_KEY, provider);
+    current = { ...current, provider, user: username, repo, status: "connected", error: "" };
     const local = await loadNavigationData();
     const remote = await readRemote();
     remoteSha = remote.sha;
+    remoteFileExists = remote.sha !== null;
     if (remote.data) {
       const merged = mergeNavigationData(local, remote.data);
       suppressSave = true;
@@ -172,29 +195,34 @@ let initialized: Promise<void> | undefined;
 export function initializeNavigationSync(): Promise<void> {
   if (initialized) return initialized;
   initialized = (async () => {
-    let savedToken = settingsStorage.getItem(TOKEN_KEY) || "";
-    let savedRepo = settingsStorage.getItem(REPO_KEY) || "";
+    const storedProvider = settingsStorage.getItem(PROVIDER_KEY);
+    let provider: NavigationSyncProvider = storedProvider === "gitlab" || storedProvider === "gitee" ? storedProvider : "github";
+    current = { ...current, provider };
+    let savedToken = settingsStorage.getItem(TOKEN_KEYS[provider]) || "";
+    let savedRepo = settingsStorage.getItem(REPO_KEYS[provider]) || "";
     if (!savedToken) {
       savedToken = localStorage.getItem(LEGACY_TOKEN_KEY) || "";
       savedRepo = localStorage.getItem(LEGACY_REPO_KEY) || savedRepo;
       if (savedToken) {
-        settingsStorage.setItem(TOKEN_KEY, savedToken);
-        settingsStorage.setItem(REPO_KEY, savedRepo);
+        provider = "github";
+        current = { ...current, provider };
+        settingsStorage.setItem(TOKEN_KEYS.github, savedToken);
+        settingsStorage.setItem(REPO_KEYS.github, savedRepo);
         localStorage.removeItem(LEGACY_TOKEN_KEY);
         localStorage.removeItem(LEGACY_REPO_KEY);
       }
     }
     if (savedToken) {
-      try { await connect(savedToken, savedRepo, false); }
+      try { await connect(savedToken, savedRepo, false, provider); }
       catch (error) { update({ status: "error", error: String(error) }); }
     }
   })();
   return initialized;
 }
 
-export async function connectNavigationSync(tokenValue: string, repoValue: string) {
+export async function connectNavigationSync(tokenValue: string, repoValue: string, provider: NavigationSyncProvider) {
   initialized = undefined;
-  await connect(tokenValue, repoValue, true);
+  await connect(tokenValue, repoValue, true, provider);
 }
 
 export async function syncNavigationNow() {
@@ -205,6 +233,7 @@ export async function syncNavigationNow() {
   const local = await loadNavigationData();
   const remote = await readRemote();
   remoteSha = remote.sha;
+  remoteFileExists = remote.sha !== null;
   const merged = remote.data ? mergeNavigationData(local, remote.data) : local;
   suppressSave = true;
   saveNavigationData(merged);
@@ -216,8 +245,9 @@ export function disconnectNavigationSync() {
   window.clearTimeout(saveTimer);
   token = "";
   remoteSha = null;
+  remoteFileExists = false;
   ready = false;
-  settingsStorage.setItem(TOKEN_KEY, "");
-  settingsStorage.setItem(REPO_KEY, "");
+  settingsStorage.setItem(TOKEN_KEYS[current.provider], "");
+  settingsStorage.setItem(REPO_KEYS[current.provider], "");
   update({ status: "disconnected", user: "", repo: "", lastSync: null, error: "" });
 }
