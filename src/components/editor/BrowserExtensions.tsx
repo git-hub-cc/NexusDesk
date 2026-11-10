@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 const STORE_URL = "https://chromewebstore.google.com/?hl=zh-CN";
 interface ExtensionInfo { id: string; name: string; enabled: boolean; removable: boolean; options_url: string | null; popup_url: string | null }
 
-export function BrowserExtensions({ getLabel, onOpenStore, onInstalled }: { getLabel: () => string; onOpenStore: () => Promise<void>; onInstalled: () => Promise<void> }) {
+export function BrowserExtensions({ getLabel, onOpenStore, onInstalled, disabled = false }: { getLabel: () => string; onOpenStore: () => Promise<void>; onInstalled: () => Promise<void>; disabled?: boolean }) {
   const [opened, setOpened] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -61,7 +61,7 @@ export function BrowserExtensions({ getLabel, onOpenStore, onInstalled }: { getL
     finally { setBusy(false); }
   };
   return <Dialog.Root open={opened} onOpenChange={value => { if (!busy) { setOpened(value); setError(""); setMessage(""); } }}>
-    <Dialog.Trigger asChild><button type="button" title="Chrome 扩展" aria-label="Chrome 扩展" className="rounded p-1.5 text-gray-400 hover:bg-white/10 hover:text-white"><Puzzle size={15} /></button></Dialog.Trigger>
+    <Dialog.Trigger asChild><button type="button" title="Chrome 扩展" aria-label="Chrome 扩展" disabled={disabled} className="rounded p-1.5 text-gray-400 hover:bg-white/10 hover:text-white disabled:opacity-40"><Puzzle size={15} /></button></Dialog.Trigger>
     <Dialog.Portal>
       <Dialog.Overlay className="search-overlay" />
       <Dialog.Content className="create-name-dialog" style={{ width: "min(520px, 92vw)" }} onKeyDown={event => event.stopPropagation()} onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}>

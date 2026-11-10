@@ -1,18 +1,16 @@
 import { reserveBrowser } from "@/lib/browserPool";
 import { browserVisibility } from "@/lib/browserVisibility";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ArrowLeft, ArrowRight, RotateCw, House, Globe } from "lucide-react";
 import { useWorkspaceStore, type Tab } from "@/store/workspaceStore";
 import { MUSIC_HOME, VIDEO_HOME, CHAT_HOME } from "@/store/workspaceStore";
 import { MusicEditor } from "@/components/music/MusicEditor";
 import { VideoEditor } from "@/components/video/VideoEditor";
 import { ChatEditor } from "@/components/chat/ChatEditor";
-import { BrowserPasswords } from "./BrowserPasswords";
 import { BrowserDownloads } from "./BrowserDownloads";
-import { BrowserExtensions, CHROME_EXTENSION_STORE_URL } from "./BrowserExtensions";
+import { BrowserToolbar } from "./BrowserToolbar";
 import { NavigationHome } from "@/components/navigation/NavigationHome";
 
 export const BROWSER_HOME = "nexusdesk:nav";
@@ -52,33 +50,80 @@ export function BrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | 
 }
 
 function NavigationEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "right"; active: boolean }) {
+  const extensionLabel = useRef("");
+  const [extensionsReady, setExtensionsReady] = useState(false);
+  const [address, setAddress] = useState("");
+  const [error, setError] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+  useEffect(() => {
+    setExtensionsReady(false);
+    if (!navigator.userAgent.includes("Windows")) return;
+    let isDisposed = false;
+    let created = false;
+    let unlisten: (() => void) | undefined;
+    const label = reserveBrowser("about:blank").label;
+    extensionLabel.current = label;
+    void (async () => {
+      unlisten = await getCurrentWindow().listen<string>(`browser-new-tab-${label}`, event => {
+        try {
+          const url = new URL(event.payload);
+          if (!["http:", "https:", "chrome-extension:"].includes(url.protocol)) return;
+          const state = useWorkspaceStore.getState();
+          state.setFocusedPane(pane);
+          const id = `browser:${crypto.randomUUID()}`;
+          state.openTab({ id, path: id, title: url.hostname, browser: { root: tab.browser!.root, url: url.href } });
+        } catch { /* Ignore invalid extension pages. */ }
+      });
+      if (isDisposed) { unlisten(); return; }
+      await invoke("create_browser", { label, url: "about:blank", x: 0, y: 0, width: 1, height: 1, visible: false, suppressInitialDownloads: true });
+      created = true;
+      if (isDisposed) await invoke("browser_action", { label, action: "close" });
+      else setExtensionsReady(true);
+    })().catch(reason => {
+      if (!isDisposed) console.warn("Browser extension profile unavailable", reason);
+      void invoke("browser_action", { label, action: "close" }).catch(() => {});
+    });
+    return () => {
+      isDisposed = true;
+      unlisten?.();
+      if (created) void invoke("browser_action", { label, action: "close" }).catch(() => {});
+      extensionLabel.current = "";
+    };
+  }, [pane, tab.browser!.root]);
+
   const openUrl = (value: string) => {
     try {
       const url = new URL(value);
-      if (!["https:", "http:"].includes(url.protocol)) return;
+      if (!["https:", "http:", "chrome-extension:"].includes(url.protocol)) throw new Error("请输入网页或扩展页面地址");
       const state = useWorkspaceStore.getState();
       state.setFocusedPane(pane);
       const id = `browser:${crypto.randomUUID()}`;
       state.openTab({ id, path: id, title: url.hostname, browser: { root: tab.browser!.root, url: url.href } });
-    } catch { /* Ignore invalid website addresses. */ }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "请输入有效的网址"); }
   };
-  const navigateAddress = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    try { openUrl(validateBrowserAddress((event.currentTarget.elements.namedItem("navigation-address") as HTMLInputElement).value)); }
-    catch (reason) { console.warn("Invalid navigation address", reason); }
+  const navigateAddress = (value: string) => {
+    try {
+      const url = validateBrowserAddress(value);
+      setError("");
+      openUrl(url);
+      setAddress("");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "请输入有效的网址"); }
   };
   return <div className={`absolute inset-0 flex flex-col bg-ide-bg ${active ? "" : "hidden"}`}>
-    <form className="flex h-10 shrink-0 items-center gap-2 border-b border-ide-panel-border px-3 text-gray-400" onSubmit={navigateAddress}>
-      <Globe size={15} />
-      <input name="navigation-address" aria-label="网页地址" placeholder="输入网址，例如 example.com 或 https://example.com" className="min-w-0 flex-1 bg-transparent text-xs text-gray-200 outline-none" />
-    </form>
-    <NavigationHome onNavigate={openUrl} />
+    <BrowserToolbar address={address} currentUrl="" ready extensionsReady={extensionsReady} getLabel={() => extensionLabel.current}
+      onAddressChange={setAddress} onNavigate={navigateAddress} onBack={() => {}} onForward={() => {}}
+      onReload={() => setRefreshKey(value => value + 1)} onHome={() => { setAddress(""); setError(""); setRefreshKey(value => value + 1); }}
+      onAutofill={async () => { if (extensionLabel.current) await invoke("browser_action", { label: extensionLabel.current, action: "autofill" }); }}
+      onOpenStore={async url => { openUrl(url); }}
+      onExtensionInstalled={async () => { if (extensionLabel.current) await invoke("browser_action", { label: extensionLabel.current, action: "reload" }); }}
+      canGoBack={false} canGoForward={false} />
+    {error && <div role="status" className="border-b border-ide-panel-border px-3 py-2 text-xs text-red-400">{error}</div>}
+    <NavigationHome key={refreshKey} onNavigate={openUrl} />
   </div>;
 }
 
 function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "right"; active: boolean }) {
   const host = useRef<HTMLDivElement>(null);
-  const addressInput = useRef<HTMLInputElement>(null);
   const currentUrl = useRef(tab.browser!.url);
   const activeRef = useRef(active);
   activeRef.current = active;
@@ -329,44 +374,21 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
       const url = new URL(input);
       if (!['http:', 'https:', 'chrome-extension:'].includes(url.protocol)) throw new Error("请输入网页或扩展页面地址");
       setAddress(url.href);
-      addressInput.current?.blur();
       void action("navigate", url.href);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "请输入有效的网址"); }
   };
 
   return <div className={`absolute inset-0 flex flex-col bg-ide-bg ${active ? "" : "hidden"}`}>
-    <form className="flex h-10 shrink-0 items-center gap-1 border-b border-ide-panel-border px-2 text-gray-400" onSubmit={event => { event.preventDefault(); navigate(address); }}>
-      <BrowserPasswords onImported={async () => { await action("autofill"); }} />
-      <BrowserExtensions getLabel={() => labelRef.current} onOpenStore={async () => { await action("navigate", CHROME_EXTENSION_STORE_URL); }} onInstalled={async () => { await action("reload"); }} />
-      {([
-        ["后退", ArrowLeft, () => void action("back")],
-        ["前进", ArrowRight, () => void action("forward")],
-        ["刷新", RotateCw, () => void action("reload")],
-        ["主页", House, () => {
-          const update = (tabs: Tab[]) => tabs.map(item => item.id === tab.id && item.browser ? {
-            ...item, title: "导航", browser: { ...item.browser, url: BROWSER_HOME },
-          } : item);
-          useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
-        }],
-      ] as const).map(([title, Icon, onClick]) => <button key={title} type="button" title={title} aria-label={title} disabled={!ready} onClick={onClick} className="rounded p-1.5 hover:bg-white/10 hover:text-white disabled:opacity-40"><Icon size={15} /></button>)}
-      <div className="relative ml-1 flex h-7 min-w-0 flex-1 items-center gap-2 rounded border border-ide-panel-border bg-ide-tab-bg px-2 focus-within:border-ide-accent">
-        <Globe size={14} className="shrink-0" />
-        <input ref={addressInput} aria-label="网页地址"
-          placeholder="输入网址，例如 example.com 或 https://example.com" disabled={!ready}
-          className="min-w-0 flex-1 bg-transparent text-xs text-gray-200 outline-none" value={address}
-          onChange={event => setAddress(event.target.value)}
-          onFocus={event => { editingRef.current = true; event.target.select(); }}
-          onBlur={() => { editingRef.current = false; }}
-          onKeyDown={event => {
-            if (event.nativeEvent.isComposing) return;
-            if (event.key === "Escape") {
-              event.preventDefault();
-              setAddress(currentUrl.current === "about:blank" ? "" : currentUrl.current);
-              event.currentTarget.select();
-            }
-          }} />
-      </div>
-    </form>
+    <BrowserToolbar address={address} currentUrl={currentUrl.current} ready getLabel={() => labelRef.current}
+      onAddressChange={setAddress} onNavigate={navigate} onBack={() => void action("back")} onForward={() => void action("forward")}
+      onReload={() => void action("reload")} onHome={() => {
+        const update = (tabs: Tab[]) => tabs.map(item => item.id === tab.id && item.browser ? {
+          ...item, title: "导航", browser: { ...item.browser, url: BROWSER_HOME },
+        } : item);
+        useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
+      }} onAutofill={async () => { await action("autofill"); }}
+      onOpenStore={async url => { await action("navigate", url); }} onExtensionInstalled={async () => { await action("reload"); }}
+      onAddressFocus={() => { editingRef.current = true; }} onAddressBlur={() => { editingRef.current = false; }} />
     {error && <div data-browser-error role="status" className="px-3 py-2 text-xs text-red-400 border-b border-ide-panel-border">{error} <button type="button" className="ml-2 underline" onClick={() => void action("reload")}>重新加载</button> <button type="button" className="ml-2 underline" onClick={() => {
       try {
         const url = new URL(address);
