@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Copy, GitCommit, RefreshCw, Undo2, Upload } from "lucide-react";
+import { Copy, GitCommit, RefreshCw, RotateCcw, Undo2, Upload } from "lucide-react";
 import { gitApi, fsApi, type GitFileStatus, type GitLogEntry, type GitRevisionChange } from "@/lib/api";
 import { useWorkspaceStore, flushPendingWrites } from "@/store/workspaceStore";
 import { GitFileTree, type GitTreeTarget } from "./GitFileTree";
@@ -286,6 +286,34 @@ function RepositoryPanel({ root }: { root: string }) {
             setNotice(`已撤销提交 ${commit.id.slice(0, 8)}，更改已保留在暂存区`);
         }, true);
     }
+    async function undoPushedCommit(commit: GitLogEntry) {
+        setCommitMenu(null);
+        if (!commit.isHead || !commit.pushed || !hasRemote) return;
+        const confirmed = await confirmAction(
+            `撤销已推送的提交 ${commit.id.slice(0, 8)}「${commit.message.split("\n")[0]}」？这会把补丁保存为 patch-${commit.parents[0]?.slice(0, 8)}.md，将当前分支重置到父提交，并强制更新远程分支。`,
+            { title: "撤销并推送", confirmLabel: "撤销并推送", cancelLabel: "取消" }
+        );
+        if (!confirmed) return;
+        await run(async () => {
+            await gitApi.undoPushedCommit(root, commit.id);
+            if (revision) returnToLocal();
+            setNotice(`已撤销并推送，补丁保存在 patch-${commit.parents[0]?.slice(0, 8)}.md`);
+        }, true);
+    }
+    async function restorePushedCommit(commit: GitLogEntry) {
+        setCommitMenu(null);
+        if (!commit.isHead || !commit.recoveryPatch) return;
+        const confirmed = await confirmAction(
+            `将 patch-${commit.id.slice(0, 8)}.md 中的更改恢复为新提交并推送到远程？`,
+            { title: "恢复撤销内容", confirmLabel: "恢复并推送", cancelLabel: "取消" }
+        );
+        if (!confirmed) return;
+        await run(async () => {
+            await gitApi.restorePushedCommit(root, commit.id);
+            if (revision) returnToLocal();
+            setNotice("已恢复撤销内容并推送到远程");
+        }, true);
+    }
     async function openRevisionFile(path: string) {
         if (!revision) return;
         const commit = revision;
@@ -395,6 +423,16 @@ function RepositoryPanel({ root }: { root: string }) {
                 onClick={() => void undoCommit(commitMenu.commit)}>
                 <Undo2 size={14} />撤销此提交
             </button>}
+            {commitMenu.commit.isHead && commitMenu.commit.pushed && hasRemote && <button type="button" role="menuitem" disabled={operationsPending}
+                className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left hover:bg-ide-tree-hover focus-visible:bg-ide-tree-hover disabled:opacity-40"
+                onClick={() => void undoPushedCommit(commitMenu.commit)}>
+                <Undo2 size={14} />撤销并推送
+            </button>}
+            {commitMenu.commit.isHead && commitMenu.commit.recoveryPatch && <button type="button" role="menuitem" disabled={operationsPending || !hasRemote}
+                className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left hover:bg-ide-tree-hover focus-visible:bg-ide-tree-hover disabled:opacity-40"
+                onClick={() => void restorePushedCommit(commitMenu.commit)}>
+                <RotateCcw size={14} />恢复撤销内容
+            </button>}
         </div>}
         {contextMenu && <div ref={contextMenuRef} role="group" aria-label="文件操作" style={{ left: contextMenu.x, top: contextMenu.y }} onContextMenu={event => event.preventDefault()}
                              className="fixed z-50 w-52 rounded border border-ide-panel-border bg-ide-panel-bg p-1 shadow-xl">
@@ -458,7 +496,8 @@ function RepositoryPanel({ root }: { root: string }) {
                 {!!log.length && !filteredLog.length && <p role="status" className="text-gray-400">已加载的历史中没有匹配的提交</p>}
                 {filteredLog.map(c => <button key={c.id} className={`block w-full text-left border-l pl-3 pb-3 relative hover:bg-ide-tree-hover ${revision?.id === c.id ? "border-blue-400 bg-ide-selection" : c.pushed ? "border-emerald-500" : "border-amber-500"}`} onClick={() => void selectRevision(c)} onContextMenu={event => {
                     event.preventDefault(); event.stopPropagation();
-                    setCommitMenu({ commit: c, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 248)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - (c.isHead && !c.pushed ? 132 : 92))) });
+                    const menuHeight = 92 + (c.isHead && (c.pushed ? hasRemote : true) ? 40 : 0) + (c.isHead && c.recoveryPatch ? 40 : 0);
+                    setCommitMenu({ commit: c, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 248)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - menuHeight)) });
                 }} title={`${c.message}\n${c.pushed ? "已推送到远程" : "尚未推送到远程"}`} aria-pressed={revision?.id === c.id}>
                     <span className={`absolute -left-1 ${c.pushed ? "text-emerald-400" : "text-amber-400"}`} aria-label={c.pushed ? "已推送" : "未推送"}>●</span>
                     <div className="git-commit-message" title={c.message}><code className={c.pushed ? "text-emerald-400" : "text-amber-400"}>{c.id.slice(0, 8)}</code> {c.message.split("\n")[0]} <span className="text-green-400">{c.refs.join(", ")}</span></div>

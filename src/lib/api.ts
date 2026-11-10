@@ -135,7 +135,7 @@ export const fsApi = {
 };
 
 export interface GitFileStatus { path: string; worktreePath: string; staged: boolean; unstaged: boolean; conflict: boolean; status: string }
-export interface GitLogEntry { id: string; parents: string[]; message: string; author: string; time: number; refs: string[]; pushed: boolean; isHead: boolean }
+export interface GitLogEntry { id: string; parents: string[]; message: string; author: string; time: number; refs: string[]; pushed: boolean; recoveryPatch: boolean; isHead: boolean }
 export interface GitRevisionChange { path: string; status: string }
 export interface GitSettings { remote: string; proxy: string; token: string }
 export interface CodexSettings { model: string; proxyUrl: string; apiKeyConfigured: boolean; trustMode: boolean; showTooltips: boolean; checkForUpdateOnStartup: boolean }
@@ -154,6 +154,8 @@ export const gitApi = {
     cloneRepository: (url: string, targetPath: string, auth?: GitCloneAuth): Promise<void> => invoke("clone_git_repository", { url, targetPath, token: auth?.token, provider: auth?.provider }),
     push: (repoPath: string): Promise<void> => invoke("push_git_repository", { repoPath }),
     undoCommit: (repoPath: string, commitId: string): Promise<void> => invoke("undo_git_commit", { repoPath, commitId }),
+    undoPushedCommit: (repoPath: string, commitId: string): Promise<void> => invoke("undo_pushed_git_commit", { repoPath, commitId }),
+    restorePushedCommit: (repoPath: string, baseId: string): Promise<void> => invoke("restore_pushed_git_commit", { repoPath, baseId }),
     initRepository: (repoPath: string): Promise<void> => invoke("init_git_repository", { repoPath }),
     isRepository: (repoPath: string): Promise<boolean> => invoke("is_git_repository", { repoPath }),
     treeStatus: (repoPath: string): Promise<GitTreeStatus[]> => invoke("get_git_tree_status", { repoPath }),

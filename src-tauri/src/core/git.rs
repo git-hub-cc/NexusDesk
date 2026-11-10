@@ -9,7 +9,7 @@ pub use revert_history::{revert_files, undo_revert};
 pub struct FileStatus { pub path: String, pub worktree_path: String, pub staged: bool, pub unstaged: bool, pub conflict: bool, pub status: String }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LogEntry { pub id: String, pub parents: Vec<String>, pub message: String, pub author: String, pub time: i64, pub refs: Vec<String>, pub pushed: bool, #[serde(rename = "isHead")] pub is_head: bool }
+pub struct LogEntry { pub id: String, pub parents: Vec<String>, pub message: String, pub author: String, pub time: i64, pub refs: Vec<String>, pub pushed: bool, pub recovery_patch: bool, #[serde(rename = "isHead")] pub is_head: bool }
 fn open(path: &str) -> Result<Repository, String> { Repository::discover(path).map_err(|e| e.to_string()) }
 pub fn is_repository(path: &str) -> Result<bool, String> {
     match Repository::discover(path) {
@@ -158,6 +158,9 @@ pub fn commit(repo_path: &str, message: &str) -> Result<String, String> {
     repo.commit(Some("HEAD"), &signature, &signature, message.trim(), &tree, &parents).map(|id| id.to_string()).map_err(|e| e.to_string())
 }
 pub fn push(repo_path: &str) -> Result<(), String> {
+    push_ref(repo_path, false)
+}
+fn push_ref(repo_path: &str, force: bool) -> Result<(), String> {
     let repo = open(repo_path)?;
     let head = repo.head().map_err(|e| e.to_string())?;
     if !head.is_branch() { return Err("当前 HEAD 不是本地分支，请先切换到要推送的分支".into()); }
@@ -198,7 +201,7 @@ pub fn push(repo_path: &str) -> Result<(), String> {
         options.proxy_options(proxy_options);
     }
     options.remote_callbacks(callbacks);
-    remote.push(&[format!("{local_ref}:{remote_ref}")], Some(&mut options)).map_err(|e| e.to_string())?;
+    remote.push(&[format!("{}{local_ref}:{remote_ref}", if force { "+" } else { "" })], Some(&mut options)).map_err(|e| e.to_string())?;
     // A successful transport can still contain a server-side ref rejection.
     // Release the callback borrow before checking it or updating tracking refs.
     drop(options);
@@ -365,6 +368,89 @@ pub fn undo_commit(repo_path: &str, commit_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn patch_path(repo: &Repository, base_id: git2::Oid) -> Result<std::path::PathBuf, String> {
+    let root = repo.workdir().ok_or("裸仓库不支持补丁撤销")?;
+    Ok(root.join(format!("patch-{}.md", &base_id.to_string()[..8])))
+}
+
+pub fn undo_pushed_commit(repo_path: &str, commit_id: &str) -> Result<(), String> {
+    let repo = open(repo_path)?;
+    if repo.state() != git2::RepositoryState::Clean || !get_status(repo_path)?.is_empty() {
+        return Err("请先提交或清理工作区中的所有更改".into());
+    }
+    let head = repo.head().map_err(|e| e.to_string())?;
+    let oid = git2::Oid::from_str(commit_id).map_err(|e| e.to_string())?;
+    if head.target() != Some(oid) { return Err("只能撤销当前分支最新的提交".into()); }
+    if !head.is_branch() { return Err("请先切换到本地分支".into()); }
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+    if commit.parent_count() != 1 { return Err("根提交或合并提交不能使用此操作".into()); }
+    let parent = commit.parent(0).map_err(|e| e.to_string())?;
+    let branch = head.shorthand().ok_or("无法读取当前分支")?;
+    let config = repo.config().map_err(|e| e.to_string())?;
+    let remote_name = config.get_string(&format!("branch.{branch}.remote")).unwrap_or_else(|_| "origin".into());
+    let remote_ref = config.get_string(&format!("branch.{branch}.merge")).unwrap_or_else(|_| head.name().unwrap_or("").to_owned());
+    let tracking_ref = remote_ref.strip_prefix("refs/heads/").map(|name| format!("refs/remotes/{remote_name}/{name}"))
+        .ok_or("当前分支未配置远程跟踪分支")?;
+    if repo.find_reference(&tracking_ref).ok().and_then(|reference| reference.target()) != Some(oid) {
+        return Err("本地远程跟踪信息未确认远程分支正好位于该提交，请先刷新远程状态".into());
+    }
+    let path = patch_path(&repo, parent.id())?;
+    if path.exists() { return Err("该提交已有待恢复补丁".into()); }
+    let root = repo.workdir().ok_or("裸仓库不支持补丁撤销")?;
+    let diff = git_output(root, &["diff", "--binary", "--full-index", &format!("{}..{}", parent.id(), oid)])?;
+    let metadata = serde_json::json!({ "commit": oid.to_string(), "parent": parent.id().to_string(), "message": commit.message().unwrap_or("") });
+    let contents = format!("# NexusDesk recovery patch\n\n```json\n{}\n```\n\n```diff\n{}\n```\n", serde_json::to_string_pretty(&metadata).map_err(|e| e.to_string())?, diff);
+    std::fs::write(&path, contents).map_err(|e| e.to_string())?;
+    repo.reset(parent.as_object(), git2::ResetType::Hard, None).map_err(|e| e.to_string())?;
+    let result = push_ref(repo_path, true);
+    if let Err(error) = result { return Err(format!("本地提交已撤销，补丁保存在 {}；推送失败：{error}", path.display())); }
+    Ok(())
+}
+
+fn git_output(root: &Path, args: &[&str]) -> Result<String, String> {
+    let mut command = std::process::Command::new("git");
+    command.arg("-C").arg(root).args(args);
+    #[cfg(windows)] { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
+    let output = command.output().map_err(|e| e.to_string())?;
+    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).into_owned()); }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+pub fn restore_pushed_commit(repo_path: &str, base_id: &str) -> Result<(), String> {
+    let repo = open(repo_path)?;
+    let base = git2::Oid::from_str(base_id).map_err(|e| e.to_string())?;
+    let head = repo.head().map_err(|e| e.to_string())?;
+    if head.target() != Some(base) { return Err("补丁只适用于当前最新提交".into()); }
+    let path = patch_path(&repo, base)?;
+    let contents = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let parts: Vec<_> = contents.split("```diff\n").collect();
+    if parts.len() != 2 { return Err("补丁文件格式无效".into()); }
+    let diff = parts[1].strip_suffix("```\n").unwrap_or(parts[1]);
+    let metadata_section = contents.split("```json\n").nth(1).and_then(|s| s.split("\n```").next()).ok_or("补丁元数据无效")?;
+    let metadata: serde_json::Value = serde_json::from_str(metadata_section).map_err(|e| e.to_string())?;
+    if metadata["parent"].as_str() != Some(base_id) { return Err("补丁父提交与当前提交不匹配".into()); }
+    let commit_id = metadata["commit"].as_str().ok_or("补丁提交编号无效")?;
+    let message = metadata["message"].as_str().ok_or("补丁提交说明无效")?;
+    if !get_status(repo_path)?.iter().all(|s| s.path == path.file_name().unwrap().to_string_lossy()) { return Err("请先清理其他工作区更改".into()); }
+    let root = repo.workdir().ok_or("裸仓库不支持补丁恢复")?;
+    let patch_temp = repo.path().join("nexusdesk-recovery.patch");
+    std::fs::write(&patch_temp, diff).map_err(|e| e.to_string())?;
+    let apply = git_output(root, &["apply", "--index", "--binary", &patch_temp.to_string_lossy()]);
+    let _ = std::fs::remove_file(&patch_temp);
+    apply?;
+    let mut index = repo.index().map_err(|e| e.to_string())?;
+    let tree_id = index.write_tree().map_err(|e| e.to_string())?;
+    let tree = repo.find_tree(tree_id).map_err(|e| e.to_string())?;
+    let signature = repo.signature().map_err(|_| "请先配置 Git user.name 和 user.email".to_string())?;
+    let new_id = repo.commit(Some("HEAD"), &signature, &signature, message, &tree, &[&repo.find_commit(base).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
+    let remote = repo.find_commit(git2::Oid::from_str(commit_id).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    let _ = remote;
+    push(repo_path)?;
+    std::fs::remove_file(path).map_err(|e| e.to_string())?;
+    if new_id == base { return Err("补丁没有产生文件更改".into()); }
+    Ok(())
+}
+
 pub fn log(repo_path: &str, limit: usize) -> Result<Vec<LogEntry>, String> {
     let repo = match Repository::discover(repo_path) {
         Ok(repo) => repo,
@@ -393,7 +479,8 @@ pub fn log(repo_path: &str, limit: usize) -> Result<Vec<LogEntry>, String> {
     }
     walk.take(limit.clamp(1, 2000)).map(|id| {
         let c = repo.find_commit(id.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-        Ok(LogEntry { id: c.id().to_string(), parents: c.parent_ids().map(|id| id.to_string()).collect(), message: c.message().unwrap_or("").into(), author: c.author().name().unwrap_or("").into(), time: c.time().seconds(), refs: refs.remove(&c.id().to_string()).unwrap_or_default(), pushed: pushed.contains(&c.id()), is_head: head_id == Some(c.id()) })
+        let recovery_patch = patch_path(&repo, c.id()).is_ok_and(|path| path.is_file());
+        Ok(LogEntry { id: c.id().to_string(), parents: c.parent_ids().map(|id| id.to_string()).collect(), message: c.message().unwrap_or("").into(), author: c.author().name().unwrap_or("").into(), time: c.time().seconds(), refs: refs.remove(&c.id().to_string()).unwrap_or_default(), pushed: pushed.contains(&c.id()), recovery_patch, is_head: head_id == Some(c.id()) })
     }).collect()
 }
 #[derive(Serialize)]
@@ -419,7 +506,7 @@ pub fn path_history(path: &str, limit: usize) -> Result<PathHistory, String> {
         result.entries.push(PathHistoryEntry { commit: LogEntry {
             id: commit.id().to_string(), parents: commit.parent_ids().map(|id| id.to_string()).collect(),
             message: commit.message().unwrap_or("").into(), author: commit.author().name().unwrap_or("").into(),
-            time: commit.time().seconds(), refs: vec![], pushed: false, is_head: false,
+            time: commit.time().seconds(), refs: vec![], pushed: false, recovery_patch: patch_path(&repo, commit.id()).is_ok_and(|path| path.is_file()), is_head: false,
         }, changes });
         if result.entries.len() >= limit.clamp(1, 2000) { break; }
     }
@@ -695,6 +782,29 @@ mod tests {
         assert!(history[0].pushed);
         assert!(undo_commit(f.path(), &commit_id).is_err());
 
+        drop(Repository::open_bare(&remote_path).unwrap());
+        std::fs::remove_dir_all(remote_path).unwrap();
+    }
+    #[test]
+    fn pushed_commit_can_be_saved_as_patch_and_restored() {
+        let f = Fixture::new();
+        let remote_path = f.0.with_extension("recovery-remote.git");
+        drop(Repository::init_bare(&remote_path).unwrap());
+        open(f.path()).unwrap().remote("origin", remote_path.to_str().unwrap()).unwrap();
+        f.write("base\n"); stage(f.path(), "note.md", true).unwrap();
+        let base = commit(f.path(), "base").unwrap(); push(f.path()).unwrap();
+        f.write("restored\n"); stage(f.path(), "note.md", true).unwrap();
+        let changed = commit(f.path(), "recover this").unwrap(); push(f.path()).unwrap();
+
+        undo_pushed_commit(f.path(), &changed).unwrap();
+        assert_eq!(open(f.path()).unwrap().head().unwrap().target(), Some(git2::Oid::from_str(&base).unwrap()));
+        assert!(f.0.join(format!("patch-{}.md", &base[..8])).is_file());
+        assert!(log(f.path(), 100).unwrap()[0].recovery_patch);
+
+        restore_pushed_commit(f.path(), &base).unwrap();
+        assert_eq!(std::fs::read_to_string(f.0.join("note.md")).unwrap(), "restored\n");
+        assert_eq!(log(f.path(), 100).unwrap()[0].message, "recover this");
+        assert!(!f.0.join(format!("patch-{}.md", &base[..8])).exists());
         drop(Repository::open_bare(&remote_path).unwrap());
         std::fs::remove_dir_all(remote_path).unwrap();
     }

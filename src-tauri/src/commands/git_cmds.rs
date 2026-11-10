@@ -141,6 +141,14 @@ pub async fn undo_git_commit(repo_path: String, commit_id: String) -> Result<(),
     tauri::async_runtime::spawn_blocking(move || git::undo_commit(&repo_path, &commit_id)).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
+pub async fn undo_pushed_git_commit(repo_path: String, commit_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || git::undo_pushed_commit(&repo_path, &commit_id)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+pub async fn restore_pushed_git_commit(repo_path: String, base_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || git::restore_pushed_commit(&repo_path, &base_id)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
 pub async fn get_git_tree_status(repo_path: String) -> Result<Vec<git::TreeStatus>, String> {
     tauri::async_runtime::spawn_blocking(move || git::tree_status(&repo_path)).await.map_err(|e| e.to_string())?
 }

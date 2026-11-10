@@ -293,6 +293,8 @@ pub fn run() {
             commands::git_cmds::get_git_settings,
             commands::git_cmds::save_git_settings,
             commands::git_cmds::undo_git_commit,
+            commands::git_cmds::undo_pushed_git_commit,
+            commands::git_cmds::restore_pushed_git_commit,
             commands::git_cmds::init_git_repository,
             commands::git_cmds::is_git_repository,
             commands::preview_cmds::start_html_preview,
