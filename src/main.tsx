@@ -51,8 +51,8 @@ async function boot() {
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<GlobalSpeechInput />);
     return;
   }
-  const [{ default: App }, { CaptureResult }, { useWorkspaceStore }, { useTerminalStore }] = await Promise.all([
-    import("./App"), import("./components/CaptureResult"), import("./store/workspaceStore"),
+  const [{ default: App }, { useWorkspaceStore }, { useTerminalStore }] = await Promise.all([
+    import("./App"), import("./store/workspaceStore"),
     import("./store/terminalStore"),
   ]);
   window.addEventListener("global-settings-changed", () => {
@@ -91,7 +91,7 @@ async function boot() {
     });
   }
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode><App /><CaptureResult /></React.StrictMode>,
+    <React.StrictMode><App /></React.StrictMode>,
   );
 }
 void boot().catch(async error => {
