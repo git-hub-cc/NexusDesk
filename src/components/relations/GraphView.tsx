@@ -266,7 +266,20 @@ export function GraphView() {
       setContextFile((event.target as HTMLElement).closest<HTMLElement>("[data-graph-file]")?.dataset.graphFile ?? null);
       setContextNode((event.target as HTMLElement).closest<HTMLElement>("[data-graph-node]")?.dataset.graphNode ?? null);
     }}>
-      <div ref={containerRef} data-graph-root tabIndex={0} onKeyDown={openContextMenuFromKeyboard} onKeyDownCapture={speedSearch.onKeyDownCapture} className="relative flex flex-col h-full overflow-hidden text-xs"
+      <div ref={containerRef} data-graph-root tabIndex={0} onKeyDown={event => {
+        openContextMenuFromKeyboard(event);
+        if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]')) return;
+        const target = event.target as HTMLElement;
+        const file = target.closest<HTMLElement>("[data-graph-file]")?.dataset.graphFile;
+        const categoryName = target.closest<HTMLElement>("[data-graph-category]")?.dataset.graphCategory;
+        const category = categories.find(item => item.name === (file ? target.closest<HTMLElement>("[data-graph-category]")?.dataset.graphCategory : categoryName));
+        if (!category || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        if (event.key === "F2" && !file) {
+          event.preventDefault(); event.stopPropagation(); setRename(category);
+        } else if (event.key === "Delete") {
+          event.preventDefault(); event.stopPropagation(); void remove(category, file ?? null);
+        }
+      }} onKeyDownCapture={speedSearch.onKeyDownCapture} className="relative flex flex-col h-full overflow-hidden text-xs"
         onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = "none"; }}
         onDrop={event => { event.preventDefault(); event.stopPropagation(); if (root) setError("请将 .tree 文件拖入图谱分类，不能放在根目录。"); }}>
         {speedSearch.searchBox}
@@ -292,9 +305,9 @@ export function GraphView() {
       {contextFile && <ContextMenu.Item className="ide-menu-item" onSelect={() => { void revealItemInDir(contextFile).catch(cause => setError(String(cause))); }}>打开文件所在目录</ContextMenu.Item>}
       {selectedCategory && <>
         {!contextFile && <ContextMenu.Separator className="h-px my-1 bg-ide-panel-border" />}
-        {contextFile ? <ContextMenu.Item className="ide-menu-item" onSelect={() => void remove(selectedCategory, contextFile)}>取消关联...</ContextMenu.Item> : <>
-          <ContextMenu.Item className="ide-menu-item" onSelect={() => { dialogFromMenu.current = true; setRename(selectedCategory); }}>重命名...</ContextMenu.Item>
-          <ContextMenu.Item className="ide-menu-item" onSelect={() => void remove(selectedCategory, null)}>删除...</ContextMenu.Item>
+        {contextFile ? <ContextMenu.Item className="ide-menu-item" onSelect={() => void remove(selectedCategory, contextFile)}>取消关联... <span className="ml-auto text-gray-500">Delete</span></ContextMenu.Item> : <>
+          <ContextMenu.Item className="ide-menu-item" onSelect={() => { dialogFromMenu.current = true; setRename(selectedCategory); }}>重命名... <span className="ml-auto text-gray-500">F2</span></ContextMenu.Item>
+          <ContextMenu.Item className="ide-menu-item" onSelect={() => void remove(selectedCategory, null)}>删除... <span className="ml-auto text-gray-500">Delete</span></ContextMenu.Item>
         </>}
       </>}
       {contextNode && (nodeCounts.get(contextNode) ?? 0) > 1 && <ContextMenu.Item className="ide-menu-item" onSelect={() => openReverseTree(contextNode)}>查看反向生成树</ContextMenu.Item>}

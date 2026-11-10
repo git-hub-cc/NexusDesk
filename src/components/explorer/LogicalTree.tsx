@@ -229,7 +229,7 @@ export const LogicalTree: React.FC = React.memo(() => {
             await fsApi.removeLogicalFile(filePath, name);
             setHiddenFiles(await fsApi.getHiddenLogicalFiles());
             await fetchLogicalTree();
-          })}>取消关联</ContextMenu.Item>}
+          })}>取消关联 <span className="ml-auto text-gray-500">Delete</span></ContextMenu.Item>}
           {name !== null && !filePath && <>
             <ContextMenu.Item className="ide-menu-item" disabled={!rootPath || isRemotePath(rootPath)} onSelect={() => void run(async () => {
               if (!rootPath) return;
@@ -241,13 +241,13 @@ export const LogicalTree: React.FC = React.memo(() => {
               useLayoutStore.getState().openBottomPanel("terminal");
             })}>打开所在目录（终端）</ContextMenu.Item>
             <ContextMenu.Separator className="h-px my-1 bg-ide-panel-border" />
-            <ContextMenu.Item className="ide-menu-item" onSelect={() => { dialogFromMenu.current = true; setRename(name); }}>重命名...</ContextMenu.Item>
+            <ContextMenu.Item className="ide-menu-item" onSelect={() => { dialogFromMenu.current = true; setRename(name); }}>重命名... <span className="ml-auto text-gray-500">F2</span></ContextMenu.Item>
             <ContextMenu.Item className="ide-menu-item" onSelect={() => void run(async () => {
               dialogFromMenu.current = true;
               if (!await confirmDelete({ title: "删除逻辑分类", description: "仅移除分类及文件关联，磁盘中的实际文件会保留。", paths: [name] })) return;
               await fsApi.editLogicalFolder(name, null);
               await fetchLogicalTree();
-            })}>删除...</ContextMenu.Item>
+            })}>删除... <span className="ml-auto text-gray-500">Delete</span></ContextMenu.Item>
           </>}
         </ContextMenu.Content>
       </ContextMenu.Portal>
@@ -283,6 +283,34 @@ export const LogicalTree: React.FC = React.memo(() => {
       <div ref={containerRef} tabIndex={0} onKeyDown={event => {
         openContextMenuFromKeyboard(event);
         if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]')) return;
+        if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "Delete" || event.key === "F2")) {
+          const selected = treeRef.current?.selectedNodes ?? [];
+          if (selected.length === 1) {
+            const node = selected[0];
+            const category = logicalTreeData.find(entry => node.id.startsWith(`${entry.id}:`));
+            const isCategory = node.data.id.startsWith("logical_");
+            const isDirectFile = !isCategory && category && node.parent?.id === category.id;
+            if (event.key === "F2" && isCategory) {
+              event.preventDefault(); event.stopPropagation(); setRename(node.data.name);
+            } else if (event.key === "Delete" && (isCategory || isDirectFile)) {
+              event.preventDefault(); event.stopPropagation();
+              if (isCategory) {
+                void run(async () => {
+                  if (!await confirmDelete({ title: "删除逻辑分类", description: "仅移除分类及文件关联，磁盘中的实际文件会保留。", paths: [node.data.name] })) return;
+                  await fsApi.editLogicalFolder(node.data.name, null);
+                  await fetchLogicalTree();
+                });
+              } else if (!node.data.missing) {
+                void run(async () => {
+                  if (!await confirmDelete({ title: "取消关联", description: `仅移除该项在“${category.name}”中的关联，物理分区的文件及内容会保留。`, paths: [node.data.id], confirmLabel: "取消关联" })) return;
+                  await fsApi.removeLogicalFile(node.data.id, category.name);
+                  setHiddenFiles(await fsApi.getHiddenLogicalFiles());
+                  await fetchLogicalTree();
+                });
+              }
+            }
+          }
+        }
         if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "c") {
           const paths = (treeRef.current?.selectedNodes ?? []).filter((node: any) => !node.data.missing && !node.data.id.startsWith("logical_") && !isRemotePath(node.data.id)).map((node: any) => node.data.id);
           if (paths.length) { event.preventDefault(); event.stopPropagation(); void run(async () => { await flushPendingWrites(); await fsApi.writeFileClipboard(paths, false); }); }
