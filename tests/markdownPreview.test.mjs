@@ -6,6 +6,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../src/lib/markdownPreview.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, {
@@ -31,6 +32,37 @@ test('preview removes scripts, event handlers and unsafe URLs', () => {
     assert.doesNotMatch(html, /<script|onerror|javascript:|data:text|data:image\/svg/);
     assert.equal(markdownUrlTransform('data:image/png;base64,xxx', 'href', { tagName: 'a' }), '');
     assert.match(render('![](.asset/image%20(1).png)'), /src=".asset\/image%20\(1\).png"/);
+});
+
+test('worker recognizes only valid Markdown tables and keeps pipes inside cells', () => {
+    const workerSource = fs.readFileSync(new URL('../src/workers/markdownPreview.worker.js', import.meta.url), 'utf8');
+    const context = { self: { postMessage(message) { context.result = message; } } };
+    vm.runInNewContext(workerSource, context);
+    context.self.onmessage({ data: { type: 'render', id: 1, markdown: [
+        'Text with a | separator and `x|y` code.',
+        '',
+        '| 场景 | 避免使用 | 要求使用 |',
+        '| --- | --- | --- |',
+        '| PowerShell | `&&`、`||` | 分开执行 |',
+    ].join('\n') } });
+    const html = context.result.html;
+    assert.match(html, /<p>Text with a \| separator and <code>x\|y<\/code> code\.<\/p>/);
+    assert.equal((html.match(/<th>/g) || []).length, 3);
+    assert.equal((html.match(/<td>/g) || []).length, 3);
+    assert.match(html, /<code>[^<]*<\/code>、<code>\|\|<\/code>/);
+});
+
+test('worker preserves an escaped pipe at the end of a table row without outer pipes', () => {
+    const workerSource = fs.readFileSync(new URL('../src/workers/markdownPreview.worker.js', import.meta.url), 'utf8');
+    const context = { self: { postMessage(message) { context.result = message; } } };
+    vm.runInNewContext(workerSource, context);
+    context.self.onmessage({ data: { type: 'render', id: 1, markdown: [
+        'left | right',
+        '--- | ---',
+        'a | b\\|',
+    ].join('\n') } });
+
+    assert.match(context.result.html, /<td>b\|<\/td>/);
 });
 
 test('asset resolution preserves Base64 and decodes exported local image filenames', () => {

@@ -37,7 +37,7 @@ const inline = value => {
     const url = safeUrl(href);
     return url ? hold(`<a href="${escapeHtml(url)}"${/^(?:https?:|mailto:)/i.test(url) ? ' target="_blank" rel="noopener noreferrer"' : ""}${title ? ` title="${escapeHtml(title)}"` : ""}>${label}</a>`) : label;
   });
-  text = text.replace(/`([^`]+)`/g, (_, code) => hold(`<code>${escapeHtml(code)}</code>`));
+  text = text.replace(/`([^`]+)`/g, (_, code) => hold(`<code>${code}</code>`));
   text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_]+)__/g, "<strong>$1</strong>");
   text = text.replace(/\*([^*]+)\*/g, "<em>$1</em>").replace(/_([^_]+)_/g, "<em>$1</em>");
   text = text.replace(/~~([^~]+)~~/g, "<del>$1</del>");
@@ -55,6 +55,40 @@ const highlight = (value, language) => {
   return code.replace(/\u0000(\d+)\u0000/g, (_, index) => parts[Number(index)]);
 };
 
+const splitTableRow = line => {
+  const cells = [];
+  let cell = "", codeTicks = 0;
+  let value = line.trim();
+  if (value.startsWith("|")) value = value.slice(1);
+  if (value.endsWith("|")) {
+    let backslashes = 0;
+    for (let index = value.length - 2; index >= 0 && value[index] === "\\"; index -= 1) backslashes += 1;
+    if (backslashes % 2 === 0) value = value.slice(0, -1);
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === "\\" && value[index + 1] === "|") { cell += "|"; index += 1; continue; }
+    if (char === "`") {
+      let end = index + 1;
+      while (value[end] === "`") end += 1;
+      const ticks = end - index;
+      codeTicks = codeTicks === 0 ? ticks : codeTicks === ticks ? 0 : codeTicks;
+      cell += value.slice(index, end);
+      index = end - 1;
+      continue;
+    }
+    if (char === "|" && codeTicks === 0) { cells.push(cell); cell = ""; continue; }
+    cell += char;
+  }
+  cells.push(cell);
+  return cells;
+};
+
+const isTableDelimiter = (line, columnCount) => {
+  const cells = splitTableRow(line);
+  return cells.length === columnCount && cells.every(cell => /^\s*:?-{3,}:?\s*$/.test(cell));
+};
+
 const render = markdown => {
   const lines = String(markdown || "").replace(/\r\n?/g, "\n").split("\n");
   const output = [];
@@ -64,7 +98,8 @@ const render = markdown => {
   const flushQuote = () => { if (quote.length) { output.push(`<blockquote>${quote.map(item => `<p>${inline(item)}</p>`).join("")}</blockquote>`); quote = []; } };
   const flushTable = () => { if (table) { const [head, ...rows] = table; output.push(`<table><thead><tr>${head.map(cell => `<th>${inline(cell.trim())}</th>`).join("")}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${inline(cell.trim())}</td>`).join("")}</tr>`).join("")}</tbody></table>`); table = null; } };
   const flushCode = () => { if (code) { output.push(`<pre><code class="${code.lang ? `language-${escapeHtml(code.lang)} ` : ""}hljs">${highlight(code.lines.join("\n"), code.lang)}</code></pre>`); code = null; } };
-  for (const line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
     if (code) { if (/^```/.test(line.trim())) flushCode(); else code.lines.push(line); continue; }
     const fence = line.match(/^\s*```\s*([^\s]*)\s*$/); if (fence) { flushParagraph(); flushList(); flushQuote(); flushTable(); code = { lang: fence[1], lines: [] }; continue; }
     if (!line.trim()) { flushParagraph(); flushList(); flushQuote(); flushTable(); continue; }
@@ -72,9 +107,18 @@ const render = markdown => {
     if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) { flushParagraph(); flushList(); flushQuote(); flushTable(); output.push("<hr>"); continue; }
     const quoteLine = line.match(/^\s*>\s?(.*)$/); if (quoteLine) { flushParagraph(); flushList(); flushTable(); quote.push(quoteLine[1]); continue; } if (quote.length) flushQuote();
     const item = line.match(/^\s*([-+*]|\d+[.)])\s+(.+)$/); if (item) { flushParagraph(); flushQuote(); flushTable(); const type = /^\d/.test(item[1]) ? "ol" : "ul"; if (!list || list.type !== type) { flushList(); list = { type, items: [] }; } const task = item[2].match(/^\[([ xX])\]\s+(.*)$/); list.items.push(`<li>${task ? `<input type="checkbox" disabled${task[1].toLowerCase() === "x" ? " checked" : ""}> ${inline(task[2])}` : inline(item[2])}</li>`); continue; } if (list) flushList();
-    if (line.includes("|") && /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) continue;
-    if (line.includes("|") && !table) { flushParagraph(); const cells = line.replace(/^\||\|$/g, "").split("|"); table = [cells]; continue; }
-    if (table && line.includes("|")) { table.push(line.replace(/^\||\|$/g, "").split("|")); continue; } if (table) flushTable();
+    if (!table && line.includes("|") && lines[lineIndex + 1] && isTableDelimiter(lines[lineIndex + 1], splitTableRow(line).length)) {
+      flushParagraph();
+      table = [splitTableRow(line)];
+      lineIndex += 1;
+      continue;
+    }
+    if (table && line.includes("|")) {
+      const cells = splitTableRow(line);
+      table.push([...cells.slice(0, table[0].length), ...Array(Math.max(0, table[0].length - cells.length)).fill("")]);
+      continue;
+    }
+    if (table) flushTable();
     paragraph.push(line.trim());
   }
   flushCode(); flushParagraph(); flushList(); flushQuote(); flushTable();
