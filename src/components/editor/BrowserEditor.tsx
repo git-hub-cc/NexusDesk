@@ -1,8 +1,7 @@
 import { reserveBrowser } from "@/lib/browserPool";
 import { browserVisibility } from "@/lib/browserVisibility";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ArrowLeft, ArrowRight, RotateCw, House, Globe } from "lucide-react";
@@ -14,6 +13,7 @@ import { ChatEditor } from "@/components/chat/ChatEditor";
 import { BrowserPasswords } from "./BrowserPasswords";
 import { BrowserDownloads } from "./BrowserDownloads";
 import { BrowserExtensions, CHROME_EXTENSION_STORE_URL } from "./BrowserExtensions";
+import { NavigationHome } from "@/components/navigation/NavigationHome";
 
 export const BROWSER_HOME = "nexusdesk:nav";
 
@@ -52,43 +52,28 @@ export function BrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | 
 }
 
 function NavigationEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "right"; active: boolean }) {
-  const frame = useRef<HTMLIFrameElement>(null);
-  useEffect(() => {
-    const receive = (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow || event.origin !== window.location.origin) return;
-      if (event.data?.type === "nexusdesk:export-navigation") {
-        const { requestId, filename, content } = event.data;
-        if (typeof requestId !== "string" || typeof filename !== "string" || typeof content !== "string") return;
-        void (async () => {
-          try {
-            const file = await save({
-              title: "导出导航数据",
-              defaultPath: filename,
-              filters: [{ name: "JSON", extensions: ["json"] }],
-            });
-            if (!file) return;
-            await invoke("navigation_export_data", { file, content });
-            frame.current?.contentWindow?.postMessage({ type: "nexusdesk:export-complete", requestId }, window.location.origin);
-          } catch (reason) {
-            frame.current?.contentWindow?.postMessage({ type: "nexusdesk:export-failed", requestId, message: String(reason) }, window.location.origin);
-          }
-        })();
-        return;
-      }
-      if (event.data?.type !== "nexusdesk:navigate") return;
-      try {
-        const url = new URL(event.data.url);
-        if (!["https:", "http:"].includes(url.protocol)) return;
-        const state = useWorkspaceStore.getState();
-        state.setFocusedPane(pane);
-        const id = `browser:${crypto.randomUUID()}`;
-        state.openTab({ id, path: id, title: url.hostname, browser: { root: tab.browser!.root, url: url.href } });
-      } catch { /* Ignore invalid website addresses. */ }
-    };
-    window.addEventListener("message", receive);
-    return () => window.removeEventListener("message", receive);
-  }, [tab.id, tab.browser!.root, active, pane]);
-  return <div className={`absolute inset-0 flex flex-col bg-ide-bg ${active ? "" : "hidden"}`}><iframe ref={frame} title="导航工作台" src={`${import.meta.env.BASE_URL}navigation/index.html`} className="min-h-0 w-full flex-1 border-0 bg-ide-bg" /></div>;
+  const openUrl = (value: string) => {
+    try {
+      const url = new URL(value);
+      if (!["https:", "http:"].includes(url.protocol)) return;
+      const state = useWorkspaceStore.getState();
+      state.setFocusedPane(pane);
+      const id = `browser:${crypto.randomUUID()}`;
+      state.openTab({ id, path: id, title: url.hostname, browser: { root: tab.browser!.root, url: url.href } });
+    } catch { /* Ignore invalid website addresses. */ }
+  };
+  const navigateAddress = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try { openUrl(validateBrowserAddress((event.currentTarget.elements.namedItem("navigation-address") as HTMLInputElement).value)); }
+    catch (reason) { console.warn("Invalid navigation address", reason); }
+  };
+  return <div className={`absolute inset-0 flex flex-col bg-ide-bg ${active ? "" : "hidden"}`}>
+    <form className="flex h-10 shrink-0 items-center gap-2 border-b border-ide-panel-border px-3 text-gray-400" onSubmit={navigateAddress}>
+      <Globe size={15} />
+      <input name="navigation-address" aria-label="网页地址" placeholder="输入网址，例如 example.com 或 https://example.com" className="min-w-0 flex-1 bg-transparent text-xs text-gray-200 outline-none" />
+    </form>
+    <NavigationHome onNavigate={openUrl} />
+  </div>;
 }
 
 function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "right"; active: boolean }) {

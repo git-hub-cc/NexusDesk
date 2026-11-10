@@ -6,7 +6,9 @@
     "nexusdesk.music.libraryTab",
     "nexusdesk.http.extraction.v1",
     "nexusdesk.codex.autoReview",
-    "nexusdesk.codex.autoReviewPrompt"
+    "nexusdesk.codex.autoReviewPrompt",
+    "nexusdesk.navigation.githubToken",
+    "nexusdesk.navigation.githubRepo"
   ],
   "prefixes": ["sftp-profile:", "sftp-label:", "nexusdesk-ui:"]
 }
