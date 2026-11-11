@@ -1,36 +1,55 @@
 use tauri::{Emitter, Manager};
 
 fn load_results() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
-    static RESULTS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> = std::sync::OnceLock::new();
+    static RESULTS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, String>>,
+    > = std::sync::OnceLock::new();
     RESULTS.get_or_init(Default::default)
 }
 
 // Keep titles for speculative/retained views whose editor listener is not attached.
 fn document_titles() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
-    static TITLES: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> = std::sync::OnceLock::new();
+    static TITLES: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, String>>,
+    > = std::sync::OnceLock::new();
     TITLES.get_or_init(Default::default)
 }
 
 pub(super) fn clear_download_error(window: &tauri::Window, label: &str) {
-    if let Ok(mut results) = load_results().lock() { results.insert(label.into(), String::new()); }
+    if let Ok(mut results) = load_results().lock() {
+        results.insert(label.into(), String::new());
+    }
     let _ = window.emit_to(window.label(), &format!("browser-load-result-{label}"), "");
 }
 
 // OAuth query strings/fragments can contain credentials. Only record the route.
 fn diagnostic_url(url: &tauri::Url) -> String {
-    format!("{}://{}{}", url.scheme(), url.host_str().unwrap_or(""), url.path())
+    format!(
+        "{}://{}{}",
+        url.scheme(),
+        url.host_str().unwrap_or(""),
+        url.path()
+    )
 }
 
 fn navigation_status(status: i32) -> &'static str {
     match status {
-        0 => "UNKNOWN", 6 => "SERVER_UNREACHABLE", 7 => "TIMEOUT",
-        9 => "REDIRECT_FAILED", 14 => "OPERATION_CANCELED", _ => "OTHER",
+        0 => "UNKNOWN",
+        6 => "SERVER_UNREACHABLE",
+        7 => "TIMEOUT",
+        9 => "REDIRECT_FAILED",
+        14 => "OPERATION_CANCELED",
+        _ => "OTHER",
     }
 }
 
 fn navigation_message(success: bool, status: i32) -> Option<String> {
-    if status == 14 { return None; }
-    if success { return Some(String::new()); }
+    if status == 14 {
+        return None;
+    }
+    if success {
+        return Some(String::new());
+    }
     Some(match status {
         6 => "无法连接服务器，请检查网络或代理后重试。".into(),
         7 => "网页连接超时，请重试。".into(),
@@ -40,7 +59,11 @@ fn navigation_message(success: bool, status: i32) -> Option<String> {
     })
 }
 
-fn trace_browser_result<T, E: std::fmt::Display>(label: &str, operation: &str, result: Result<T, E>) -> Result<T, String> {
+fn trace_browser_result<T, E: std::fmt::Display>(
+    label: &str,
+    operation: &str,
+    result: Result<T, E>,
+) -> Result<T, String> {
     result.map_err(|error| {
         log::error!(target: "browser", "label={label} operation={operation} failed: {error}");
         error.to_string()
@@ -64,19 +87,40 @@ const BROWSER_BASE_ARGS: &str = concat!(
 
 #[cfg(target_os = "windows")]
 fn browser_proxy_mode() -> &'static str {
-    use winreg::{enums::{HKEY_CURRENT_USER, KEY_READ}, RegKey};
+    use winreg::{
+        RegKey,
+        enums::{HKEY_CURRENT_USER, KEY_READ},
+    };
 
-    let Ok(internet_settings) = RegKey::predef(HKEY_CURRENT_USER)
-        .open_subkey_with_flags("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", KEY_READ)
-    else { return "unknown"; };
-    let proxy_enabled = internet_settings.get_value::<u32, _>("ProxyEnable").unwrap_or_default() != 0
-        && internet_settings.get_value::<String, _>("ProxyServer").is_ok_and(|value| !value.trim().is_empty());
-    let pac_enabled = internet_settings.get_value::<String, _>("AutoConfigURL").is_ok_and(|value| !value.trim().is_empty());
+    let Ok(internet_settings) = RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
+        KEY_READ,
+    ) else {
+        return "unknown";
+    };
+    let proxy_enabled = internet_settings
+        .get_value::<u32, _>("ProxyEnable")
+        .unwrap_or_default()
+        != 0
+        && internet_settings
+            .get_value::<String, _>("ProxyServer")
+            .is_ok_and(|value| !value.trim().is_empty());
+    let pac_enabled = internet_settings
+        .get_value::<String, _>("AutoConfigURL")
+        .is_ok_and(|value| !value.trim().is_empty());
     let auto_detect = RegKey::predef(HKEY_CURRENT_USER)
-        .open_subkey_with_flags("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Connections", KEY_READ)
+        .open_subkey_with_flags(
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Connections",
+            KEY_READ,
+        )
         .and_then(|connections| connections.get_raw_value("DefaultConnectionSettings"))
         .ok()
-        .and_then(|value| value.bytes.get(4..8).map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap())))
+        .and_then(|value| {
+            value
+                .bytes
+                .get(4..8)
+                .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+        })
         .is_some_and(|flags| flags & 8 != 0);
 
     match (proxy_enabled, pac_enabled, auto_detect) {
@@ -91,12 +135,16 @@ fn browser_proxy_mode() -> &'static str {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn browser_proxy_mode() -> &'static str { "platform-default" }
+fn browser_proxy_mode() -> &'static str {
+    "platform-default"
+}
 
 #[cfg(target_os = "windows")]
 fn browser_args(proxy_mode: &str) -> String {
     let mut args = BROWSER_BASE_ARGS.to_string();
-    if proxy_mode == "direct" { args.push_str("--proxy-auto-detect=false "); }
+    if proxy_mode == "direct" {
+        args.push_str("--proxy-auto-detect=false ");
+    }
     args
 }
 
@@ -106,8 +154,14 @@ fn browser_directory(app: &tauri::AppHandle) -> Result<std::path::PathBuf, Strin
     Ok(directory)
 }
 
-pub(super) fn open_extension_page(window: &tauri::Window, parent: &str, url: &str) -> Result<(), String> {
-    window.emit_to(window.label(), &format!("browser-new-tab-{parent}"), url).map_err(|e| e.to_string())
+pub(super) fn open_extension_page(
+    window: &tauri::Window,
+    parent: &str,
+    url: &str,
+) -> Result<(), String> {
+    window
+        .emit_to(window.label(), &format!("browser-new-tab-{parent}"), url)
+        .map_err(|e| e.to_string())
 }
 
 fn close_browser_children(window: &tauri::Window, parent_label: &str) {
@@ -125,34 +179,61 @@ pub fn close_window_popups(window: &tauri::Window) {
     close_browser_children(window, &format!("{}-browser", window.label()));
     let prefix = format!("{}-browser-", window.label());
     for (label, popup) in window.app_handle().webview_windows() {
-        if label.starts_with(&prefix) { let _ = popup.destroy(); }
+        if label.starts_with(&prefix) {
+            let _ = popup.destroy();
+        }
     }
 }
 
 fn browser_url(value: &str) -> Result<tauri::Url, String> {
     let url = tauri::Url::parse(value).map_err(|e| e.to_string())?;
-    if !allowed_browser_url(&url) { return Err("不支持的网页地址".into()); }
+    if !allowed_browser_url(&url) {
+        return Err("不支持的网页地址".into());
+    }
     Ok(url)
 }
 
 fn is_extension_url(url: &tauri::Url) -> bool {
-    url.scheme() == "chrome-extension" && url.host_str().is_some_and(|id|
-        id.len() == 32 && id.bytes().all(|byte| (b'a'..=b'p').contains(&byte)))
-        && url.username().is_empty() && url.password().is_none() && url.port().is_none()
+    url.scheme() == "chrome-extension"
+        && url.host_str().is_some_and(|id| {
+            id.len() == 32 && id.bytes().all(|byte| (b'a'..=b'p').contains(&byte))
+        })
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.port().is_none()
 }
 
 fn allowed_browser_url(url: &tauri::Url) -> bool {
-    matches!(url.scheme(), "http" | "https") || url.as_str() == "about:blank" || is_extension_url(url)
+    matches!(url.scheme(), "http" | "https")
+        || url.as_str() == "about:blank"
+        || is_extension_url(url)
 }
 
 // Preserve an opener for authentication flows and explicitly sized popups.
 // Blank windows may be navigated by their opener after an asynchronous request.
 fn needs_native_popup(url: &tauri::Url, explicit_window: bool) -> bool {
-    !is_extension_url(url) && (explicit_window
-        || url.as_str() == "about:blank"
-        || url.path().to_ascii_lowercase().split('/')
-            .any(|part| matches!(part, "oauth" | "oauth2" | "authorize" | "authorization" | "login" | "signin" | "sso" | "saml"))
-        || url.query_pairs().any(|(key, _)| matches!(key.as_ref(), "client_id" | "redirect_uri" | "response_type" | "SAMLRequest")))
+    !is_extension_url(url)
+        && (explicit_window
+            || url.as_str() == "about:blank"
+            || url.path().to_ascii_lowercase().split('/').any(|part| {
+                matches!(
+                    part,
+                    "oauth"
+                        | "oauth2"
+                        | "authorize"
+                        | "authorization"
+                        | "login"
+                        | "signin"
+                        | "sso"
+                        | "saml"
+                )
+            })
+            || url.query_pairs().any(|(key, _)| {
+                matches!(
+                    key.as_ref(),
+                    "client_id" | "redirect_uri" | "response_type" | "SAMLRequest"
+                )
+            }))
 }
 
 #[cfg(test)]
@@ -172,7 +253,13 @@ mod tests {
 
     #[test]
     fn diagnostic_urls_remove_credentials_and_authentication_parameters() {
-        assert_eq!(diagnostic_url(&tauri::Url::parse("https://user:secret@example.com/login?token=secret#code").unwrap()), "https://example.com/login");
+        assert_eq!(
+            diagnostic_url(
+                &tauri::Url::parse("https://user:secret@example.com/login?token=secret#code")
+                    .unwrap()
+            ),
+            "https://example.com/login"
+        );
         assert!(validate_label("main", "main-browser-123").is_ok());
         assert!(validate_label("main", "other-browser-123").is_err());
     }
@@ -185,36 +272,66 @@ mod tests {
         assert!(allowed_browser_url(&url));
         assert!(!needs_native_popup(&url, false));
         assert!(!needs_native_popup(&url, true));
-        for value in ["chrome-extension://invalid/options.html", "file:///options.html", "javascript:alert(1)", "chrome://extensions/"] {
+        for value in [
+            "chrome-extension://invalid/options.html",
+            "file:///options.html",
+            "javascript:alert(1)",
+            "chrome://extensions/",
+        ] {
             assert!(browser_url(value).is_err());
         }
     }
 
     #[test]
     fn distinguishes_links_from_authentication_popups() {
-        for value in ["https://example.com/docs", "https://example.com/blog/login-guide"] {
-            assert!(!needs_native_popup(&tauri::Url::parse(value).unwrap(), false));
+        for value in [
+            "https://example.com/docs",
+            "https://example.com/blog/login-guide",
+        ] {
+            assert!(!needs_native_popup(
+                &tauri::Url::parse(value).unwrap(),
+                false
+            ));
         }
-        for value in ["https://example.com/oauth2/authorize", "https://example.com/login", "https://example.com/connect?client_id=app", "about:blank"] {
-            assert!(needs_native_popup(&tauri::Url::parse(value).unwrap(), false));
+        for value in [
+            "https://example.com/oauth2/authorize",
+            "https://example.com/login",
+            "https://example.com/connect?client_id=app",
+            "about:blank",
+        ] {
+            assert!(needs_native_popup(
+                &tauri::Url::parse(value).unwrap(),
+                false
+            ));
         }
-        assert!(needs_native_popup(&tauri::Url::parse("https://example.com/").unwrap(), true));
+        assert!(needs_native_popup(
+            &tauri::Url::parse("https://example.com/").unwrap(),
+            true
+        ));
     }
 }
 
 fn child(window: &tauri::Window, label: &str) -> Result<tauri::Webview, String> {
     validate_label(window.label(), label)?;
-    window.get_webview(label).ok_or_else(|| "网页标签已关闭".into())
+    window
+        .get_webview(label)
+        .ok_or_else(|| "网页标签已关闭".into())
 }
 
 fn validate_label(owner: &str, label: &str) -> Result<(), String> {
-    if !label.starts_with(&format!("{owner}-browser-")) { return Err("无效的网页标签".into()); }
+    if !label.starts_with(&format!("{owner}-browser-")) {
+        return Err("无效的网页标签".into());
+    }
     Ok(())
 }
 
 fn clear_browser_state(window: &tauri::Window, label: &str) {
-    if let Ok(mut titles) = document_titles().lock() { titles.remove(label); }
-    if let Ok(mut results) = load_results().lock() { results.remove(label); }
+    if let Ok(mut titles) = document_titles().lock() {
+        titles.remove(label);
+    }
+    if let Ok(mut results) = load_results().lock() {
+        results.remove(label);
+    }
     close_browser_children(window, label);
 }
 
@@ -230,37 +347,60 @@ fn observe_browser_fullscreen(view: &tauri::Webview, window: tauri::Window) -> R
             let mut token = 0;
             let mut previous_fullscreen = None;
             core.add_ContainsFullScreenElementChanged(
-                &webview2_com::ContainsFullScreenElementChangedEventHandler::create(Box::new(move |sender, _| {
-                    if let Some(sender) = sender {
-                        let mut fullscreen = Default::default();
-                        sender.ContainsFullScreenElement(&mut fullscreen)?;
-                        if fullscreen.as_bool() {
-                            if previous_fullscreen.is_none() {
-                                match trace_browser_result(&label, "read-host-fullscreen", window.is_fullscreen()) {
-                                    Ok(previous) => {
-                                        if trace_browser_result(&label, "enter-host-fullscreen", window.set_fullscreen(true)).is_ok() {
-                                            previous_fullscreen = Some(previous);
+                &webview2_com::ContainsFullScreenElementChangedEventHandler::create(Box::new(
+                    move |sender, _| {
+                        if let Some(sender) = sender {
+                            let mut fullscreen = Default::default();
+                            sender.ContainsFullScreenElement(&mut fullscreen)?;
+                            if fullscreen.as_bool() {
+                                if previous_fullscreen.is_none() {
+                                    match trace_browser_result(
+                                        &label,
+                                        "read-host-fullscreen",
+                                        window.is_fullscreen(),
+                                    ) {
+                                        Ok(previous) => {
+                                            if trace_browser_result(
+                                                &label,
+                                                "enter-host-fullscreen",
+                                                window.set_fullscreen(true),
+                                            )
+                                            .is_ok()
+                                            {
+                                                previous_fullscreen = Some(previous);
+                                            }
                                         }
+                                        Err(_) => {}
                                     }
-                                    Err(_) => {}
                                 }
+                            } else if let Some(previous) = previous_fullscreen.take() {
+                                let _ = trace_browser_result(
+                                    &label,
+                                    "restore-host-fullscreen",
+                                    window.set_fullscreen(previous),
+                                );
                             }
-                        } else if let Some(previous) = previous_fullscreen.take() {
-                            let _ = trace_browser_result(&label, "restore-host-fullscreen", window.set_fullscreen(previous));
+                            let _ = trace_browser_result(
+                                &label,
+                                "emit-fullscreen",
+                                window.emit_to(
+                                    window.label(),
+                                    &format!("browser-fullscreen-{label}"),
+                                    fullscreen.as_bool(),
+                                ),
+                            );
                         }
-                        let _ = trace_browser_result(&label, "emit-fullscreen", window.emit_to(
-                            window.label(), &format!("browser-fullscreen-{label}"), fullscreen.as_bool(),
-                        ));
-                    }
-                    Ok(())
-                })),
+                        Ok(())
+                    },
+                )),
                 &mut token,
             )
         })();
         if let Err(error) = result {
             log::error!(target: "browser", "register fullscreen observer failed: {error}");
         }
-    }).map_err(|error| error.to_string())
+    })
+    .map_err(|error| error.to_string())
 }
 
 // Wry reports Finished even for failed navigations. Surface the native result
@@ -366,9 +506,21 @@ fn observe_browser_navigation(view: &tauri::Webview, window: tauri::Window) -> R
 }
 
 #[tauri::command]
-pub async fn create_browser(window: tauri::Window, label: String, url: String, x: f64, y: f64, width: f64, height: f64, visible: bool, suppress_initial_downloads: bool) -> Result<(), String> {
+pub async fn create_browser(
+    window: tauri::Window,
+    label: String,
+    url: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    visible: bool,
+    suppress_initial_downloads: bool,
+) -> Result<(), String> {
     let create_started = std::time::Instant::now();
-    if !label.starts_with(&format!("{}-browser-", window.label())) { return Err("无效的网页标签".into()); }
+    if !label.starts_with(&format!("{}-browser-", window.label())) {
+        return Err("无效的网页标签".into());
+    }
     let directory = browser_directory(window.app_handle())?;
     let owner = window.clone();
     let event = format!("browser-url-{label}");
@@ -527,21 +679,37 @@ pub async fn create_browser(window: tauri::Window, label: String, url: String, x
             }
         });
     #[cfg(target_os = "windows")]
-    let builder = builder.additional_browser_args(&browser_args).browser_extensions_enabled(true);
-    let (position, size) = (tauri::LogicalPosition::new(x, y), tauri::LogicalSize::new(width.max(1.), height.max(1.)));
-    let view = trace_browser_result("new-child", "add-child", window.add_child(builder, position, size))?;
+    let builder = builder
+        .additional_browser_args(&browser_args)
+        .browser_extensions_enabled(true);
+    let (position, size) = (
+        tauri::LogicalPosition::new(x, y),
+        tauri::LogicalSize::new(width.max(1.), height.max(1.)),
+    );
+    let view = trace_browser_result(
+        "new-child",
+        "add-child",
+        window.add_child(builder, position, size),
+    )?;
     #[cfg(target_os = "windows")]
     observe_browser_fullscreen(&view, window.clone())?;
     #[cfg(target_os = "windows")]
     observe_browser_navigation(&view, window.clone())?;
     #[cfg(target_os = "windows")]
-    super::browser_downloads::observe(&view, window.clone(), view.label().into(), suppress_initial_downloads)?;
+    super::browser_downloads::observe(
+        &view,
+        window.clone(),
+        view.label().into(),
+        suppress_initial_downloads,
+    )?;
     #[cfg(target_os = "windows")]
     if let Err(error) = install_browser_blackhole(&view) {
         log::warn!(target: "browser", "optional resource filter failed: {error}");
     }
     log::info!(target: "browser", "label={} child-created elapsed_ms={} visible={visible}", view.label(), create_started.elapsed().as_millis());
-    if !visible { trace_browser_result(view.label(), "initial-hide", view.hide())?; }
+    if !visible {
+        trace_browser_result(view.label(), "initial-hide", view.hide())?;
+    }
     Ok(())
 }
 
@@ -556,58 +724,112 @@ fn install_browser_blackhole(view: &tauri::Webview) -> Result<(), String> {
             let environment = platform.environment();
             let mut token = 0;
             core.add_WebResourceRequested(
-                &webview2_com::WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
-                    if let Some(args) = args {
-                        let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL;
-                        args.ResourceContext(&mut context)?;
-                        if context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT { return Ok(()); }
-                        let request = args.Request()?;
-                        let mut uri = windows::core::PWSTR::null();
-                        request.Uri(&mut uri)?;
-                        let uri = webview2_com::take_pwstr(uri);
-                        if let Ok(url) = tauri::Url::parse(&uri) {
-                            if matches!(url.host_str(), Some("www.google-analytics.com" | "www.googletagmanager.com" | "hm.baidu.com")) {
-                                let response = environment.CreateWebResourceResponse(
-                                    None::<&windows::Win32::System::Com::IStream>, 204,
-                                    windows::core::w!("No Content"),
-                                    windows::core::w!("Cache-Control: no-store\r\n"),
-                                )?;
-                                args.SetResponse(&response)?;
+                &webview2_com::WebResourceRequestedEventHandler::create(Box::new(
+                    move |_, args| {
+                        if let Some(args) = args {
+                            let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL;
+                            args.ResourceContext(&mut context)?;
+                            if context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT {
+                                return Ok(());
+                            }
+                            let request = args.Request()?;
+                            let mut uri = windows::core::PWSTR::null();
+                            request.Uri(&mut uri)?;
+                            let uri = webview2_com::take_pwstr(uri);
+                            if let Ok(url) = tauri::Url::parse(&uri) {
+                                if matches!(
+                                    url.host_str(),
+                                    Some(
+                                        "www.google-analytics.com"
+                                            | "www.googletagmanager.com"
+                                            | "hm.baidu.com"
+                                    )
+                                ) {
+                                    let response = environment.CreateWebResourceResponse(
+                                        None::<&windows::Win32::System::Com::IStream>,
+                                        204,
+                                        windows::core::w!("No Content"),
+                                        windows::core::w!("Cache-Control: no-store\r\n"),
+                                    )?;
+                                    args.SetResponse(&response)?;
+                                }
                             }
                         }
-                    }
-                    Ok(())
-                })), &mut token,
+                        Ok(())
+                    },
+                )),
+                &mut token,
             )?;
-            for pattern in ["https://www.google-analytics.com/*", "https://www.googletagmanager.com/*", "https://hm.baidu.com/*"] {
+            for pattern in [
+                "https://www.google-analytics.com/*",
+                "https://www.googletagmanager.com/*",
+                "https://hm.baidu.com/*",
+            ] {
                 let pattern = windows::core::HSTRING::from(pattern);
-                core.AddWebResourceRequestedFilter(&pattern, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)?;
+                core.AddWebResourceRequestedFilter(
+                    &pattern,
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+                )?;
             }
             Ok(())
         })();
-        if let Err(error) = result { log::warn!(target: "browser", "resource filter unavailable: {error}"); }
-    }).map_err(|error| error.to_string())
+        if let Err(error) = result {
+            log::warn!(target: "browser", "resource filter unavailable: {error}");
+        }
+    })
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn browser_layout(window: tauri::Window, label: String, x: f64, y: f64, width: f64, height: f64, visible: bool, reason: Option<String>, document_hidden: Option<bool>) -> Result<(), String> {
+pub fn browser_layout(
+    window: tauri::Window,
+    label: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    visible: bool,
+    reason: Option<String>,
+    document_hidden: Option<bool>,
+) -> Result<(), String> {
     validate_label(window.label(), &label)?;
     // A queued resize/hide can arrive after close. Treat it as an expired task.
-    let Some(view) = window.get_webview(&label) else { return Ok(()); };
+    let Some(view) = window.get_webview(&label) else {
+        return Ok(());
+    };
     log::info!(target: "browser", "label={label} layout x={x} y={y} width={width} height={height} visible={visible} reason={} document-hidden={document_hidden:?}", reason.as_deref().unwrap_or("unspecified"));
     if visible && width > 0. && height > 0. {
-        trace_browser_result(&label, "set-bounds", view.set_bounds(tauri::Rect { position: tauri::LogicalPosition::new(x, y).into(), size: tauri::LogicalSize::new(width, height).into() }))?;
+        trace_browser_result(
+            &label,
+            "set-bounds",
+            view.set_bounds(tauri::Rect {
+                position: tauri::LogicalPosition::new(x, y).into(),
+                size: tauri::LogicalSize::new(width, height).into(),
+            }),
+        )?;
         trace_browser_result(&label, "show", view.show())
     } else {
         if width > 1. && height > 1. {
-            trace_browser_result(&label, "hidden-bounds", view.set_bounds(tauri::Rect { position: tauri::LogicalPosition::new(x, y).into(), size: tauri::LogicalSize::new(width, height).into() }))?;
+            trace_browser_result(
+                &label,
+                "hidden-bounds",
+                view.set_bounds(tauri::Rect {
+                    position: tauri::LogicalPosition::new(x, y).into(),
+                    size: tauri::LogicalSize::new(width, height).into(),
+                }),
+            )?;
         }
         trace_browser_result(&label, "hide", view.hide())
     }
 }
 
 #[tauri::command]
-pub fn browser_action(window: tauri::Window, label: String, action: String, url: Option<String>) -> Result<(), String> {
+pub fn browser_action(
+    window: tauri::Window,
+    label: String,
+    action: String,
+    url: Option<String>,
+) -> Result<(), String> {
     validate_label(window.label(), &label)?;
     if action == "close" {
         clear_browser_state(&window, &label);
@@ -622,42 +844,72 @@ pub fn browser_action(window: tauri::Window, label: String, action: String, url:
     if matches!(action.as_str(), "navigate" | "reload") {
         // Stop pending logout/redirect requests before starting another load.
         view.with_webview(|platform| unsafe {
-            if let Ok(core) = platform.controller().CoreWebView2() { let _ = core.Stop(); }
-        }).map_err(|error| error.to_string())?;
+            if let Ok(core) = platform.controller().CoreWebView2() {
+                let _ = core.Stop();
+            }
+        })
+        .map_err(|error| error.to_string())?;
     }
     let result = match action.as_str() {
         "navigate" => view.navigate(browser_url(url.as_deref().unwrap_or(""))?),
         "sync" => {
             let url = view.url().map_err(|e| e.to_string())?;
             super::browser_passwords::fill(&view, &url);
-            window.emit_to(window.label(), &format!("browser-url-{label}"), url.as_str()).map_err(|e| e.to_string())?;
-            let cached_title = document_titles().lock().ok().and_then(|titles| titles.get(&label).cloned());
+            window
+                .emit_to(
+                    window.label(),
+                    &format!("browser-url-{label}"),
+                    url.as_str(),
+                )
+                .map_err(|e| e.to_string())?;
+            let cached_title = document_titles()
+                .lock()
+                .ok()
+                .and_then(|titles| titles.get(&label).cloned());
             if let Some(title) = cached_title {
-                window.emit_to(window.label(), &format!("browser-title-{label}"),
-                    serde_json::json!({ "url": url.as_str(), "title": title })).map_err(|e| e.to_string())?;
+                window
+                    .emit_to(
+                        window.label(),
+                        &format!("browser-title-{label}"),
+                        serde_json::json!({ "url": url.as_str(), "title": title }),
+                    )
+                    .map_err(|e| e.to_string())?;
             }
             if let Ok(results) = load_results().lock() {
                 if let Some(message) = results.get(&label) {
-                    window.emit_to(window.label(), &format!("browser-load-result-{label}"), message).map_err(|e| e.to_string())?;
+                    window
+                        .emit_to(
+                            window.label(),
+                            &format!("browser-load-result-{label}"),
+                            message,
+                        )
+                        .map_err(|e| e.to_string())?;
                 }
             }
             Ok(())
-        },
-        "focus-host" => window.get_webview(window.label()).ok_or_else(|| "Host webview unavailable".to_string())?.set_focus(),
+        }
+        "focus-host" => window
+            .get_webview(window.label())
+            .ok_or_else(|| "Host webview unavailable".to_string())?
+            .set_focus(),
         "back" => view.eval("history.back()"),
         "forward" => view.eval("history.forward()"),
         "reload" => view.reload(),
         "autofill" => {
             super::browser_passwords::fill(&view, &view.url().map_err(|e| e.to_string())?);
             Ok(())
-        },
+        }
         _ => return Err("未知浏览器操作".into()),
     };
     trace_browser_result(&label, &action, result)
 }
 
 #[tauri::command]
-pub async fn browser_can_go(window: tauri::Window, label: String, forward: bool) -> Result<bool, String> {
+pub async fn browser_can_go(
+    window: tauri::Window,
+    label: String,
+    forward: bool,
+) -> Result<bool, String> {
     let view = child(&window, &label)?;
     #[cfg(target_os = "windows")]
     {
@@ -666,13 +918,21 @@ pub async fn browser_can_go(window: tauri::Window, label: String, forward: bool)
             let result = (|| {
                 let core = platform.controller().CoreWebView2()?;
                 let mut available = Default::default();
-                if forward { core.CanGoForward(&mut available)?; } else { core.CanGoBack(&mut available)?; }
+                if forward {
+                    core.CanGoForward(&mut available)?;
+                } else {
+                    core.CanGoBack(&mut available)?;
+                }
                 Ok::<bool, windows::core::Error>(available.as_bool())
             })();
             let _ = tx.send(result.map_err(|e| e.to_string()));
-        }).map_err(|e| e.to_string())?;
+        })
+        .map_err(|e| e.to_string())?;
         rx.await.map_err(|e| e.to_string())?
     }
     #[cfg(not(target_os = "windows"))]
-    { let _ = (view, forward); Ok(false) }
+    {
+        let _ = (view, forward);
+        Ok(false)
+    }
 }

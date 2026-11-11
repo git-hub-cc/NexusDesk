@@ -1,11 +1,14 @@
-use reqwest::{Client, Method, header::{HeaderMap, HeaderName, HeaderValue}};
+use base64::Engine;
+use reqwest::{
+    Client, Method,
+    header::{HeaderMap, HeaderName, HeaderValue},
+};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
 use tauri::State;
 use tokio::sync::oneshot;
-use base64::Engine;
 
 #[derive(Default)]
 pub struct HttpState(pub Mutex<HashMap<String, oneshot::Sender<()>>>);
@@ -40,7 +43,11 @@ pub async fn send_http_request(
         return Err("Timeout and response size limit must be positive".into());
     }
     let (tx, mut rx) = oneshot::channel();
-    state.0.lock().map_err(|e| e.to_string())?.insert(request_id.clone(), tx);
+    state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(request_id.clone(), tx);
 
     let result = async {
         let client = Client::builder()
@@ -52,7 +59,10 @@ pub async fn send_http_request(
         let req_method = Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?;
         let mut req_headers = HeaderMap::new();
         for (k, v) in headers {
-            if let (Ok(name), Ok(value)) = (HeaderName::from_bytes(k.as_bytes()), HeaderValue::from_str(&v)) {
+            if let (Ok(name), Ok(value)) = (
+                HeaderName::from_bytes(k.as_bytes()),
+                HeaderValue::from_str(&v),
+            ) {
                 req_headers.insert(name, value);
             }
         }
@@ -74,7 +84,11 @@ pub async fn send_http_request(
         };
 
         let status = response.status().as_u16();
-        let status_text = response.status().canonical_reason().unwrap_or("Unknown").to_string();
+        let status_text = response
+            .status()
+            .canonical_reason()
+            .unwrap_or("Unknown")
+            .to_string();
 
         let mut res_headers = Vec::new();
         let mut is_binary = false;
@@ -83,7 +97,12 @@ pub async fn send_http_request(
             res_headers.push((k.as_str().to_string(), val_str.clone()));
             if k == reqwest::header::CONTENT_TYPE {
                 let lower = val_str.to_lowercase();
-                if lower.starts_with("image/") || (!lower.contains("text") && !lower.contains("json") && !lower.contains("xml") && !lower.contains("javascript")) {
+                if lower.starts_with("image/")
+                    || (!lower.contains("text")
+                        && !lower.contains("json")
+                        && !lower.contains("xml")
+                        && !lower.contains("javascript"))
+                {
                     is_binary = true;
                 }
             }
@@ -124,14 +143,24 @@ pub async fn send_http_request(
             is_binary,
             truncated,
         })
-    }.await;
-    state.0.lock().map_err(|e| e.to_string())?.remove(&request_id);
+    }
+    .await;
+    state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&request_id);
     result
 }
 
 #[tauri::command]
 pub fn cancel_http_request(request_id: String, state: State<'_, HttpState>) -> Result<(), String> {
-    if let Some(tx) = state.0.lock().map_err(|e| e.to_string())?.remove(&request_id) {
+    if let Some(tx) = state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&request_id)
+    {
         let _ = tx.send(());
     }
     Ok(())

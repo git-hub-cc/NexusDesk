@@ -230,15 +230,23 @@ pub async fn search_everywhere(
     let result = tauri::async_runtime::spawn_blocking(move || {
         let mut results = Vec::new();
         for path in paths.unwrap_or_else(|| vec![root]) {
-            if token.load(Ordering::Relaxed) { return Ok(Vec::new()); }
+            if token.load(Ordering::Relaxed) {
+                return Ok(Vec::new());
+            }
             let path = Path::new(&path).canonicalize().map_err(|e| e.to_string())?;
             let mut matches = search(&path, &query, &options, &token)?;
             if path.is_file() {
-                for result in &mut matches { result.relative_path = result.path.clone(); }
+                for result in &mut matches {
+                    result.relative_path = result.path.clone();
+                }
             }
             results.extend(matches);
         }
-        results.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.path.cmp(&b.path)));
+        results.sort_by(|a, b| {
+            b.score
+                .total_cmp(&a.score)
+                .then_with(|| a.path.cmp(&b.path))
+        });
         let mut seen = std::collections::HashSet::new();
         results.retain(|result| seen.insert(result.path.clone()));
         results.truncate(50);
@@ -364,7 +372,11 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        let include_ignored = SearchOptions { extensions: options.extensions.clone(), include_ignored: true, ..Default::default() };
+        let include_ignored = SearchOptions {
+            extensions: options.extensions.clone(),
+            include_ignored: true,
+            ..Default::default()
+        };
         assert_eq!(
             search(&root, "needle", &include_ignored, &AtomicBool::new(false))
                 .unwrap()

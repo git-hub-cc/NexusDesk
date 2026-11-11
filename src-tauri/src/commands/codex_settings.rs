@@ -28,7 +28,8 @@ pub struct CodexSettingsInput {
 
 fn codex_dir() -> Result<PathBuf, String> {
     // 桌面应用统一读取当前用户的 Codex 配置，避免继承启动进程中的 CODEX_HOME。
-    dirs::home_dir().map(|home| home.join(".codex"))
+    dirs::home_dir()
+        .map(|home| home.join(".codex"))
         .ok_or_else(|| "找不到 Codex 配置目录".into())
 }
 
@@ -230,9 +231,7 @@ pub fn codex_settings_read() -> Result<CodexSettings, String> {
             .to_owned(),
         proxy_url,
         api_key_configured,
-        trust_mode: config
-            .get("sandbox_mode")
-            .and_then(toml::Value::as_str)
+        trust_mode: config.get("sandbox_mode").and_then(toml::Value::as_str)
             == Some("danger-full-access"),
         show_tooltips: config
             .get("tui")
@@ -291,7 +290,10 @@ pub fn codex_settings_save(input: CodexSettingsInput) -> Result<(), String> {
         .or_insert_with(|| toml::Value::Table(Default::default()))
         .as_table_mut()
         .ok_or("tui 必须是表")?;
-    tui.insert("show_tooltips".into(), toml::Value::Boolean(input.show_tooltips));
+    tui.insert(
+        "show_tooltips".into(),
+        toml::Value::Boolean(input.show_tooltips),
+    );
     table.insert(
         "check_for_update_on_startup".into(),
         toml::Value::Boolean(input.check_for_update_on_startup),

@@ -70,7 +70,9 @@ fn resolve_adb() -> PathBuf {
 fn adb_runtime_files_exist(executable: &std::path::Path) -> bool {
     #[cfg(windows)]
     {
-        let Some(directory) = executable.parent() else { return false };
+        let Some(directory) = executable.parent() else {
+            return false;
+        };
         return directory.join("AdbWinApi.dll").is_file()
             && directory.join("AdbWinUsbApi.dll").is_file();
     }
@@ -118,7 +120,8 @@ fn output_with_timeout(command: Command, timeout: Duration) -> Result<String, St
 }
 
 fn output_with_timeout_untrimmed(command: Command, timeout: Duration) -> Result<String, String> {
-    output_bytes_with_timeout(command, timeout).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+    output_bytes_with_timeout(command, timeout)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn output_bytes_with_timeout(mut command: Command, timeout: Duration) -> Result<Vec<u8>, String> {
@@ -262,27 +265,42 @@ pub async fn mirror_push_file(
 }
 
 #[tauri::command]
-pub async fn mirror_download_file(serial: String, remote_path: String, local_dir: String) -> Result<String, String> {
+pub async fn mirror_download_file(
+    serial: String,
+    remote_path: String,
+    local_dir: String,
+) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         self::remote_path(&remote_path)?;
         let directory = std::path::Path::new(&local_dir);
         if !directory.is_absolute() || !directory.is_dir() {
             return Err("请选择本地目标目录".into());
         }
-        let name = remote_path.trim_end_matches('/').rsplit('/').next().ok_or("无效的文件名")?;
-        if name.is_empty() || matches!(name, "." | "..") || name.contains(['\\', ':', '<', '>', '"', '|', '?', '*'])
-            || name.ends_with(['.', ' ']) || name.chars().any(|c| c.is_control()) {
+        let name = remote_path
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .ok_or("无效的文件名")?;
+        if name.is_empty()
+            || matches!(name, "." | "..")
+            || name.contains(['\\', ':', '<', '>', '"', '|', '?', '*'])
+            || name.ends_with(['.', ' '])
+            || name.chars().any(|c| c.is_control())
+        {
             return Err("手机文件名不适用于本地文件系统".into());
         }
         // Download separately, then use the existing copy policy to keep both files on name collisions.
         struct TemporaryDownload(PathBuf);
         impl Drop for TemporaryDownload {
-            fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
         }
         static NEXT_DOWNLOAD: AtomicU32 = AtomicU32::new(0);
         let temporary = loop {
             let id = NEXT_DOWNLOAD.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!("nexusdesk-android-{}-{id}", std::process::id()));
+            let path =
+                std::env::temp_dir().join(format!("nexusdesk-android-{}-{id}", std::process::id()));
             match std::fs::create_dir(&path) {
                 Ok(()) => break TemporaryDownload(path),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -291,21 +309,30 @@ pub async fn mirror_download_file(serial: String, remote_path: String, local_dir
         };
         let downloaded = temporary.0.join(name);
         let mut command = adb();
-        command.args(["-s", &serial, "pull", &remote_path]).arg(&downloaded);
+        command
+            .args(["-s", &serial, "pull", &remote_path])
+            .arg(&downloaded);
         output_with_timeout(command, Duration::from_secs(1800))?;
         crate::core::fs::transfer_entry(&downloaded, directory, true, &Default::default())
-    }).await.map_err(|error| error.to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
 pub async fn mirror_read_file(serial: String, path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         remote_path(&path)?;
-        let script = format!("[ -f {0} ] || {{ echo '不是普通文件' >&2; exit 1; }}; cat -- {0}", shell_quote(&path));
+        let script = format!(
+            "[ -f {0} ] || {{ echo '不是普通文件' >&2; exit 1; }}; cat -- {0}",
+            shell_quote(&path)
+        );
         let mut command = adb();
         command.args(["-s", &serial, "shell", &script]);
         output_with_timeout_untrimmed(command, Duration::from_secs(30))
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -313,23 +340,38 @@ pub async fn mirror_read_image(serial: String, path: String) -> Result<String, S
     tauri::async_runtime::spawn_blocking(move || {
         use base64::Engine;
         remote_path(&path)?;
-        let script = format!("[ -f {0} ] || {{ echo '不是普通文件' >&2; exit 1; }}; cat -- {0}", shell_quote(&path));
+        let script = format!(
+            "[ -f {0} ] || {{ echo '不是普通文件' >&2; exit 1; }}; cat -- {0}",
+            shell_quote(&path)
+        );
         let mut command = adb();
         // exec-out avoids terminal processing of binary image bytes.
         command.args(["-s", &serial, "exec-out", &script]);
         let bytes = output_bytes_with_timeout(command, Duration::from_secs(30))?;
         let format = image::guess_format(&bytes).map_err(|e| format!("无法识别图片格式：{e}"))?;
-        Ok(format!("data:{};base64,{}", format.to_mime_type(), base64::engine::general_purpose::STANDARD.encode(bytes)))
-    }).await.map_err(|e| e.to_string())?
+        Ok(format!(
+            "data:{};base64,{}",
+            format.to_mime_type(),
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        ))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn delete_script(paths: &[String]) -> Result<String, String> {
-    if paths.is_empty() { return Err("请选择要删除的项目".into()); }
+    if paths.is_empty() {
+        return Err("请选择要删除的项目".into());
+    }
     let mut quoted = Vec::new();
     for path in paths {
         remote_path(path)?;
-        if path.split('/').filter(|part| !part.is_empty()).any(|part| matches!(part, "." | ".."))
-            || path.trim_matches('/').is_empty() {
+        if path
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .any(|part| matches!(part, "." | ".."))
+            || path.trim_matches('/').is_empty()
+        {
             return Err("不能删除根目录或包含相对路径的项目".into());
         }
         quoted.push(shell_quote(path.trim_end_matches('/')));
@@ -344,11 +386,17 @@ pub async fn mirror_delete_files(serial: String, paths: Vec<String>) -> Result<(
         let mut command = adb();
         command.args(["-s", &serial, "shell", &script]);
         output_with_timeout(command, Duration::from_secs(1800)).map(|_| ())
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub async fn mirror_create_folder(serial: String, parent: String, name: String) -> Result<(), String> {
+pub async fn mirror_create_folder(
+    serial: String,
+    parent: String,
+    name: String,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         remote_path(&parent)?;
         if name.is_empty() || matches!(name.as_str(), "." | "..") || name.contains(['/', '\\', '\0']) {
@@ -367,7 +415,11 @@ pub async fn mirror_create_folder(serial: String, parent: String, name: String) 
 }
 
 #[tauri::command]
-pub async fn mirror_copy_file(serial: String, source_path: String, remote_dir: String) -> Result<(), String> {
+pub async fn mirror_copy_file(
+    serial: String,
+    source_path: String,
+    remote_dir: String,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         remote_path(&source_path)?;
         remote_path(&remote_dir)?;
@@ -533,15 +585,16 @@ pub async fn mirror_connect_wifi(serial: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut devices = adb();
         devices.args(["devices", "-l"]);
-        if !parse_devices(&output(devices)?)
-            .iter()
-            .any(|device| device.serial == serial && device.status == "device" && !serial.contains(':'))
-        {
+        if !parse_devices(&output(devices)?).iter().any(|device| {
+            device.serial == serial && device.status == "device" && !serial.contains(':')
+        }) {
             return Err("请先通过 USB 连接并授权手机，再切换 Wi-Fi 投屏。".into());
         }
 
         let mut address = adb();
-        address.args(["-s", &serial, "shell", "ip", "-f", "inet", "addr", "show", "wlan0"]);
+        address.args([
+            "-s", &serial, "shell", "ip", "-f", "inet", "addr", "show", "wlan0",
+        ]);
         let address = output(address).unwrap_or_default();
         let ip = address
             .lines()
@@ -552,7 +605,9 @@ pub async fn mirror_connect_wifi(serial: String) -> Result<String, String> {
             .or_else(|| {
                 let mut property = adb();
                 property.args(["-s", &serial, "shell", "getprop", "dhcp.wlan0.ipaddress"]);
-                output(property).ok().filter(|value| value.parse::<std::net::Ipv4Addr>().is_ok())
+                output(property)
+                    .ok()
+                    .filter(|value| value.parse::<std::net::Ipv4Addr>().is_ok())
             })
             .ok_or("手机尚未连接 Wi-Fi。请让手机和电脑接入同一局域网后重试。")?;
 
@@ -573,23 +628,48 @@ pub async fn mirror_connect_wifi(serial: String) -> Result<String, String> {
 }
 
 fn brightness_pulse_values(brightness: u8) -> [u8; 2] {
-    if brightness == u8::MAX { [brightness - 1, brightness] } else { [brightness + 1, brightness] }
+    if brightness == u8::MAX {
+        [brightness - 1, brightness]
+    } else {
+        [brightness + 1, brightness]
+    }
 }
 
 #[tauri::command]
 pub async fn mirror_refresh_brightness(serial: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut get = adb();
-        get.args(["-s", &serial, "shell", "settings", "get", "system", "screen_brightness"]);
-        let value = output(get)?.parse::<u8>().map_err(|_| "无法读取手机当前亮度值".to_owned())?;
+        get.args([
+            "-s",
+            &serial,
+            "shell",
+            "settings",
+            "get",
+            "system",
+            "screen_brightness",
+        ]);
+        let value = output(get)?
+            .parse::<u8>()
+            .map_err(|_| "无法读取手机当前亮度值".to_owned())?;
         for brightness in brightness_pulse_values(value) {
             let mut set = adb();
-            set.args(["-s", &serial, "shell", "settings", "put", "system", "screen_brightness", &brightness.to_string()]);
+            set.args([
+                "-s",
+                &serial,
+                "shell",
+                "settings",
+                "put",
+                "system",
+                "screen_brightness",
+                &brightness.to_string(),
+            ]);
             output(set)?;
             thread::sleep(Duration::from_millis(100));
         }
         Ok(())
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn tool_directories() -> Vec<PathBuf> {
@@ -1051,7 +1131,11 @@ fn valid_display_power_mode(mode: u8) -> bool {
 
 #[cfg(test)]
 fn brightness_pulse_test_values(brightness: u8) -> [u8; 2] {
-    if brightness == u8::MAX { [brightness - 1, brightness] } else { [brightness + 1, brightness] }
+    if brightness == u8::MAX {
+        [brightness - 1, brightness]
+    } else {
+        [brightness + 1, brightness]
+    }
 }
 
 #[tauri::command]
@@ -1110,39 +1194,72 @@ mod tests {
 
     #[test]
     fn deletion_rejects_root_and_traversal_and_quotes_special_names() {
-        for path in ["/", "//", "/sdcard/..", "/sdcard/./a", "relative", "/sdcard/\0"] {
+        for path in [
+            "/",
+            "//",
+            "/sdcard/..",
+            "/sdcard/./a",
+            "relative",
+            "/sdcard/\0",
+        ] {
             assert!(delete_script(&[path.into()]).is_err(), "{path:?}");
         }
         assert!(delete_script(&[]).is_err());
-        assert_eq!(delete_script(&["/sdcard/中文 ' $(id).png".into(), "/sdcard/folder/".into()]).unwrap(),
-            "rm -rf -- '/sdcard/中文 '\\'' $(id).png' '/sdcard/folder'");
+        assert_eq!(
+            delete_script(&["/sdcard/中文 ' $(id).png".into(), "/sdcard/folder/".into()]).unwrap(),
+            "rm -rf -- '/sdcard/中文 '\\'' $(id).png' '/sdcard/folder'"
+        );
     }
 
     #[test]
     #[cfg(windows)]
     fn binary_command_output_preserves_non_utf8_and_whitespace() {
         let mut command = hidden_command("powershell.exe".into());
-        command.args(["-NoProfile", "-Command", "[Console]::OpenStandardOutput().Write([byte[]](32,0,255,128,13,10,32),0,7)"]);
-        assert_eq!(output_bytes_with_timeout(command, Duration::from_secs(15)).unwrap(), vec![32, 0, 255, 128, 13, 10, 32]);
+        command.args([
+            "-NoProfile",
+            "-Command",
+            "[Console]::OpenStandardOutput().Write([byte[]](32,0,255,128,13,10,32),0,7)",
+        ]);
+        assert_eq!(
+            output_bytes_with_timeout(command, Duration::from_secs(15)).unwrap(),
+            vec![32, 0, 255, 128, 13, 10, 32]
+        );
     }
 
     #[tokio::test]
     #[ignore = "Requires an authorized Android device; set NEXUSDESK_MIRROR_TEST_SERIAL to opt in"]
     async fn file_transfers_round_trip_binary_directories_and_special_names() {
-        let serial = std::env::var("NEXUSDESK_MIRROR_TEST_SERIAL").expect("set NEXUSDESK_MIRROR_TEST_SERIAL");
-        let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let serial = std::env::var("NEXUSDESK_MIRROR_TEST_SERIAL")
+            .expect("set NEXUSDESK_MIRROR_TEST_SERIAL");
+        let id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let local = std::env::temp_dir().join(format!("nexusdesk-transfer-test-{id}"));
         let remote = format!("/sdcard/Download/.nexusdesk-transfer-test-{id}");
-        struct Cleanup { local: PathBuf, remote: String, serial: String }
+        struct Cleanup {
+            local: PathBuf,
+            remote: String,
+            serial: String,
+        }
         impl Drop for Cleanup {
             fn drop(&mut self) {
                 let mut command = adb();
-                command.args(["-s", &self.serial, "shell", &format!("rm -rf -- {}", shell_quote(&self.remote))]);
+                command.args([
+                    "-s",
+                    &self.serial,
+                    "shell",
+                    &format!("rm -rf -- {}", shell_quote(&self.remote)),
+                ]);
                 let _ = output(command);
                 let _ = std::fs::remove_dir_all(&self.local);
             }
         }
-        let _cleanup = Cleanup { local: local.clone(), remote: remote.clone(), serial: serial.clone() };
+        let _cleanup = Cleanup {
+            local: local.clone(),
+            remote: remote.clone(),
+            serial: serial.clone(),
+        };
         std::fs::create_dir_all(local.join("source/folder/nested")).unwrap();
         std::fs::create_dir_all(local.join("downloads")).unwrap();
         let name = "中文 ' $file.bin";
@@ -1152,26 +1269,76 @@ mod tests {
         std::fs::write(local.join("source/folder/nested/note.txt"), text).unwrap();
         std::fs::write(local.join("source/folder/nested/中文.bin"), &bytes).unwrap();
         let mut mkdir = adb();
-        mkdir.args(["-s", &serial, "shell", &format!("mkdir -p -- {}", shell_quote(&remote))]);
+        mkdir.args([
+            "-s",
+            &serial,
+            "shell",
+            &format!("mkdir -p -- {}", shell_quote(&remote)),
+        ]);
         output(mkdir).unwrap();
         for name in [name, "folder"] {
-            mirror_push_file(serial.clone(), local.join("source").join(name).to_string_lossy().into_owned(), remote.clone()).await.unwrap();
+            mirror_push_file(
+                serial.clone(),
+                local
+                    .join("source")
+                    .join(name)
+                    .to_string_lossy()
+                    .into_owned(),
+                remote.clone(),
+            )
+            .await
+            .unwrap();
         }
-        let entries = mirror_list_files(serial.clone(), remote.clone()).await.unwrap();
-        assert!(entries.iter().any(|entry| entry.name == name), "Uploaded file name changed: {entries:?}");
+        let entries = mirror_list_files(serial.clone(), remote.clone())
+            .await
+            .unwrap();
+        assert!(
+            entries.iter().any(|entry| entry.name == name),
+            "Uploaded file name changed: {entries:?}"
+        );
         // Existing device content must survive another upload of the same name.
-        assert!(mirror_push_file(serial.clone(), local.join("source").join(name).to_string_lossy().into_owned(), remote.clone()).await.is_err());
+        assert!(
+            mirror_push_file(
+                serial.clone(),
+                local
+                    .join("source")
+                    .join(name)
+                    .to_string_lossy()
+                    .into_owned(),
+                remote.clone()
+            )
+            .await
+            .is_err()
+        );
         let directory = local.join("downloads").to_string_lossy().into_owned();
         let remote_file = format!("{remote}/{name}");
-        let first = mirror_download_file(serial.clone(), remote_file.clone(), directory.clone()).await.unwrap();
-        let second = mirror_download_file(serial.clone(), remote_file, directory.clone()).await.unwrap();
+        let first = mirror_download_file(serial.clone(), remote_file.clone(), directory.clone())
+            .await
+            .unwrap();
+        let second = mirror_download_file(serial.clone(), remote_file, directory.clone())
+            .await
+            .unwrap();
         assert_ne!(first, second);
         assert_eq!(std::fs::read(first).unwrap(), bytes);
         assert_eq!(std::fs::read(second).unwrap(), bytes);
-        let folder = mirror_download_file(serial.clone(), format!("{remote}/folder"), directory).await.unwrap();
-        assert_eq!(std::fs::read_to_string(std::path::Path::new(&folder).join("nested/note.txt")).unwrap(), text);
-        assert_eq!(std::fs::read(std::path::Path::new(&folder).join("nested/中文.bin")).unwrap(), bytes);
-        assert_eq!(mirror_read_file(serial, format!("{remote}/folder/nested/note.txt")).await.unwrap().replace("\r\n", "\n"), text);
+        let folder = mirror_download_file(serial.clone(), format!("{remote}/folder"), directory)
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(std::path::Path::new(&folder).join("nested/note.txt")).unwrap(),
+            text
+        );
+        assert_eq!(
+            std::fs::read(std::path::Path::new(&folder).join("nested/中文.bin")).unwrap(),
+            bytes
+        );
+        assert_eq!(
+            mirror_read_file(serial, format!("{remote}/folder/nested/note.txt"))
+                .await
+                .unwrap()
+                .replace("\r\n", "\n"),
+            text
+        );
     }
 
     #[test]
@@ -1294,17 +1461,15 @@ mod tests {
             assert_eq!(frame.len(), 17);
         }
         assert!(read_packet(&mut stream).is_err());
-        assert!(
-            read_packet(&mut Cursor::new(session_header(0, 720))).is_err()
-        );
+        assert!(read_packet(&mut Cursor::new(session_header(0, 720))).is_err());
         assert!(read_packet(&mut Cursor::new(&config[..13])).is_err());
     }
 
     #[test]
     #[ignore = "Requires an authorized Android device; set NEXUSDESK_MIRROR_TEST_SERIAL to opt in"]
     fn installed_scrcpy_streams_h264_and_pcm_and_releases_its_forward() {
-        let serial =
-            std::env::var("NEXUSDESK_MIRROR_TEST_SERIAL").expect("set NEXUSDESK_MIRROR_TEST_SERIAL");
+        let serial = std::env::var("NEXUSDESK_MIRROR_TEST_SERIAL")
+            .expect("set NEXUSDESK_MIRROR_TEST_SERIAL");
         let (_, version) = server_tools().unwrap();
         let session = Arc::new(Session {
             serial,

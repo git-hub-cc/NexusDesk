@@ -11,7 +11,11 @@ pub fn check_directory(path: &Path) -> Result<(), String> {
 }
 
 fn check_error(path: &Path, error: std::io::Error) -> String {
-    format!("无法删除目录：{} 可能被占用或无法访问，请关闭相关文件、终端或程序并解除占用后重试。未执行删除操作。\n{}", path.display(), error)
+    format!(
+        "无法删除目录：{} 可能被占用或无法访问，请关闭相关文件、终端或程序并解除占用后重试。未执行删除操作。\n{}",
+        path.display(),
+        error
+    )
 }
 
 fn check_tree(path: &Path) -> Result<(), String> {
@@ -44,8 +48,14 @@ mod tests {
 
     #[test]
     fn detects_occupied_root_nested_directory_and_file_without_changing_tree() {
-        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let root = std::env::temp_dir().join(format!("nexusdesk-delete-guard-{}-{stamp}", std::process::id()));
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "nexusdesk-delete-guard-{}-{stamp}",
+            std::process::id()
+        ));
         let nested = root.join("child").join("grandchild");
         std::fs::create_dir_all(&nested).unwrap();
         let file = nested.join("note.txt");
@@ -53,13 +63,20 @@ mod tests {
         std::fs::write(root.join("sibling.txt"), "keep sibling").unwrap();
         assert!(check_directory(&root).is_ok());
         for target in [&root, &nested, &file] {
-            let handle = std::fs::OpenOptions::new().read(true).share_mode(3)
-                .custom_flags(0x0200_0000).open(target).unwrap();
+            let handle = std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(3)
+                .custom_flags(0x0200_0000)
+                .open(target)
+                .unwrap();
             let error = check_directory(&root).unwrap_err();
             assert!(error.contains(&target.display().to_string()));
             assert!(error.contains("解除占用"));
             assert_eq!(std::fs::read_to_string(&file).unwrap(), "keep");
-            assert_eq!(std::fs::read_to_string(root.join("sibling.txt")).unwrap(), "keep sibling");
+            assert_eq!(
+                std::fs::read_to_string(root.join("sibling.txt")).unwrap(),
+                "keep sibling"
+            );
             drop(handle);
             assert!(check_directory(&root).is_ok());
         }

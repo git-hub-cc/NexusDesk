@@ -71,7 +71,10 @@ fn read(reader: &mut BufReader<TcpStream>) -> Result<Packet, String> {
         .read_until(b'\n', &mut bytes)
         .map_err(|e| format!("read kind={:?} os={:?}: {e}", e.kind(), e.raw_os_error()))?;
     if bytes.last() != Some(&b'\n') {
-        return Err(format!("EOF or oversized/incomplete packet (bytes={})", bytes.len()));
+        return Err(format!(
+            "EOF or oversized/incomplete packet (bytes={})",
+            bytes.len()
+        ));
     }
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
@@ -85,8 +88,15 @@ fn configure_stream(stream: &TcpStream) -> std::io::Result<()> {
 }
 
 fn host_running() -> bool {
-    let Ok(lease) = OpenOptions::new().create(true).truncate(false).read(true).write(true)
-        .open(directory().join("host.lock")) else { return false; };
+    let Ok(lease) = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(directory().join("host.lock"))
+    else {
+        return false;
+    };
     // A live (or still starting) host holds this lease. Do not spawn more hosts
     // just because its endpoint is stale or its handshake failed.
     lease.try_lock().is_err()
@@ -208,8 +218,13 @@ pub fn connect(app: tauri::AppHandle) {
                         }
                     };
                     *app.state::<Client>().stream.lock().unwrap() = None;
-                    if connected.elapsed() >= Duration::from_secs(10) { failures = 0; }
-                    format!("disconnected after {}ms: {error}", connected.elapsed().as_millis())
+                    if connected.elapsed() >= Duration::from_secs(10) {
+                        failures = 0;
+                    }
+                    format!(
+                        "disconnected after {}ms: {error}",
+                        connected.elapsed().as_millis()
+                    )
                 }
                 Err(error) => {
                     if last_spawn.elapsed() >= Duration::from_secs(5) && !host_running() {
@@ -220,7 +235,9 @@ pub fn connect(app: tauri::AppHandle) {
                                 .spawn()
                         }) {
                             Ok(Ok(mut child)) => {
-                                std::thread::spawn(move || { let _ = child.wait(); });
+                                std::thread::spawn(move || {
+                                    let _ = child.wait();
+                                });
                             }
                             other => log::error!("Cannot launch capture service: {other:?}"),
                         }
@@ -231,7 +248,10 @@ pub fn connect(app: tauri::AppHandle) {
             failures = failures.saturating_add(1);
             let delay = reconnect_delay(failures);
             if last_warning.elapsed() >= Duration::from_secs(30) {
-                log::warn!("Capture service unavailable failures={failures} retry_ms={}: {error}", delay.as_millis());
+                log::warn!(
+                    "Capture service unavailable failures={failures} retry_ms={}: {error}",
+                    delay.as_millis()
+                );
                 last_warning = Instant::now();
             }
             std::thread::sleep(delay);
@@ -307,9 +327,15 @@ fn serve(app: tauri::AppHandle, listener: TcpListener, token: String) {
                                 Ok(packet) => packet,
                                 Err(error) => {
                                     if error.starts_with("read kind=") {
-                                        log::warn!("Capture peer={id} read failed after {}ms: {error}", connected.elapsed().as_millis());
+                                        log::warn!(
+                                            "Capture peer={id} read failed after {}ms: {error}",
+                                            connected.elapsed().as_millis()
+                                        );
                                     } else {
-                                        log::debug!("Capture peer={id} disconnected after {}ms: {error}", connected.elapsed().as_millis());
+                                        log::debug!(
+                                            "Capture peer={id} disconnected after {}ms: {error}",
+                                            connected.elapsed().as_millis()
+                                        );
                                     }
                                     break;
                                 }
@@ -330,7 +356,9 @@ fn serve(app: tauri::AppHandle, listener: TcpListener, token: String) {
                                                 ..Default::default()
                                             },
                                         ) {
-                                            log::warn!("Capture peer={id} heartbeat reply failed: {error}");
+                                            log::warn!(
+                                                "Capture peer={id} heartbeat reply failed: {error}"
+                                            );
                                             break;
                                         }
                                     }
@@ -355,7 +383,10 @@ fn serve(app: tauri::AppHandle, listener: TcpListener, token: String) {
                 }
             }
             let has_clients = !app.state::<Host>().0.lock().unwrap().clients.is_empty();
-            let capture_active = app.state::<CaptureState>().active.load(std::sync::atomic::Ordering::SeqCst);
+            let capture_active = app
+                .state::<CaptureState>()
+                .active
+                .load(std::sync::atomic::Ordering::SeqCst);
             if has_clients || capture_active {
                 idle = Instant::now();
             }
@@ -490,7 +521,10 @@ mod tests {
         let server = loop {
             match listener.accept() {
                 Ok((stream, _)) => break stream,
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline => {
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && Instant::now() < deadline =>
+                {
                     std::thread::sleep(Duration::from_millis(1));
                 }
                 Err(error) => panic!("accept failed: {error}"),
@@ -499,7 +533,9 @@ mod tests {
         configure_stream(&server).unwrap();
         let writer = std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(100));
-            client.write_all(b"{\"kind\":\"hello\"}\n{\"kind\":\"ping\"}\n").unwrap();
+            client
+                .write_all(b"{\"kind\":\"hello\"}\n{\"kind\":\"ping\"}\n")
+                .unwrap();
             std::thread::sleep(Duration::from_millis(100));
             client.write_all(b"{\"kind\":\"ping\"}\n").unwrap();
         });
@@ -557,8 +593,10 @@ mod tests {
     }
     #[test]
     fn service_lease_prevents_duplicate_hosts_and_recovers_after_exit() {
-        let path =
-            std::env::temp_dir().join(format!("nexusdesk-capture-lease-{}.lock", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "nexusdesk-capture-lease-{}.lock",
+            std::process::id()
+        ));
         let open = || {
             OpenOptions::new()
                 .create(true)

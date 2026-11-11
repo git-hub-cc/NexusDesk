@@ -1,10 +1,10 @@
+mod capture_service;
 pub mod commands;
 pub mod core;
-pub mod state;
 mod logging;
 mod profiles;
-mod capture_service;
 mod speech_input;
+pub mod state;
 
 use state::AppState;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -54,8 +54,10 @@ fn stt_shortcut_unregister(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 fn is_project_window(label: &str) -> bool {
-    label == "main" || label.strip_prefix("window-")
-        .is_some_and(|suffix| !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit()))
+    label == "main"
+        || label.strip_prefix("window-").is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 #[cfg(test)]
@@ -66,8 +68,14 @@ mod lifecycle_tests {
     fn only_project_windows_keep_app_alive() {
         assert!(is_project_window("main"));
         assert!(is_project_window("window-1720000000000"));
-        for utility in ["nexusdesk-native-menu", "window-snapshot-123", "browser-popup-123",
-            "window-1720000000000-browser-popup-123", "window-", "main-browser-popup-123"] {
+        for utility in [
+            "nexusdesk-native-menu",
+            "window-snapshot-123",
+            "browser-popup-123",
+            "window-1720000000000-browser-popup-123",
+            "window-",
+            "main-browser-popup-123",
+        ] {
             assert!(!is_project_window(utility), "{utility}");
         }
     }
@@ -83,13 +91,24 @@ pub fn run() {
     let project = commands::project_cmds::project_argument(std::env::args_os());
     let startup_url = commands::project_cmds::startup_url_argument(std::env::args_os());
     let startup_file = commands::project_cmds::startup_file_argument(std::env::args_os());
-    let project = project.or_else(|| startup_file.as_ref().and_then(|path| path.parent().map(|parent| parent.to_path_buf())));
-    if profiles::activate_existing_project(project.as_deref()) { return; }
+    let project = project.or_else(|| {
+        startup_file
+            .as_ref()
+            .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
+    });
+    if profiles::activate_existing_project(project.as_deref()) {
+        return;
+    }
     let window_project = project.clone();
-    let profile_root = dirs::home_dir().expect("Cannot find home directory").join(".nexus/profiles");
-    let profile = profiles::allocate(&profile_root, project.as_deref()).expect("Cannot create project profile");
-    let window_state_file = format!("window-state-{}.json",
-        profiles::profile_key(project.as_deref()).expect("Cannot identify project"));
+    let profile_root = dirs::home_dir()
+        .expect("Cannot find home directory")
+        .join(".nexus/profiles");
+    let profile = profiles::allocate(&profile_root, project.as_deref())
+        .expect("Cannot create project profile");
+    let window_state_file = format!(
+        "window-state-{}.json",
+        profiles::profile_key(project.as_deref()).expect("Cannot identify project")
+    );
     log::info!("Project WebView2 profile: {}", profile.directory.display());
     tauri::Builder::default()
         .manage(commands::project_cmds::StartupProject(project))

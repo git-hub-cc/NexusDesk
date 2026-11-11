@@ -60,12 +60,20 @@ pub fn start(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 pub(crate) fn pin_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("captures/latest.png"))
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("captures/latest.png"))
 }
 
 pub(crate) fn toggle_pin(app: &tauri::AppHandle) -> Result<(), String> {
-    app.state::<CaptureState>().proxy.get().ok_or("Native capture is unavailable")?
-        .send_event(super::native_capture::Message::TogglePin).map_err(|e| e.to_string())
+    app.state::<CaptureState>()
+        .proxy
+        .get()
+        .ok_or("Native capture is unavailable")?
+        .send_event(super::native_capture::Message::TogglePin)
+        .map_err(|e| e.to_string())
 }
 pub(crate) fn report_error(app: &tauri::AppHandle, error: String) {
     app.state::<CaptureState>()
@@ -94,16 +102,26 @@ pub(crate) fn complete(
     action: &'static str,
     region: [i64; 4],
 ) {
-    crate::capture_service::emit(&app, "capture-progress", serde_json::json!({"action":action}));
+    crate::capture_service::emit(
+        &app,
+        "capture-progress",
+        serde_json::json!({"action":action}),
+    );
     std::thread::spawn(move || {
         let result = (|| -> Result<Option<String>, String> {
             let path = pin_path(&app)?;
-            std::fs::create_dir_all(path.parent().ok_or("Invalid capture path")?).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(path.parent().ok_or("Invalid capture path")?)
+                .map_err(|e| e.to_string())?;
             let temporary = path.with_extension("tmp.png");
-            image.save_with_format(&temporary, image::ImageFormat::Png).map_err(|e| e.to_string())?;
+            image
+                .save_with_format(&temporary, image::ImageFormat::Png)
+                .map_err(|e| e.to_string())?;
             std::fs::rename(&temporary, &path).map_err(|e| e.to_string())?;
-            let _ = app.state::<CaptureState>().proxy.get().map(|proxy|
-                proxy.send_event(super::native_capture::Message::RefreshPin));
+            let _ = app
+                .state::<CaptureState>()
+                .proxy
+                .get()
+                .map(|proxy| proxy.send_event(super::native_capture::Message::RefreshPin));
             match action {
                 "ocr" => {
                     let state = app.state::<CaptureState>();
@@ -140,7 +158,9 @@ pub(crate) fn complete(
                                 image::ImageFormat::Png,
                             )
                             .map_err(|e| e.to_string())?;
-                    } else { return Ok(None); }
+                    } else {
+                        return Ok(None);
+                    }
                     Ok(Some(String::new()))
                 }
                 _ => {
@@ -165,12 +185,15 @@ pub(crate) fn complete(
                     }
                 }
                 crate::capture_service::emit(
-                    &app, "capture-complete",
+                    &app,
+                    "capture-complete",
                     serde_json::json!({"action": action, "cancelled": text.is_none(), "text": text.unwrap_or_default(), "region": region}),
                 );
             }
             Err(error) => report_error(&app, error),
         }
-        app.state::<CaptureState>().active.store(false, Ordering::SeqCst);
+        app.state::<CaptureState>()
+            .active
+            .store(false, Ordering::SeqCst);
     });
 }

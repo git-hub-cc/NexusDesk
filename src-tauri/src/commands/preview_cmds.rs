@@ -1,5 +1,9 @@
 use std::{collections::HashMap, path::PathBuf, sync::Mutex};
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpListener, sync::oneshot};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+    sync::oneshot,
+};
 
 #[derive(Default)]
 pub struct PreviewState(pub Mutex<HashMap<u16, oneshot::Sender<()>>>);
@@ -12,36 +16,79 @@ fn decode_path(value: &str) -> Option<String> {
             let a = (input.next()? as char).to_digit(16)?;
             let b = (input.next()? as char).to_digit(16)?;
             (a * 16 + b) as u8
-        } else { byte });
+        } else {
+            byte
+        });
     }
     String::from_utf8(bytes).ok()
 }
 
 fn mime(path: &std::path::Path) -> &'static str {
-    match path.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase().as_str() {
-        "html" | "htm" => "text/html; charset=utf-8", "css" => "text/css",
-        "js" | "mjs" => "text/javascript", "json" | "map" => "application/json",
-        "svg" => "image/svg+xml", "png" => "image/png", "jpg" | "jpeg" => "image/jpeg",
-        "webp" => "image/webp", "gif" => "image/gif", "ico" => "image/x-icon",
-        "woff" => "font/woff", "woff2" => "font/woff2", "ttf" => "font/ttf",
-        "mp4" => "video/mp4", "webm" => "video/webm", "wasm" => "application/wasm",
+    match path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "html" | "htm" => "text/html; charset=utf-8",
+        "css" => "text/css",
+        "js" | "mjs" => "text/javascript",
+        "json" | "map" => "application/json",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "ico" => "image/x-icon",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "wasm" => "application/wasm",
         _ => "application/octet-stream",
     }
 }
 
 #[tauri::command]
-pub async fn start_html_preview(root: String, path: String, content: String, state: tauri::State<'_, PreviewState>) -> Result<String, String> {
+pub async fn start_html_preview(
+    root: String,
+    path: String,
+    content: String,
+    state: tauri::State<'_, PreviewState>,
+) -> Result<String, String> {
     let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
     let entry = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
-    if !root.is_dir() || !entry.starts_with(&root) { return Err("根目录必须包含当前 HTML 文件".into()); }
-    let relative = entry.strip_prefix(&root).map_err(|e| e.to_string())?.to_string_lossy().replace('\\', "/");
-    let encoded: String = relative.as_bytes().iter().map(|b| {
-        if b.is_ascii_alphanumeric() || b"/-_.~".contains(b) { (*b as char).to_string() } else { format!("%{b:02X}") }
-    }).collect();
-    let listener = TcpListener::bind("127.0.0.1:0").await.map_err(|e| e.to_string())?;
+    if !root.is_dir() || !entry.starts_with(&root) {
+        return Err("根目录必须包含当前 HTML 文件".into());
+    }
+    let relative = entry
+        .strip_prefix(&root)
+        .map_err(|e| e.to_string())?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let encoded: String = relative
+        .as_bytes()
+        .iter()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"/-_.~".contains(b) {
+                (*b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect();
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let (stop, mut stopped) = oneshot::channel();
-    state.0.lock().map_err(|e| e.to_string())?.insert(port, stop);
+    state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(port, stop);
     tokio::spawn(async move {
         loop {
             tokio::select! {
@@ -93,6 +140,8 @@ pub async fn start_html_preview(root: String, path: String, content: String, sta
 #[tauri::command]
 pub fn stop_html_preview(port: u16, state: tauri::State<'_, PreviewState>) {
     if let Ok(mut servers) = state.0.lock() {
-        if let Some(stop) = servers.remove(&port) { let _ = stop.send(()); }
+        if let Some(stop) = servers.remove(&port) {
+            let _ = stop.send(());
+        }
     }
 }
