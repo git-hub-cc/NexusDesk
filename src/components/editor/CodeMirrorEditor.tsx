@@ -678,6 +678,9 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
             fontSize: "12px",
             lineHeight: "28px"
           },
+          ".cm-panels-top": {
+            borderBottom: "none"
+          },
           ".cm-search input": {
             backgroundColor: "var(--ide-bg)",
             color: "var(--ide-fg)",
@@ -693,7 +696,8 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
             borderColor: "var(--ide-accent)"
           },
           ".cm-search button": {
-            backgroundColor: "transparent",
+            backgroundColor: "var(--ide-bg)",
+            backgroundImage: "none",
             color: "var(--ide-fg)",
             border: "1px solid var(--ide-panel-border)",
             borderRadius: "4px",
@@ -753,7 +757,12 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
             position: "absolute",
             top: "8px",
             right: "8px",
-            padding: "2px 6px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "28px",
+            height: "28px",
+            padding: "0",
             border: "none",
             fontSize: "16px",
             backgroundColor: "transparent",

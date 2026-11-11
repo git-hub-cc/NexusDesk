@@ -84,7 +84,7 @@ pub fn get_status(repo_path: &str) -> Result<Vec<FileStatus>, String> {
         Err(error) => return Err(error.to_string()),
     };
     let mut opts = StatusOptions::new();
-    opts.include_untracked(true).include_ignored(false).recurse_untracked_dirs(true).renames_head_to_index(false).renames_index_to_workdir(false);
+    opts.include_untracked(true).include_ignored(false).recurse_untracked_dirs(true).renames_head_to_index(false).renames_index_to_workdir(false).update_index(true);
     let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?;
     Ok(statuses.iter().filter_map(|e| e.path().map(|path| {
         let s = e.status();
@@ -103,7 +103,7 @@ pub fn tree_status(repo_path: &str) -> Result<Vec<TreeStatus>, String> {
     };
     let workdir = repo.workdir().ok_or("Bare repository")?;
     let mut opts = StatusOptions::new();
-    opts.include_unmodified(true).include_untracked(true).include_ignored(true).recurse_untracked_dirs(true)
+    opts.include_unmodified(true).include_untracked(true).include_ignored(true).recurse_untracked_dirs(true).update_index(true)
         .recurse_ignored_dirs(false);
     let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?;
     Ok(statuses.iter().filter_map(|entry| entry.path().map(|path| {
@@ -610,6 +610,18 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&file.worktree_path).unwrap(), "editable\n");
         std::fs::write(&file.worktree_path, "edited\n").unwrap();
         assert_eq!(std::fs::read_to_string(f.0.join("note.md")).unwrap(), "edited\n");
+    }
+    #[test]
+    fn status_clears_after_file_is_rewritten_to_head_content() {
+        let f = Fixture::new();
+        f.write("original\n");
+        stage(f.path(), "note.md", true).unwrap();
+        commit(f.path(), "initial").unwrap();
+        std::fs::write(f.0.join("note.md"), "edited\n").unwrap();
+        assert!(!get_status(f.path()).unwrap().is_empty());
+        std::fs::write(f.0.join("note.md"), "original\n").unwrap();
+        assert!(get_status(f.path()).unwrap().is_empty());
+        assert!(tree_status(f.path()).unwrap().iter().all(|entry| entry.status == "clean"));
     }
     #[test]
     fn ignore_directory_preserves_tracked_and_unstages_new_files() {

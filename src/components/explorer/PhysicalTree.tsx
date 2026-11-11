@@ -203,7 +203,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
             };
             const [left, right] = await Promise.all([read(source), read(path)]);
             const diff = await fsApi.compareText(left, right);
-            openTab({ id: `compare:${source}:${path}`, path, title: `${source.split(/[/\\]/).pop()} ↔ ${path.split(/[/\\]/).pop()}`, diff, diffLabels: [source, path] });
+            openTab({ id: `compare:${JSON.stringify([source, path])}`, path, title: `${source} ↔ ${path}`, diff, diffLabels: [source, path] });
         } catch (error) { setError(`对比失败：${String(error)}`); }
     };
 

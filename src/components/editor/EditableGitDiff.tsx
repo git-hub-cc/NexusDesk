@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
 import { Decoration, EditorView, drawSelection, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { fsApi } from "@/lib/api";
 import { diffChanges, originalFromPatch, parseGitDiff, type DiffChange } from "@/lib/gitDiff";
 import { DiffOverview } from "./DiffOverview";
@@ -83,9 +84,25 @@ export function EditableGitDiff({ path, patch, contents, title, labels, onChange
       views = [left, right].map((doc, index) => new EditorView({
         parent: hosts[index].current!,
         state: EditorState.create({ doc, extensions: [
-          lineNumbers(), drawSelection(), history(), keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+          lineNumbers(), drawSelection(), history(), search({ top: true }),
+          EditorState.phrases.of({
+            "next": "下一个",
+            "previous": "上一个",
+            "all": "全部",
+            "match case": "区分大小写",
+            "regexp": "正则表达式",
+            "by word": "全词匹配",
+            "replace": "替换",
+            "replace all": "全部替换",
+            "close": "关闭",
+            "Find": "查找",
+            "Replace": "替换为",
+          }),
+          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab, { key: "Mod-f", run: openSearchPanel }, ...searchKeymap]),
           EditorState.readOnly.of(index === 0), EditorView.editable.of(index === 1),
-          EditorView.contentAttributes.of({ "aria-label": index ? "更改后内容（可编辑）" : "原始内容（只读）" }),
+          EditorView.contentAttributes.of(index
+            ? { "aria-label": "更改后内容（可编辑）" }
+            : { "aria-label": "原始内容（只读）", tabindex: "0" }),
           highlights[index].of([]),
           EditorView.theme({ "&": { height: "100%", fontSize: "12px", backgroundColor: "var(--ide-bg)", color: "var(--ide-text)" },
             "&.cm-focused": { outline: "none" },
@@ -94,6 +111,22 @@ export function EditableGitDiff({ path, patch, contents, title, labels, onChange
             ".cm-gutters": { backgroundColor: "var(--ide-bg)", color: "#777d88", borderRight: "1px solid #43454a" },
             ".cm-cursor": { borderLeftColor: "#82a8ed" },
             "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": { backgroundColor: "#4060a060" },
+            ".cm-panel.cm-search": { backgroundColor: "var(--ide-panel-bg)", color: "var(--ide-fg)", padding: "8px 12px", borderBottom: "1px solid var(--ide-panel-border)", fontFamily: "inherit", fontSize: "12px", lineHeight: "28px" },
+            ".cm-panels-top": { borderBottom: "none" },
+            ".cm-search input": { backgroundColor: "var(--ide-bg)", color: "var(--ide-fg)", border: "1px solid var(--ide-panel-border)", borderRadius: "4px", padding: "4px 8px", outline: "none", fontSize: "12px", marginRight: "8px", verticalAlign: "middle" },
+            ".cm-search input:focus": { borderColor: "var(--ide-accent)" },
+            ".cm-search button": { backgroundColor: "var(--ide-bg)", backgroundImage: "none", color: "var(--ide-fg)", border: "1px solid var(--ide-panel-border)", borderRadius: "4px", padding: "4px 10px", cursor: "pointer", fontSize: "12px", transition: "all 0.2s", marginRight: "8px", verticalAlign: "middle" },
+            ".cm-search button:hover": { backgroundColor: "var(--ide-selection-inactive)" },
+            ".cm-search label": { display: "inline-flex", position: "relative", alignItems: "center", justifyContent: "center", padding: "4px", borderRadius: "4px", cursor: "pointer", fontSize: "0 !important", lineHeight: "20px", marginRight: "8px", verticalAlign: "middle" },
+            ".cm-search label::after": { fontSize: "13px" },
+            '.cm-search label:has(input[name="case"])::after': { content: '"Aa"' },
+            '.cm-search label:has(input[name="re"])::after': { content: '".*"' },
+            '.cm-search label:has(input[name="word"])::after': { content: '"Ab"' },
+            ".cm-search label:has(input:checked)": { backgroundColor: "#3574f0", color: "white" },
+            ".cm-search label:has(input:focus-visible)": { outline: "2px solid var(--ide-accent)", outlineOffset: "2px" },
+            ".cm-search input[type=checkbox]": { position: "absolute", opacity: "0", width: "1px", height: "1px", padding: "0", margin: "0", border: "none" },
+            ".cm-search [name=close]": { position: "absolute", top: "8px", right: "8px", display: "flex", alignItems: "center", justifyContent: "center", width: "28px", height: "28px", padding: "0", border: "none", fontSize: "16px", backgroundColor: "transparent", cursor: "pointer", marginRight: "0" },
+            ".cm-search [name=close]:hover": { color: "white" },
           }),
           EditorView.domEventHandlers({ scroll: (_event, view) => {
             if (scrolling) return;
