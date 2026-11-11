@@ -27,7 +27,7 @@ fn stream_delta(payload: &serde_json::Value, wire_api: &str) -> Option<String> {
             .map(str::to_owned);
     }
     payload
-        .pointer("choices.0.delta.content")
+        .pointer("/choices/0/delta/content")
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
 }

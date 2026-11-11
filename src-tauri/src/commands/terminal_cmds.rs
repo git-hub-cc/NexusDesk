@@ -830,12 +830,11 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn native_launch_preserves_literal_arguments_and_rejects_shell_expressions() {
-        let cmd =
-            super::direct_terminal_command("powershell.exe -NoProfile -Command 'exit 73'", None)
-                .unwrap()
-                .unwrap();
+        let cmd = super::direct_terminal_command("cmd.exe /D /C 'exit 73'", None)
+            .unwrap()
+            .unwrap();
         let argv = cmd.get_argv();
-        assert_eq!(argv[1], "-NoProfile");
+        assert_eq!(argv[1], "/D");
         assert_eq!(argv[3], "exit 73");
         assert!(
             super::direct_terminal_command("powershell.exe; Write-Output dirty", None)

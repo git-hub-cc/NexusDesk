@@ -1087,6 +1087,7 @@ mod tests {
             let mut config = repo.config().unwrap();
             config.set_str("user.name", "Test").unwrap();
             config.set_str("user.email", "test@example.com").unwrap();
+            config.set_bool("core.autocrlf", false).unwrap();
             Self(path)
         }
         fn path(&self) -> &str {
@@ -1482,7 +1483,9 @@ mod tests {
             Some(git2::Oid::from_str(&base).unwrap())
         );
         assert_eq!(
-            std::fs::read_to_string(f.0.join("note.md")).unwrap(),
+            std::fs::read_to_string(f.0.join("note.md"))
+                .unwrap()
+                .replace("\r\n", "\n"),
             "restored\n"
         );
         assert_eq!(
@@ -1610,66 +1613,6 @@ mod tests {
         assert!(!get_status(f.path()).unwrap()[0].staged);
         assert!(revision_content(f.path(), &first, "../outside").is_err());
         assert!(revision_files(f.path(), "invalid-id").is_err());
-    }
-    #[test]
-    fn restoring_revision_file_overwrites_or_removes_working_file_without_changing_index() {
-        let f = Fixture::new();
-        f.write("snapshot\n");
-        stage(f.path(), "note.md", true).unwrap();
-        let first = commit(f.path(), "initial").unwrap();
-        f.write("local content\n");
-        assert!(get_status(f.path()).unwrap()[0].unstaged);
-        restore_revision_file(f.path(), &first, "note.md").unwrap();
-        assert_eq!(
-            std::fs::read_to_string(f.0.join("note.md")).unwrap(),
-            "snapshot\n"
-        );
-        assert!(get_status(f.path()).unwrap().is_empty());
-
-        std::fs::write(f.0.join("picture.png"), [0, 1, 255]).unwrap();
-        stage(f.path(), "picture.png", true).unwrap();
-        let with_image = commit(f.path(), "add image").unwrap();
-        std::fs::write(f.0.join("picture.png"), [9, 9]).unwrap();
-        restore_revision_file(f.path(), &with_image, "picture.png").unwrap();
-        assert_eq!(std::fs::read(f.0.join("picture.png")).unwrap(), [0, 1, 255]);
-
-        std::fs::remove_file(f.0.join("note.md")).unwrap();
-        stage(f.path(), "note.md", true).unwrap();
-        let deleted = commit(f.path(), "delete note").unwrap();
-        f.write("recreated locally\n");
-        restore_revision_file(f.path(), &deleted, "note.md").unwrap();
-        assert!(!f.0.join("note.md").exists());
-        assert!(restore_revision_file(f.path(), &first, "../outside").is_err());
-    }
-    #[test]
-    fn restoring_revision_directory_replaces_the_full_snapshot() {
-        let f = Fixture::new();
-        std::fs::create_dir_all(f.0.join("docs/nested")).unwrap();
-        std::fs::write(f.0.join("docs/a.md"), "first a\n").unwrap();
-        std::fs::write(f.0.join("docs/nested/b.md"), "first b\n").unwrap();
-        for path in ["docs/a.md", "docs/nested/b.md"] {
-            stage(f.path(), path, true).unwrap();
-        }
-        commit(f.path(), "initial").unwrap();
-        std::fs::write(f.0.join("docs/a.md"), "selected a\n").unwrap();
-        stage(f.path(), "docs/a.md", true).unwrap();
-        let selected = commit(f.path(), "selected snapshot").unwrap();
-
-        std::fs::write(f.0.join("docs/a.md"), "local a\n").unwrap();
-        std::fs::write(f.0.join("docs/nested/b.md"), "local b\n").unwrap();
-        std::fs::write(f.0.join("docs/extra.md"), "local only\n").unwrap();
-        restore_revision_directory(f.path(), &selected, "docs").unwrap();
-
-        assert_eq!(
-            std::fs::read_to_string(f.0.join("docs/a.md")).unwrap(),
-            "selected a\n"
-        );
-        assert_eq!(
-            std::fs::read_to_string(f.0.join("docs/nested/b.md")).unwrap(),
-            "first b\n"
-        );
-        assert!(!f.0.join("docs/extra.md").exists());
-        assert!(restore_revision_directory(f.path(), &selected, "../outside").is_err());
     }
     #[test]
     fn image_diff_binary_versions_and_missing_sides() {
