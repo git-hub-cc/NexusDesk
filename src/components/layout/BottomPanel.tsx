@@ -41,6 +41,7 @@ export function BottomPanel() {
   const { bottomPanelTab: activeTab, setBottomPanelTab } = useLayoutStore();
   const { profiles, sessions, activeSessionId, createSession, removeSession, setActiveSessionId, reorderSessions, toggleSessionPin, launchError, clearLaunchError } = useTerminalStore();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [autoResizeTerminal, setAutoResizeTerminal] = useState(false);
   const [gitInstalled, setGitInstalled] = useState<boolean | null>(null);
   const [exitedSessions, setExitedSessions] = useState<Record<string, boolean>>({});
   const [autoReviewEnabled, setAutoReviewEnabled] = useState(() => settingsStorage.getItem("nexusdesk.codex.autoReview") === "true");
@@ -48,6 +49,7 @@ export function BottomPanel() {
   const autoReviewing = useRef(false);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
+  const [resizeRequest, setResizeRequest] = useState({ sessionId: "", version: 0 });
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   useEffect(() => {
@@ -225,6 +227,18 @@ export function BottomPanel() {
         <div className="h-full min-w-0 flex-1" />
       </div>
       <div className="flex gap-1 shrink-0">
+        <label title="自动适应终端面板尺寸" onMouseEnter={() => {
+          if (activeTab === "terminal" && activeSessionId && !exitedSessions[activeSessionId]) {
+            setResizeRequest(current => ({ sessionId: activeSessionId, version: current.version + 1 }));
+          }
+        }} className="flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded px-1 text-gray-400 hover:bg-white/10 hover:text-white opacity-0 group-hover/panel:opacity-100 transition-opacity">
+          <input type="checkbox" aria-label="自动调整终端尺寸" checked={autoResizeTerminal} disabled={activeTab !== "terminal" || !activeSessionId || !!exitedSessions[activeSessionId]} onChange={event => {
+            const enabled = event.target.checked;
+            setAutoResizeTerminal(enabled);
+            if (enabled) setResizeRequest(current => ({ sessionId: activeSessionId, version: current.version + 1 }));
+          }} className="h-3 w-3 accent-ide-accent disabled:cursor-not-allowed" />
+          <span>自动</span>
+        </label>
         <button title="命令行工具设置" aria-label="命令行工具设置" onClick={() => setSettingsOpen(true)} className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-white/10 hover:text-white active:bg-white/15 opacity-0 group-hover/panel:opacity-100 transition-opacity"><Settings size={14} /></button>
         <PanelMinimizeButton panel="bottom" />
       </div>
@@ -236,7 +250,7 @@ export function BottomPanel() {
     </div>}
     <div className="flex-1 min-h-0 overflow-hidden">
       {gitInstalled && activeTab === "git" && <GitPanel />}
-      {sessions.map(session => <TerminalSession key={session.id} session={session} active={activeTab === "terminal" && activeSessionId === session.id} onExit={handleExit} />)}
+      {sessions.map(session => <TerminalSession key={session.id} session={session} active={activeTab === "terminal" && activeSessionId === session.id} autoResize={autoResizeTerminal} resizeRequest={resizeRequest} onExit={handleExit} />)}
     </div>
     {settingsOpen && <TerminalSettings onClose={() => setSettingsOpen(false)} />}
   </div>;

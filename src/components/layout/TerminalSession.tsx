@@ -16,9 +16,11 @@ import { matchTerminalHistory, terminalPromptInput } from "@/lib/terminalHistory
 import { codexComposerInput, fillCodexCommitMessage } from "@/lib/codexCommitMessage";
 import { codexProxyLaunchCommand, getCodexProxyStatus } from "@/lib/codexProxy";
 
-export function TerminalSession({ session, active, onExit }: {
+export function TerminalSession({ session, active, autoResize, resizeRequest, onExit }: {
   session: SessionInfo;
   active: boolean;
+  autoResize: boolean;
+  resizeRequest: { sessionId: string; version: number };
   onExit?: (id: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -33,6 +35,7 @@ export function TerminalSession({ session, active, onExit }: {
   const historyClickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const matches = matchTerminalHistory(history, query);
   const fitRef = useRef<() => void>(() => {});
+  const autoFitRef = useRef<() => void>(() => {});
   const onExitRef = useRef(onExit);
 
   useEffect(() => {
@@ -286,13 +289,11 @@ export function TerminalSession({ session, active, onExit }: {
         }));
       },
     });
-    let resizeFrame = 0;
     let lastSize = "";
     let resizeQueue = Promise.resolve();
     let resizePending = false;
     let resizeTasks = 0;
     let deferredOutput: Uint8Array[] = [];
-    let panelDragging = false;
     let writeQueue: Promise<void> = Promise.resolve();
     let fontsReady = false;
     const dimensions = () => ({ id, cols: Math.max(1, terminal.cols), rows: Math.max(1, terminal.rows),
@@ -318,31 +319,20 @@ export function TerminalSession({ session, active, onExit }: {
       resizeQueue = resizeQueue.then(async () => {
         resizePending = false;
         if (disposed || exited || !element.clientWidth || !element.clientHeight) return;
-        if (panelDragging) return;
         // xterm 重排网格时可能把视口重置到第一行，这里保留 PTY 调整前的位置。
         const buffer = terminal.buffer.active;
         const normalBuffer = buffer.type === "normal";
-        const viewport = normalBuffer ? element.querySelector<HTMLElement>(".xterm-viewport") : null;
-        const distanceFromBottom = viewport
-          ? Math.max(0, viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop)
-          : 0;
-        const wasAtBottom = normalBuffer && distanceFromBottom <= 2;
+        const viewportY = normalBuffer ? buffer.viewportY : 0;
+        const wasAtBottom = normalBuffer && viewportY >= buffer.baseY;
         const restoreViewport = () => {
           if (!normalBuffer || disposed || terminal.buffer.active.type !== "normal") return;
-          const currentViewport = element.querySelector<HTMLElement>(".xterm-viewport");
-          if (currentViewport) {
-            currentViewport.scrollTop = wasAtBottom
-              ? currentViewport.scrollHeight
-              : Math.max(0, currentViewport.scrollHeight - currentViewport.clientHeight - distanceFromBottom);
-          }
           if (wasAtBottom) terminal.scrollToBottom();
+          else terminal.scrollToLine(viewportY);
         };
         fit.fit();
         restoreViewport();
         const size = dimensions();
         const key = sizeKey(size);
-        // ConPTY only uses rows/columns. Pixel-only changes must not trigger a
-        // console redraw (and another prompt) on every splitter movement.
         if (!started || key === lastSize) return;
         resizeTasks++;
         try {
@@ -354,24 +344,10 @@ export function TerminalSession({ session, active, onExit }: {
           restoreViewport();
           requestAnimationFrame(restoreViewport);
         }
-      }).catch(error => { lastSize = ""; report(error); });
+      }).catch(report);
     };
-    const scheduleResize = () => {
-      if (resizeFrame) return;
-      resizeFrame = requestAnimationFrame(() => {
-        resizeFrame = 0;
-        resize();
-      });
-    };
-    // 分割面板改变的是宿主尺寸，不一定会触发 window.resize。
-    const resizeObserver = new ResizeObserver(() => scheduleResize());
-    resizeObserver.observe(element);
-    const onPanelDrag = (event: Event) => {
-      panelDragging = (event as CustomEvent<boolean>).detail;
-      if (!panelDragging) scheduleResize();
-    };
-    window.addEventListener("terminal-panel-drag", onPanelDrag);
-    fitRef.current = () => { scheduleResize(); focusTerminal(); };
+    autoFitRef.current = resize;
+    fitRef.current = resize;
     // Wait for fonts and three equal, visible layout samples before opening PTY.
     let finishLayout: (() => void) | undefined;
     const layoutReady = new Promise<void>(resolve => { finishLayout = resolve; });
@@ -382,16 +358,15 @@ export function TerminalSession({ session, active, onExit }: {
       const layout = `${element.clientWidth}:${element.clientHeight}`;
       stableFrames = element.clientWidth && element.clientHeight && layout === previousLayout ? stableFrames + 1 : 0;
       previousLayout = layout;
-      if (stableFrames >= 2) { resize(); void resizeQueue.then(() => finishLayout?.()); }
+      if (stableFrames >= 2) {
+        fit.fit();
+        void resizeQueue.then(() => finishLayout?.());
+      }
       else layoutFrame = requestAnimationFrame(confirmLayout);
     };
     let layoutFrame = 0;
     const checkLayout = () => { layoutFrame = requestAnimationFrame(confirmLayout); };
     void (document.fonts?.ready ?? Promise.resolve()).then(() => { if (!disposed) { fontsReady = true; checkLayout(); } });
-    const fontsChanged = () => { previousLayout = ""; scheduleResize(); };
-    document.fonts?.addEventListener("loadingdone", fontsChanged);
-    window.addEventListener("resize", scheduleResize);
-
     const channel = new Channel<{ type: "output"; data: number[] } | { type: "exit" }>();
     channel.onmessage = event => {
       if (disposed) return;
@@ -431,7 +406,6 @@ export function TerminalSession({ session, active, onExit }: {
           for (const data of pendingInput.splice(0)) {
             if (!exited) await terminalInvoke("write_terminal", { id, data });
           }
-          resize();
         }
       } catch (e) {
         report(e);
@@ -492,12 +466,7 @@ export function TerminalSession({ session, active, onExit }: {
     return () => {
       disposed = true;
       finishLayout?.();
-      cancelAnimationFrame(resizeFrame);
       cancelAnimationFrame(layoutFrame);
-      resizeObserver.disconnect();
-      window.removeEventListener("resize", scheduleResize);
-      window.removeEventListener("terminal-panel-drag", onPanelDrag);
-      document.fonts?.removeEventListener("loadingdone", fontsChanged);
       clearTimeout(historyClickTimer.current);
       fillHistory.current = () => {};
       parsedOutput.dispose();
@@ -523,11 +492,19 @@ export function TerminalSession({ session, active, onExit }: {
   }, [session]);
 
   useEffect(() => {
-    if (active) {
-      const frame = requestAnimationFrame(() => fitRef.current());
-      return () => cancelAnimationFrame(frame);
-    }
-  }, [active]);
+    if (active && resizeRequest.sessionId === session.id && resizeRequest.version > 0) fitRef.current();
+  }, [resizeRequest]);
+
+  useEffect(() => {
+    const element = host.current;
+    if (!autoResize || !element) return;
+    const observer = new ResizeObserver(() => {
+      if (active) autoFitRef.current();
+    });
+    observer.observe(element);
+    if (active) autoFitRef.current();
+    return () => observer.disconnect();
+  }, [active, autoResize]);
 
   return (
     <>
