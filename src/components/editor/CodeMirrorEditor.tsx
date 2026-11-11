@@ -382,6 +382,7 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
           "Replace": "替换为"
         }),
         keymap.of([
+          { key: "Mod-d", run: copyLineDown, preventDefault: true },
           { key: "Mod-a", run: selectAll, preventDefault: true },
           { key: "Mod-c", run: view => {
             if (!isSnapshot) return false;
@@ -403,7 +404,6 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
           { key: "Mod-f", run: openSearchPanel },
           { key: "Mod-Shift-z", run: redo },
           ...searchKeymap,
-          { key: "Mod-d", run: copyLineDown },
           { key: "Mod-y", run: deleteLine },
           { key: "Ctrl-Shift-ArrowUp", run: moveLineUp, preventDefault: true },
           { key: "Ctrl-Shift-ArrowDown", run: moveLineDown, preventDefault: true },
