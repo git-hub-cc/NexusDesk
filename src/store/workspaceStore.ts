@@ -133,7 +133,7 @@ export function isRecentlySavedPath(path: string) {
 const saves = new Map<string, { content: string; saved: string | undefined; error?: string; schedule: ReturnType<typeof debounce> }>();
 
 function markFile(path: string, content: string, isDirty: boolean, saveError?: string) {
-  const update = (tabs: Tab[]) => tabs.map(tab => tab.path === path && !tab.revision && tab.diff === undefined && tab.content === content
+  const update = (tabs: Tab[]) => tabs.map(tab => tab.path === path && !tab.revision && tab.content === content
     ? { ...tab, isDirty, saveError } : tab);
   useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
 }
