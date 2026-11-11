@@ -84,6 +84,8 @@ pub fn run() {
     let startup_url = commands::project_cmds::startup_url_argument(std::env::args_os());
     let startup_file = commands::project_cmds::startup_file_argument(std::env::args_os());
     let project = project.or_else(|| startup_file.as_ref().and_then(|path| path.parent().map(|parent| parent.to_path_buf())));
+    if profiles::activate_existing_project(project.as_deref()) { return; }
+    let window_project = project.clone();
     let profile_root = dirs::home_dir().expect("Cannot find home directory").join(".nexus/profiles");
     let profile = profiles::allocate(&profile_root, project.as_deref()).expect("Cannot create project profile");
     let window_state_file = format!("window-state-{}.json",
@@ -117,7 +119,10 @@ pub fn run() {
         // measures its frame offsets in set_size. The initial WM_NCCALCSIZE can
         // still include a native caption, which would inflate the restored height.
         .plugin(tauri::plugin::Builder::<tauri::Wry>::new("window-frame")
-            .on_window_ready(|window| {
+            .on_window_ready(move |window| {
+                if window.label() == "main" {
+                    profiles::mark_project_window(&window, window_project.as_deref());
+                }
                 #[cfg(windows)]
                 if window.label() == "main" && !window.is_decorated().unwrap_or(true) {
                     use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -212,6 +217,7 @@ pub fn run() {
             commands::project_cmds::startup_url,
             commands::project_cmds::startup_file,
             commands::project_cmds::open_project_instance,
+            profiles::register_project_instance,
             commands::settings_cmds::read_global_settings,
             commands::settings_cmds::write_global_setting,
             commands::settings_cmds::import_global_settings,

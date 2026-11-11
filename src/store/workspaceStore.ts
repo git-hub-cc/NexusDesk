@@ -10,7 +10,7 @@ import { gitApi, type TreeFileStatus } from "@/lib/api";
 import { fsApi } from "@/lib/api";
 import type { ReverseTreeNode } from "@/lib/treeGraph";
 import { invokePathCommand as invoke, isRemotePath, remotePath } from "@/lib/remote";
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
 import { useTerminalStore } from "./terminalStore";
 import { restoreProjectLayout, useLayoutStore } from "./layoutStore";
 
@@ -659,6 +659,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         try {
           const treeData = await fsApi.readDirectory(path);
           if (version !== projectVersion) return false;
+          if (isTauri() && !isSnapshot && !isRemotePath(path)
+            && !await tauriInvoke<boolean>("register_project_instance", { path })) return false;
           if (isRemotePath(get().rootPath) && (!isRemotePath(path) || remotePath(get().rootPath!).id !== remotePath(path).id)) {
             set(state => ({ projectPinnedTabs: pinnedTabsByProject(state), projectSessions: sessionsByProject(state) }));
             await get().disconnectRemote();

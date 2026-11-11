@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Check, Copy, GitBranch, LoaderCircle, MessageCircle, Pencil, Plus, Save, Send, Settings2, X } from "lucide-react";
+import { Check, Copy, GitBranch, LoaderCircle, MessageCircle, Pencil, Plus, Save, Send, Settings2, Trash2, X } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { chatApi, codexSettingsApi, type ChatOverrides, type CodexSettings } from "@/lib/api";
 
@@ -90,8 +90,10 @@ export function ChatEditor({ active }: { active: boolean }) {
     try {
       if (navigator.locks) await navigator.locks.request(`${HISTORY_KEY}-write`, write);
       else write();
+      return true;
     } catch {
       setError("对话历史保存失败，请检查本机存储空间");
+      return false;
     }
   };
   const saveSnapshot = (savedMessages: Message[], title = conversationTitle(savedMessages)) => {
@@ -113,6 +115,15 @@ export function ChatEditor({ active }: { active: boolean }) {
     if (!renameTarget || !title) return;
     void updateHistory(current => current.map(item => item.id === renameTarget ? { ...item, title } : item));
     setRenameTarget(null);
+  };
+  const deleteConversation = async (item: SavedConversation) => {
+    if (!await updateHistory(current => current.filter(entry => entry.id !== item.id))) return;
+    if (activeHistoryId === item.id) {
+      setMessages([]);
+      setActiveHistoryId(null);
+      setError("");
+      setNotice("");
+    }
   };
   const branchAt = (index: number) => {
     if (busy) return;
@@ -155,7 +166,7 @@ export function ChatEditor({ active }: { active: boolean }) {
   return <div className={`chat-page absolute inset-0 flex bg-ide-bg text-gray-200 ${active ? "" : "hidden"}`}>
     <aside className="chat-history" aria-label="保存的对话">
       <div className="chat-history-heading"><strong>历史记录</strong></div>
-      <div className="chat-history-list">{history.map(item => <div className={`chat-history-row ${activeHistoryId === item.id ? "is-active" : ""}`} key={item.id}><button type="button" className="chat-history-item" title={item.title} onClick={() => { setMessages(item.messages); setActiveHistoryId(item.id); setError(""); setNotice(""); }}><span>{item.title}</span><small>{new Date(item.savedAt).toLocaleString()}</small></button><button type="button" className="chat-icon-button chat-history-rename" title="重命名对话" aria-label={`重命名对话：${item.title}`} onClick={() => openRenameDialog(item)}><Pencil size={13} /></button></div>)}{!history.length && <p className="chat-history-empty">保存或创建分支后，对话会显示在这里。</p>}</div>
+      <div className="chat-history-list">{history.map(item => <div className={`chat-history-row ${activeHistoryId === item.id ? "is-active" : ""}`} key={item.id}><button type="button" className="chat-history-item" title={item.title} onClick={() => { setMessages(item.messages); setActiveHistoryId(item.id); setError(""); setNotice(""); }}><span>{item.title}</span><small>{new Date(item.savedAt).toLocaleString()}</small></button><button type="button" className="chat-icon-button chat-history-rename" title="重命名对话" aria-label={`重命名对话：${item.title}`} onClick={() => openRenameDialog(item)}><Pencil size={13} /></button><button type="button" className="chat-icon-button chat-history-delete" title="删除对话" aria-label={`删除对话：${item.title}`} onClick={() => void deleteConversation(item)}><Trash2 size={13} /></button></div>)}{!history.length && <p className="chat-history-empty">保存或创建分支后，对话会显示在这里。</p>}</div>
     </aside>
     <section className="chat-workspace">
       <header className="chat-header"><div className="chat-heading"><MessageCircle size={16} /><div><h2>对话</h2><p>{overrides.model || settings?.model || "使用 Codex 设置中的模型"}</p></div></div><div className="chat-header-actions"><span className={`chat-config-state ${settings ? "is-ready" : ""}`}><span />{settings ? "配置已读取" : "读取配置中"}</span><button type="button" className="chat-icon-button" title="对话设置" aria-label="对话设置" onClick={() => setShowConfig(value => !value)}><Settings2 size={16} /></button><button type="button" className="chat-icon-button" title="新对话" aria-label="新对话" disabled={!messages.length || busy} onClick={() => { setMessages([]); setActiveHistoryId(null); setError(""); setNotice(""); composer.current?.focus(); }}><Plus size={16} /></button></div></header>
