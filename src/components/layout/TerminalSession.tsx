@@ -26,6 +26,7 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
   const host = useRef<HTMLDivElement>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [query, setQuery] = useState("");
+  const [dismissedHistoryQuery, setDismissedHistoryQuery] = useState<string | null>(null);
   const queryRef = useRef(query);
   queryRef.current = query;
   const [historyError, setHistoryError] = useState("");
@@ -33,7 +34,9 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
   const clearScrollbackAfterCommand = useRef(false);
   const fillHistory = useRef<(command: string, execute?: boolean) => void>(() => {});
   const historyClickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const matches = matchTerminalHistory(history, query);
+  const matches = dismissedHistoryQuery === query ? [] : matchTerminalHistory(history, query);
+  const matchesRef = useRef(matches);
+  matchesRef.current = matches;
   const fitRef = useRef<() => void>(() => {});
   const autoFitRef = useRef<() => void>(() => {});
   const onExitRef = useRef(onExit);
@@ -74,6 +77,11 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
     terminal.unicode.activeVersion = "11";
 
     terminal.attachCustomKeyEventHandler((e) => {
+      if (e.type === 'keydown' && e.key === 'Escape' && matchesRef.current.length > 0) {
+        e.preventDefault();
+        setDismissedHistoryQuery(queryRef.current);
+        return false;
+      }
       if (terminal.buffer.active.type === 'normal' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
         if (e.type === 'keydown') {
           e.preventDefault();
