@@ -60,8 +60,7 @@ export function CreateNameDialog({ title, description, label, onClose, onCreate,
             event.preventDefault();
             if (previousFocus.current?.isConnected) previousFocus.current.focus();
           }}
-          onEscapeKeyDown={event => { if (submitting.current) event.preventDefault(); }}
-          onInteractOutside={event => event.preventDefault()}>
+          onEscapeKeyDown={event => { if (submitting.current) event.preventDefault(); }}>
           <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3">
             <Dialog.Title className="font-medium">{title}</Dialog.Title>
             <Dialog.Close disabled={busy} aria-label="取消新建" className="rounded p-1 hover:bg-white/10 disabled:opacity-40"><X size={16} /></Dialog.Close>

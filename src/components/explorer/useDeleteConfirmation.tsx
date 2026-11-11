@@ -44,8 +44,7 @@ export function useDeleteConfirmation(project: string | null) {
             }
           }}
           onOpenAutoFocus={event => { event.preventDefault(); dialog.current?.focus(); }}
-          onCloseAutoFocus={event => event.preventDefault()}
-          onInteractOutside={event => event.preventDefault()}>
+          onCloseAutoFocus={event => event.preventDefault()}>
           <header className="flex items-center gap-3 px-5 pt-5">
             <span className="delete-confirm-icon">{request.notice ? <AlertTriangle size={20} className="text-amber-400" /> : <Trash2 size={20} />}</span>
             <Dialog.Title className="flex-1 font-medium text-base">{request.title}</Dialog.Title>

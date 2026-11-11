@@ -118,8 +118,7 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
         <Dialog.Content className="create-name-dialog" style={{ top: "5vh", width: "min(600px, 92vw)", maxHeight: "90vh", overflowY: "auto" }} onClick={event => event.stopPropagation()}
           onKeyDown={event => event.stopPropagation()}
           onOpenAutoFocus={event => { event.preventDefault(); urlInput.current?.focus(); }}
-          onEscapeKeyDown={event => { if (working.current) event.preventDefault(); }}
-          onInteractOutside={event => event.preventDefault()}>
+          onEscapeKeyDown={event => { if (working.current) event.preventDefault(); }}>
           <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3">
             <Dialog.Title className="font-medium">克隆 Git 项目</Dialog.Title>
             <Dialog.Close disabled={busy} aria-label="取消克隆" className="rounded p-1 hover:bg-white/10 disabled:opacity-40"><X size={16} /></Dialog.Close>

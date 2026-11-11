@@ -57,8 +57,7 @@ export function SftpConnectDialog({ onClose }: { onClose: () => void }) {
   return <Dialog.Root open onOpenChange={open => { if (!open && !working.current) onClose(); }}>
     <Dialog.Portal>
       <Dialog.Overlay className="search-overlay" />
-      <Dialog.Content className="create-name-dialog" onInteractOutside={event => event.preventDefault()}
-        onEscapeKeyDown={event => { if (working.current) event.preventDefault(); }}
+      <Dialog.Content className="create-name-dialog" onEscapeKeyDown={event => { if (working.current) event.preventDefault(); }}
         onKeyDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
         <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3">
           <Dialog.Title className="font-medium">打开 SFTP...</Dialog.Title>
