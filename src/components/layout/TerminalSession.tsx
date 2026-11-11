@@ -66,7 +66,7 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
     }).catch(error => { if (!disposed) setHistoryError(String(error)); });
 
     if (!host.current) return;
-    const terminal = new Terminal({ allowProposedApi: true, cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Cascadia Code", "Microsoft YaHei", "PingFang SC", "Noto Sans Mono CJK SC", monospace', theme: { background: "#2b2d30", foreground: "#d1d5db", cursor: "#a9b7c6" }, scrollback: 5000 });
+    const terminal = new Terminal({ allowProposedApi: true, altClickMovesCursor: false, cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Cascadia Code", "Microsoft YaHei", "PingFang SC", "Noto Sans Mono CJK SC", monospace', theme: { background: "#2b2d30", foreground: "#d1d5db", cursor: "#a9b7c6" }, scrollback: 5000 });
     // ConPTY owns screen reflow and does not restore scrollback when rows grow.
     // xterm's default Unix resize behavior otherwise disagrees with its redraws.
     // Remote PTYs must keep their server's normal terminal behavior.
@@ -77,6 +77,7 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
     terminal.unicode.activeVersion = "11";
 
     terminal.attachCustomKeyEventHandler((e) => {
+      if (e.key === 'Alt') return false;
       if (e.type === 'keydown' && e.key === 'Escape' && matchesRef.current.length > 0) {
         e.preventDefault();
         setDismissedHistoryQuery(queryRef.current);
@@ -104,6 +105,22 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
     terminal.loadAddon(fit);
     terminal.open(host.current);
     terminalRef.current = terminal;
+    const hostElement = host.current;
+    const setAltCursor = (pressed: boolean) => {
+      hostElement?.toggleAttribute("data-alt-pressed", pressed);
+    };
+    const onAltKey = (event: KeyboardEvent) => setAltCursor(event.altKey);
+    const onWindowBlur = () => setAltCursor(false);
+    const onTerminalMouseDown = (event: MouseEvent) => {
+      if (!event.altKey || event.button !== 0) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      window.dispatchEvent(new CustomEvent("nexusdesk-speech-toggle"));
+    };
+    hostElement?.addEventListener("mousedown", onTerminalMouseDown, true);
+    window.addEventListener("keydown", onAltKey);
+    window.addEventListener("keyup", onAltKey);
+    window.addEventListener("blur", onWindowBlur);
     // Keep the browser's hidden textarea attached to the same TSF context.
     // Calling xterm.focus() while Windows is composing can detach the IME and
     // make the committed string arrive through both IMM32 and TSF paths.
@@ -489,6 +506,11 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
       element.removeEventListener('mousemove', updateLinkModifier);
       element.removeEventListener('compositionstart', compositionStart, true);
       element.removeEventListener('compositionend', compositionEnd, true);
+      hostElement?.removeEventListener("mousedown", onTerminalMouseDown, true);
+      window.removeEventListener("keydown", onAltKey);
+      window.removeEventListener("keyup", onAltKey);
+      window.removeEventListener("blur", onWindowBlur);
+      setAltCursor(false);
       linkProvider.dispose();
       input.dispose();
       terminal.dispose();

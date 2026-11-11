@@ -25,10 +25,10 @@ test('terminal preserves early TUI probe replies and passes alternate-screen key
     await new Promise(resolve => setImmediate(resolve));
   };
   const wheelHandlers = [];
-  const element = { clientWidth: 800, clientHeight: 400, addEventListener(type, handler) { if (type === 'wheel') wheelHandlers.push(handler); }, removeEventListener() {} };
+  const element = { clientWidth: 800, clientHeight: 400, toggleAttribute() {}, addEventListener(type, handler) { if (type === 'wheel') wheelHandlers.push(handler); }, removeEventListener() {} };
   class MockTerminal {
     options = {};
-    constructor() { terminal = this; this.buffer = { active: { type: 'normal', baseY: 100, getLine: row => ({ translateToString: () => this.lines?.[row] ?? '' }) } }; this.cols = 80; this.rows = 24; this.parser = {}; }
+    constructor(options) { terminal = this; this.options = options; this.buffer = { active: { type: 'normal', baseY: 100, getLine: row => ({ translateToString: () => this.lines?.[row] ?? '' }) } }; this.cols = 80; this.rows = 24; this.parser = {}; }
     onWriteParsed(handler) { this.parsed = handler; return { dispose() {} }; }
     attachCustomKeyEventHandler(handler) { this.keys = handler; }
     scrollLines(lines) { this.scrolled = (this.scrolled ?? 0) + lines; }
@@ -95,6 +95,10 @@ test('terminal preserves early TUI probe replies and passes alternate-screen key
   effects[0]();
   const cleanup = effects[1]();
   assert.equal(terminal.options.windowsPty.backend, 'conpty', 'local Windows PTY uses ConPTY resize and reflow compatibility');
+  assert.equal(terminal.options.altClickMovesCursor, false, 'Alt-click cannot reposition the terminal cursor');
+  assert.equal(terminal.keys({ type: 'keydown', key: 'Alt', altKey: true }), false, 'Alt does not activate xterm selection mode');
+  assert.equal(terminal.keys({ type: 'keyup', key: 'Alt', altKey: false }), false, 'Alt release does not activate xterm selection mode');
+  assert.match(fs.readFileSync(`${__dirname}/../src/App.css`, 'utf8'), /\.terminal-host \.xterm\.column-select\.focus\s*\{\s*cursor:\s*text\s*!important;/, 'xterm column-select state keeps a text pointer under Alt+Ctrl');
   let prevented = 0, stopped = 0;
   const wheel = { deltaY: -3, deltaMode: 1, preventDefault() { prevented++; }, stopPropagation() { stopped++; } };
   wheelHandlers[0](wheel);
