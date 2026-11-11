@@ -8,7 +8,11 @@ use tauri::Emitter;
 use tauri::Manager;
 
 pub fn youtube_cookie_file() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|home| home.join(".nexus").join("youtube-cookies.txt"))
+    dirs::home_dir().map(|home| {
+        home.join(".nexus")
+            .join("browser")
+            .join("youtube-cookies.txt")
+    })
 }
 
 fn netscape_cookie_text(url: &tauri::Url, cookies: &[tauri::webview::Cookie<'static>]) -> String {
