@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import * as ContextMenu from "@radix-ui/react-context-menu";
 import { Copy, GitCommit, RefreshCw, RotateCcw, Undo2, Upload } from "lucide-react";
 import { gitApi, fsApi, type GitFileStatus, type GitLogEntry, type GitRevisionChange } from "@/lib/api";
 import { useWorkspaceStore, flushPendingWrites } from "@/store/workspaceStore";
@@ -19,44 +20,7 @@ export function GitPanel() {
 function RepositoryPanel({ root }: { root: string }) {
     const panelRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const [contextMenu, setContextMenu] = useState<{ targets: GitTreeTarget[]; x: number; y: number } | null>(null);
-    const [commitMenu, setCommitMenu] = useState<{ commit: GitLogEntry; x: number; y: number } | null>(null);
-    const contextMenuRef = useRef<HTMLDivElement>(null);
-    const commitMenuRef = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-        if (!contextMenu) return;
-        const dismiss = (event: PointerEvent) => { if (!contextMenuRef.current?.contains(event.target as Node)) setContextMenu(null); };
-        const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setContextMenu(null); };
-        const close = () => setContextMenu(null);
-        document.addEventListener("pointerdown", dismiss);
-        document.addEventListener("keydown", escape);
-        window.addEventListener("resize", close);
-        window.addEventListener("blur", close);
-        contextMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
-        return () => {
-            document.removeEventListener("pointerdown", dismiss);
-            document.removeEventListener("keydown", escape);
-            window.removeEventListener("resize", close);
-            window.removeEventListener("blur", close);
-        };
-    }, [contextMenu]);
-    useEffect(() => {
-        if (!commitMenu) return;
-        const dismiss = (event: PointerEvent) => { if (!commitMenuRef.current?.contains(event.target as Node)) setCommitMenu(null); };
-        const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setCommitMenu(null); };
-        const close = () => setCommitMenu(null);
-        document.addEventListener("pointerdown", dismiss);
-        document.addEventListener("keydown", escape);
-        window.addEventListener("resize", close);
-        window.addEventListener("blur", close);
-        commitMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
-        return () => {
-            document.removeEventListener("pointerdown", dismiss);
-            document.removeEventListener("keydown", escape);
-            window.removeEventListener("resize", close);
-            window.removeEventListener("blur", close);
-        };
-    }, [commitMenu]);
+    const [contextMenuTargets, setContextMenuTargets] = useState<GitTreeTarget[] | null>(null);
     const [files, setFiles] = useState<GitFileStatus[]>([]);
     const [log, setLog] = useState<GitLogEntry[]>([]);
     const [historyQuery, setHistoryQuery] = useState("");
@@ -264,14 +228,12 @@ function RepositoryPanel({ root }: { root: string }) {
         useWorkspaceStore.getState().returnFromRevision(root);
     }
     async function copyCommitMessage(commit: GitLogEntry) {
-        setCommitMenu(null);
         try {
             await navigator.clipboard.writeText(commit.message);
             if (mounted.current) setNotice("已复制提交说明");
         } catch (e) { if (mounted.current) setError(String(e)); }
     }
     async function undoCommit(commit: GitLogEntry) {
-        setCommitMenu(null);
         if (!commit.isHead || commit.pushed) return;
         const confirmed = await confirmAction(
             `撤销提交 ${commit.id.slice(0, 8)}「${commit.message.split("\n")[0]}」？提交会从当前分支移除，文件更改会保留在暂存区。`,
@@ -287,7 +249,6 @@ function RepositoryPanel({ root }: { root: string }) {
         }, true);
     }
     async function undoPushedCommit(commit: GitLogEntry) {
-        setCommitMenu(null);
         if (!commit.isHead || !commit.pushed || !hasRemote) return;
         const confirmed = await confirmAction(
             `撤销已推送的提交 ${commit.id.slice(0, 8)}「${commit.message.split("\n")[0]}」？这会把补丁保存为 patch-${commit.parents[0]?.slice(0, 8)}.md，将当前分支重置到父提交，并强制更新远程分支。`,
@@ -306,7 +267,6 @@ function RepositoryPanel({ root }: { root: string }) {
         }, true);
     }
     async function restorePushedCommit(commit: GitLogEntry) {
-        setCommitMenu(null);
         if (!commit.isHead || !commit.recoveryPatch) return;
         const confirmed = await confirmAction(
             `将 patch-${commit.id.slice(0, 8)}.md 中的更改恢复为新提交并推送到远程？`,
@@ -329,7 +289,6 @@ function RepositoryPanel({ root }: { root: string }) {
     }
     async function fileAction(selected: GitTreeTarget[], action: "revert" | "ignore") {
         const roots = selected.filter(target => !selected.some(parent => parent.directory && parent.path !== target.path && target.path.startsWith(`${parent.path}/`)));
-        setContextMenu(null);
         await run(async () => {
             await flushPendingWrites();
             const targets = files.filter(file => roots.some(target => target.directory ? file.path.startsWith(`${target.path}/`) : file.path === target.path));
@@ -411,39 +370,6 @@ function RepositoryPanel({ root }: { root: string }) {
         event.preventDefault(); event.stopPropagation();
         if (!revision && isRepository) void undoRevert();
     }}>
-        {commitMenu && <div ref={commitMenuRef} role="menu" data-panel-menu aria-label="提交操作" style={{ left: commitMenu.x, top: commitMenu.y }} onContextMenu={event => event.preventDefault()}
-            className="fixed z-50 w-60 rounded border border-ide-panel-border bg-ide-panel-bg p-1 shadow-xl">
-            <button type="button" role="menuitem"
-                className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left hover:bg-ide-tree-hover focus-visible:bg-ide-tree-hover"
-                onClick={() => void copyCommitMessage(commitMenu.commit)}>
-                <Copy size={14} />复制提交说明
-            </button>
-            <button type="button" role="menuitem" disabled={operationsPending}
-                className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left hover:bg-ide-tree-hover disabled:opacity-40"
-                onClick={() => { const commit = commitMenu.commit; setCommitMenu(null); void run(() => gitApi.openSnapshot(root, commit.id)); }}>
-                <GitCommit size={14} />在隔离窗口查看完整项目
-            </button>
-            {commitMenu.commit.isHead && !commitMenu.commit.pushed && <button type="button" role="menuitem" disabled={operationsPending}
-                className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left hover:bg-ide-tree-hover focus-visible:bg-ide-tree-hover disabled:opacity-40"
-                onClick={() => void undoCommit(commitMenu.commit)}>
-                <Undo2 size={14} />撤销此提交
-            </button>}
-            {commitMenu.commit.isHead && commitMenu.commit.pushed && hasRemote && <button type="button" role="menuitem" disabled={operationsPending}
-                className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left hover:bg-ide-tree-hover focus-visible:bg-ide-tree-hover disabled:opacity-40"
-                onClick={() => void undoPushedCommit(commitMenu.commit)}>
-                <Undo2 size={14} />撤销并推送
-            </button>}
-            {commitMenu.commit.isHead && commitMenu.commit.recoveryPatch && <button type="button" role="menuitem" disabled={operationsPending || !hasRemote}
-                className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left hover:bg-ide-tree-hover focus-visible:bg-ide-tree-hover disabled:opacity-40"
-                onClick={() => void restorePushedCommit(commitMenu.commit)}>
-                <RotateCcw size={14} />恢复撤销内容
-            </button>}
-        </div>}
-        {contextMenu && <div ref={contextMenuRef} role="group" aria-label="文件操作" style={{ left: contextMenu.x, top: contextMenu.y }} onContextMenu={event => event.preventDefault()}
-                             className="fixed z-50 w-52 rounded border border-ide-panel-border bg-ide-panel-bg p-1 shadow-xl">
-            <button type="button" disabled={operationsPending} className="block w-full rounded-sm px-3 py-2 text-left hover:bg-ide-tree-hover focus-visible:bg-ide-tree-hover disabled:opacity-40" onClick={() => void fileAction(contextMenu.targets, "revert")}>{contextMenu.targets.length > 1 ? `回退所选 ${contextMenu.targets.length} 项` : contextMenu.targets[0].directory ? "回退目录下所有文件" : "回退文件"}</button>
-            <button type="button" disabled={operationsPending || contextMenu.targets.some(target => target.path === ".gitignore")} className="block w-full rounded-sm px-3 py-2 text-left hover:bg-ide-tree-hover focus-visible:bg-ide-tree-hover disabled:opacity-40" onClick={() => void fileAction(contextMenu.targets, "ignore")}>加入 .gitignore</button>
-        </div>}
         <div className="flex items-center gap-3 px-2 py-1 border-b border-ide-panel-border">
             <button className={revision ? "text-gray-400 hover:text-white" : "text-blue-400"} onClick={returnToLocal}>本地更改 ({files.length})</button>
             <button title="刷新 Git 状态" aria-label="刷新 Git 状态" disabled={operationsPending} onClick={() => void run(refresh)}><RefreshCw size={14} /></button>
@@ -462,9 +388,10 @@ function RepositoryPanel({ root }: { root: string }) {
                         <span>当前项目尚未初始化 Git 仓库。</span>
                         <button type="button" disabled={operationsPending} onClick={() => void initializeRepository()} className="rounded bg-ide-accent px-3 py-1.5 text-white disabled:opacity-50">{busy ? "正在初始化..." : "初始化 Git"}</button>
                     </div> : isRepository === null ? <p className="text-gray-400">正在检查 Git 状态...</p> : !error && <p className="text-gray-400">工作区干净</p>)}
-                    <GitFileTree files={files} onContextMenu={(event, targets) => {
-                        event.preventDefault(); event.stopPropagation();
-                        if (!operationsPending) setContextMenu({ targets, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 208)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 90)) });
+                    <ContextMenu.Root open={!!contextMenuTargets} onOpenChange={open => { if (!open) setContextMenuTargets(null); }}>
+                    <ContextMenu.Trigger asChild><div>
+                    <GitFileTree files={files} onContextMenu={(_event, targets) => {
+                        if (!operationsPending) setContextMenuTargets(targets);
                     }} selection={{ checked: file => file.staged, eligible: file => !file.conflict, pending: file => pending.has(file.path), disabled: busy, onChange: stageMany }} renderFile={(file, name) => <div className={`flex items-center gap-2 py-1 rounded cursor-pointer hover:bg-ide-tree-hover ${file.conflict ? "text-orange-400" : file.status === "新增" ? "text-green-400" : file.status === "删除" ? "text-red-400" : "text-blue-400"}`} onClick={() => void run(() => openDiff(file, !file.unstaged))}>
                         <input type="checkbox" className="shrink-0 accent-blue-500 cursor-pointer disabled:cursor-wait" onClick={event => event.stopPropagation()} aria-label={`暂存 ${file.path}`} checked={file.staged} disabled={busy || pending.has(file.path) || file.conflict} onChange={e => stageMany([file], e.currentTarget.checked)} />
                         <span className="min-w-0 flex-1 truncate" title={file.path}>{name}</span>
@@ -472,6 +399,12 @@ function RepositoryPanel({ root }: { root: string }) {
                         {pending.has(file.path) ? <span className="text-gray-400 shrink-0">暂存处理中…</span> : file.staged && <button className="shrink-0 text-green-400" onClick={event => { event.stopPropagation(); void run(() => openDiff(file, true)); }}>已暂存</button>}
                         {file.staged && file.unstaged && <span title="暂存后又有修改" className="text-yellow-400">+修改</span>}
                     </div>} />
+                    </div></ContextMenu.Trigger>
+                    <ContextMenu.Portal><ContextMenu.Content data-panel-menu aria-label="文件操作" collisionPadding={8} className="ide-menu w-52 text-xs">
+                        <ContextMenu.Item disabled={operationsPending || !contextMenuTargets?.length} className="ide-menu-item" onSelect={() => contextMenuTargets && void fileAction(contextMenuTargets, "revert")}>{contextMenuTargets?.length && contextMenuTargets.length > 1 ? `回退所选 ${contextMenuTargets.length} 项` : contextMenuTargets?.[0]?.directory ? "回退目录下所有文件" : "回退文件"}</ContextMenu.Item>
+                        <ContextMenu.Item disabled={operationsPending || !contextMenuTargets?.length || contextMenuTargets.some(target => target.path === ".gitignore")} className="ide-menu-item" onSelect={() => contextMenuTargets && void fileAction(contextMenuTargets, "ignore")}>加入 .gitignore</ContextMenu.Item>
+                    </ContextMenu.Content></ContextMenu.Portal>
+                    </ContextMenu.Root>
                 </>}
             </div>
             {renderSeparator(0, "调整文件预览与提交说明宽度")}
@@ -499,16 +432,18 @@ function RepositoryPanel({ root }: { root: string }) {
                 <div className="min-h-0 flex-1 overflow-auto">
                 {!log.length && <p className="text-gray-400">暂无提交</p>}
                 {!!log.length && !filteredLog.length && <p role="status" className="text-gray-400">已加载的历史中没有匹配的提交</p>}
-                {filteredLog.map(c => <button key={c.id} className={`block w-full text-left border-l pl-3 pb-3 relative hover:bg-ide-tree-hover ${revision?.id === c.id ? "border-blue-400 bg-ide-selection" : c.pushed ? "border-emerald-500" : "border-amber-500"}`} onClick={() => void selectRevision(c)} onContextMenu={event => {
-                    event.preventDefault(); event.stopPropagation();
-                    const menuHeight = 92 + (c.isHead && (c.pushed ? hasRemote : true) ? 40 : 0) + (c.isHead && c.recoveryPatch ? 40 : 0);
-                    setCommitMenu({ commit: c, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 248)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - menuHeight)) });
-                }} title={`${c.message}\n${c.pushed ? "已推送到远程" : "尚未推送到远程"}`} aria-pressed={revision?.id === c.id}>
+                {filteredLog.map(c => <ContextMenu.Root key={c.id}><ContextMenu.Trigger asChild><button className={`block w-full text-left border-l pl-3 pb-3 relative hover:bg-ide-tree-hover ${revision?.id === c.id ? "border-blue-400 bg-ide-selection" : c.pushed ? "border-emerald-500" : "border-amber-500"}`} onClick={() => void selectRevision(c)} title={`${c.message}\n${c.pushed ? "已推送到远程" : "尚未推送到远程"}`} aria-pressed={revision?.id === c.id}>
                     <span className={`absolute -left-1 ${c.pushed ? "text-emerald-400" : "text-amber-400"}`} aria-label={c.pushed ? "已推送" : "未推送"}>●</span>
                     <div className="git-commit-message" title={c.message}><code className={c.pushed ? "text-emerald-400" : "text-amber-400"}>{c.id.slice(0, 8)}</code> {c.message.split("\n")[0]} <span className="text-green-400">{c.refs.join(", ")}</span></div>
                     <div className="text-gray-400">{c.author} · {new Date(c.time * 1000).toLocaleString()}</div>
                     <div className="text-gray-500">{c.parents.length ? `↳ ${c.parents.map(p => p.slice(0, 8)).join(" + ")}` : "根提交"}{c.parents.length > 1 ? " (合并)" : ""}</div>
-                </button>)}
+                </button></ContextMenu.Trigger><ContextMenu.Portal><ContextMenu.Content data-panel-menu aria-label="提交操作" collisionPadding={8} className="ide-menu w-60 text-xs">
+                    <ContextMenu.Item className="ide-menu-item" onSelect={() => void copyCommitMessage(c)}><Copy size={14} />复制提交说明</ContextMenu.Item>
+                    <ContextMenu.Item disabled={operationsPending} className="ide-menu-item" onSelect={() => void run(() => gitApi.openSnapshot(root, c.id))}><GitCommit size={14} />在隔离窗口查看完整项目</ContextMenu.Item>
+                    {c.isHead && !c.pushed && <ContextMenu.Item disabled={operationsPending} className="ide-menu-item" onSelect={() => void undoCommit(c)}><Undo2 size={14} />撤销此提交</ContextMenu.Item>}
+                    {c.isHead && c.pushed && hasRemote && <ContextMenu.Item disabled={operationsPending} className="ide-menu-item" onSelect={() => void undoPushedCommit(c)}><Undo2 size={14} />撤销并推送</ContextMenu.Item>}
+                    {c.isHead && c.recoveryPatch && <ContextMenu.Item disabled={operationsPending || !hasRemote} className="ide-menu-item" onSelect={() => void restorePushedCommit(c)}><RotateCcw size={14} />恢复撤销内容</ContextMenu.Item>}
+                </ContextMenu.Content></ContextMenu.Portal></ContextMenu.Root>)}
                 {log.length === limit && limit < 2000 && <button disabled={operationsPending} onClick={() => setLimit(n => n + 100)}>加载更多</button>}
                 </div>
             </div>

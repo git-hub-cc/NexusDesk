@@ -55,7 +55,6 @@ export function GitFileTree<T extends { path: string }>({ files, renderFile, sel
   }
   function context(event: MouseEvent<HTMLDivElement>, path: string) {
     if (!onContextMenu) return;
-    event.preventDefault(); event.stopPropagation();
     const paths = selectedPaths.has(path) ? selectedPaths : new Set([path]);
     setSelectedPaths(paths);
     if (!selectedPaths.has(path)) anchor.current = path;
@@ -71,7 +70,7 @@ export function GitFileTree<T extends { path: string }>({ files, renderFile, sel
       return child.file ? <div key={child.path} className={rowClass} onClickCapture={event => select(event, child.path)} onContextMenu={event => context(event, child.path)} style={{ paddingLeft: depth * 14 }}>{renderFile(child.file, child.name)}</div> :
         <div key={child.path}>
           <div onClickCapture={event => select(event, child.path)} onContextMenu={event => {
-            if (onDirectoryContextMenu) { event.preventDefault(); event.stopPropagation(); onDirectoryContextMenu(event, child.path); }
+            if (onDirectoryContextMenu) onDirectoryContextMenu(event, child.path);
             else context(event, child.path);
           }} className={`flex items-center gap-2 py-1 ${rowClass}`} style={{ paddingLeft: depth * 14 }}>
           {selection && <input type="checkbox" className="shrink-0 accent-blue-500 cursor-pointer" aria-label={`暂存目录 ${child.path}`} aria-checked={mixed ? "mixed" : checked} checked={checked} ref={input => { if (input) input.indeterminate = mixed; }} disabled={selection.disabled || !eligible.length || eligible.some(selection.pending)} onChange={e => selection.onChange(eligible, e.currentTarget.checked)} />}

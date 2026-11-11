@@ -106,7 +106,7 @@ test('only a visible overlay hides the browser and restoration forces a fresh sh
 
 test('panel context menus do not hide the native browser', async () => {
   assert.equal((musicEditorSource.match(/ContextMenu\.Content data-panel-menu/g) ?? []).length, 2);
-  assert.match(gitPanelSource, /role="menu" data-panel-menu aria-label="提交操作"/);
+  assert.equal((gitPanelSource.match(/ContextMenu\.Content data-panel-menu/g) ?? []).length, 2);
   const h = harness();
   const panelMenu = { style: { visibility: 'visible', opacity: '1' }, parentElement: null,
     getClientRects: () => [{}], getAttribute: name => name === 'role' ? 'menu' : 'true' };
