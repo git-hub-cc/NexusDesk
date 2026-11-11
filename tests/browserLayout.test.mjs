@@ -14,6 +14,8 @@ const visibilityCompiled = ts.transpileModule(
   readFileSync(new URL('../src/lib/browserVisibility.ts', import.meta.url), 'utf8').replace(/export /g, ''),
   { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
 ).outputText;
+const musicEditorSource = readFileSync(new URL('../src/components/music/MusicEditor.tsx', import.meta.url), 'utf8');
+const gitPanelSource = readFileSync(new URL('../src/components/git/GitPanel.tsx', import.meta.url), 'utf8');
 
 function harness() {
   let rect = { x: 10, y: 20, width: 800, height: 600 }, reads = 0;
@@ -99,6 +101,21 @@ test('only a visible overlay hides the browser and restoration forces a fresh sh
   h.restore(); h.frame();
   assert.equal(h.calls.length, count + 1);
   assert.equal(h.calls.at(-1).visible, true);
+  await h.complete();
+});
+
+test('panel context menus do not hide the native browser', async () => {
+  assert.equal((musicEditorSource.match(/ContextMenu\.Content data-panel-menu/g) ?? []).length, 2);
+  assert.match(gitPanelSource, /role="menu" data-panel-menu aria-label="提交操作"/);
+  const h = harness();
+  const panelMenu = { style: { visibility: 'visible', opacity: '1' }, parentElement: null,
+    getClientRects: () => [{}], getAttribute: name => name === 'role' ? 'menu' : 'true' };
+  h.context.document.querySelectorAll = selector => {
+    return selector.includes(':not([data-panel-menu])') ? [] : [panelMenu];
+  };
+  h.schedule(); h.frame();
+  assert.equal(h.calls.at(-1).visible, true);
+  assert.equal(h.calls.at(-1).reason, 'visible');
   await h.complete();
 });
 

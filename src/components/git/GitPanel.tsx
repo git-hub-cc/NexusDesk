@@ -411,7 +411,7 @@ function RepositoryPanel({ root }: { root: string }) {
         event.preventDefault(); event.stopPropagation();
         if (!revision && isRepository) void undoRevert();
     }}>
-        {commitMenu && <div ref={commitMenuRef} role="menu" aria-label="提交操作" style={{ left: commitMenu.x, top: commitMenu.y }} onContextMenu={event => event.preventDefault()}
+        {commitMenu && <div ref={commitMenuRef} role="menu" data-panel-menu aria-label="提交操作" style={{ left: commitMenu.x, top: commitMenu.y }} onContextMenu={event => event.preventDefault()}
             className="fixed z-50 w-60 rounded border border-ide-panel-border bg-ide-panel-bg p-1 shadow-xl">
             <button type="button" role="menuitem"
                 className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left hover:bg-ide-tree-hover focus-visible:bg-ide-tree-hover"
