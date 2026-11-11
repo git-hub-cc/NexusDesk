@@ -3,9 +3,9 @@ import * as ContextMenu from "@/lib/nativeMenu";
 import { ChevronRight, FileText, Folder } from "lucide-react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { fsApi, type GraphCategory } from "@/lib/api";
-import { buildReverseTree, countTreeGraphNames, parseTreeGraph, type TreeGraphNode } from "@/lib/treeGraph";
+import { buildReverseTree, changeTreeNode, countTreeGraphNames, parseTreeGraph, type TreeGraphNode } from "@/lib/treeGraph";
 import { openContextMenuFromKeyboard } from "@/lib/contextMenu";
-import { flushEditorContent, useWorkspaceStore } from "@/store/workspaceStore";
+import { flushEditorContent, flushPendingWrites, useWorkspaceStore } from "@/store/workspaceStore";
 import { CreateNameDialog } from "@/components/explorer/CreateNameDialog";
 import { useDeleteConfirmation } from "@/components/explorer/useDeleteConfirmation";
 import { matchTreeName, useNameSpeedSearch } from "@/components/explorer/useTreeSpeedSearch";
@@ -26,10 +26,21 @@ function containsLine(node: TreeGraphNode, line: number): boolean {
   return node.id + 1 === line || node.children.some(child => containsLine(child, line));
 }
 
+function findNodePath(nodes: TreeGraphNode[], line: number, ancestors: string[] = []): string[] | null {
+  for (const node of nodes) {
+    const path = [...ancestors, node.name];
+    if (node.id + 1 === line) return path;
+    const found = findNodePath(node.children, line, path);
+    if (found) return found;
+  }
+  return null;
+}
+
 function TreeNode({ node, onLocate, location, counts, onContextNode }: { node: TreeGraphNode; onLocate: (line: number) => void; location: { line: number } | null; counts: Map<string, number>; onContextNode: (name: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const target = useRef<HTMLButtonElement>(null);
   const selected = location?.line === node.id + 1;
+  useEffect(() => { target.current?.setAttribute("data-graph-node-line", String(node.id + 1)); }, [node.id]);
   useEffect(() => {
     if (location && node.children.some(child => containsLine(child, location.line))) setExpanded(true);
     if (selected) target.current?.scrollIntoView({ block: "nearest" });
@@ -104,6 +115,7 @@ export function GraphView() {
   const [contextCategory, setContextCategory] = useState<string | null>(null);
   const [contextFile, setContextFile] = useState<string | null>(null);
   const [contextNode, setContextNode] = useState<string | null>(null);
+  const [contextNodePath, setContextNodePath] = useState<{ path: string; line: number } | null>(null);
   const [locatedPath, setLocatedPath] = useState<string | null>(null);
   const [rename, setRename] = useState<GraphCategory | null>(null);
   const { confirmDelete, confirmationDialog } = useDeleteConfirmation(root);
@@ -259,25 +271,63 @@ export function GraphView() {
     finally { busy.current = false; }
   };
 
+  const deleteNode = async (name: string, target: { path: string; line: number }) => {
+    if (busy.current) return;
+    busy.current = true;
+    dialogFromMenu.current = true;
+    setError("");
+    try {
+      const nodePath = findNodePath(parseTreeGraph(treeContents.get(target.path) ?? ""), target.line);
+      const location = nodePath?.join(" > ") ?? name;
+      const confirmed = await confirmDelete({ title: "删除节点及子节点", description: `将删除节点“${name}”及其全部子节点。\n所在层级：${location}`, paths: [], confirmLabel: "删除节点" });
+      if (!confirmed || useWorkspaceStore.getState().rootPath !== root) return;
+      flushEditorContent();
+      await flushPendingWrites();
+      const state = useWorkspaceStore.getState();
+      const tab = [...state.leftTabs, ...state.rightTabs].find(item => item.path === target.path && !item.revision && item.diff === undefined);
+      const current = tab?.content ?? await fsApi.readFile(target.path);
+      const next = changeTreeNode(current, target.line, "delete");
+      if (next === current) return;
+      if (tab) {
+        const pane = state.leftTabs.some(item => item.id === tab.id) ? "left" : "right";
+        state.updateTabContent(tab.id, next, pane);
+        await flushPendingWrites();
+      } else await fsApi.writeFile(target.path, next);
+      await refresh();
+    } catch (cause) { if (useWorkspaceStore.getState().rootPath === root) setError(String(cause)); }
+    finally { busy.current = false; }
+  };
+
   return <ContextMenu.Root>
     <ContextMenu.Trigger asChild disabled={!root} onContextMenu={event => {
       if (!root) event.preventDefault();
       setContextCategory((event.target as HTMLElement).closest<HTMLElement>("[data-graph-category]")?.dataset.graphCategory ?? null);
-      setContextFile((event.target as HTMLElement).closest<HTMLElement>("[data-graph-file]")?.dataset.graphFile ?? null);
-      setContextNode((event.target as HTMLElement).closest<HTMLElement>("[data-graph-node]")?.dataset.graphNode ?? null);
+      const target = event.target as HTMLElement;
+      const node = target.closest<HTMLElement>("[data-graph-node-line]");
+      const fileElement = target.closest<HTMLElement>("[data-graph-file]");
+      setContextFile(node ? null : fileElement?.dataset.graphFile ?? null);
+      setContextNode(node?.dataset.graphNode ?? null);
+      setContextNodePath(node && fileElement ? { path: fileElement.dataset.graphFile!, line: Number(node.dataset.graphNodeLine) } : null);
     }}>
       <div ref={containerRef} data-graph-root tabIndex={0} onKeyDown={event => {
         openContextMenuFromKeyboard(event);
         if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]')) return;
         const target = event.target as HTMLElement;
-        const file = target.closest<HTMLElement>("[data-graph-file]")?.dataset.graphFile;
+        const node = target.closest<HTMLElement>("[data-graph-node-line]");
+        const file = node ? null : target.closest<HTMLElement>("[data-graph-file]")?.dataset.graphFile;
         const categoryName = target.closest<HTMLElement>("[data-graph-category]")?.dataset.graphCategory;
         const category = categories.find(item => item.name === (file ? target.closest<HTMLElement>("[data-graph-category]")?.dataset.graphCategory : categoryName));
         if (!category || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
         if (event.key === "F2" && !file) {
           event.preventDefault(); event.stopPropagation(); setRename(category);
         } else if (event.key === "Delete") {
-          event.preventDefault(); event.stopPropagation(); void remove(category, file ?? null);
+          event.preventDefault(); event.stopPropagation();
+          if (node) {
+            const path = node.closest<HTMLElement>("[data-graph-file]")?.dataset.graphFile;
+            const name = node.dataset.graphNode;
+            const line = Number(node.dataset.graphNodeLine);
+            if (path && name && line > 0) void deleteNode(name, { path, line });
+          } else void remove(category, file ?? null);
         }
       }} onKeyDownCapture={speedSearch.onKeyDownCapture} className="relative flex flex-col h-full overflow-hidden text-xs"
         onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = "none"; }}
@@ -301,9 +351,9 @@ export function GraphView() {
       </div>
     </ContextMenu.Trigger>
     <ContextMenu.Portal><ContextMenu.Content className="ide-menu w-52 text-xs" collisionPadding={8} aria-label="图谱分类操作" onCloseAutoFocus={event => { if (dialogFromMenu.current) { event.preventDefault(); dialogFromMenu.current = false; } }}>
-      {!contextFile && <ContextMenu.Item className="ide-menu-item" onSelect={() => { dialogFromMenu.current = true; setCreating(true); }}>新建分类...</ContextMenu.Item>}
+      {!contextFile && !contextNode && <ContextMenu.Item className="ide-menu-item" onSelect={() => { dialogFromMenu.current = true; setCreating(true); }}>新建分类...</ContextMenu.Item>}
       {contextFile && <ContextMenu.Item className="ide-menu-item" onSelect={() => { void revealItemInDir(contextFile).catch(cause => setError(String(cause))); }}>打开文件所在目录</ContextMenu.Item>}
-      {selectedCategory && <>
+      {selectedCategory && !contextNode && <>
         {!contextFile && <ContextMenu.Separator className="h-px my-1 bg-ide-panel-border" />}
         {contextFile ? <ContextMenu.Item className="ide-menu-item" onSelect={() => void remove(selectedCategory, contextFile)}>取消关联... <span className="ml-auto text-gray-500">Delete</span></ContextMenu.Item> : <>
           <ContextMenu.Item className="ide-menu-item" onSelect={() => { dialogFromMenu.current = true; setRename(selectedCategory); }}>重命名... <span className="ml-auto text-gray-500">F2</span></ContextMenu.Item>
@@ -311,7 +361,8 @@ export function GraphView() {
         </>}
       </>}
       {contextNode && (nodeCounts.get(contextNode) ?? 0) > 1 && <ContextMenu.Item className="ide-menu-item" onSelect={() => openReverseTree(contextNode)}>查看反向生成树</ContextMenu.Item>}
-      {selectedCategory && !contextFile && <ContextMenu.Sub>
+      {contextNode && contextNodePath && <ContextMenu.Item className="ide-menu-item" onSelect={() => void deleteNode(contextNode, contextNodePath)}>删除节点及子节点 <span className="ml-auto text-gray-500">Delete</span></ContextMenu.Item>}
+      {selectedCategory && !contextFile && !contextNode && <ContextMenu.Sub>
         <ContextMenu.SubTrigger className="ide-menu-item">设置目录颜色<ChevronRight size={14} className="ml-auto" /></ContextMenu.SubTrigger>
         <ContextMenu.Portal><ContextMenu.SubContent className="ide-menu w-40 text-xs" collisionPadding={8}>
           {categoryColors.map(color => <ContextMenu.Item key={color.value} className="ide-menu-item" onSelect={() => setCategoryColor(selectedCategory.name, color.value)}>
