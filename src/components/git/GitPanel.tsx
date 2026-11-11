@@ -251,7 +251,7 @@ function RepositoryPanel({ root }: { root: string }) {
     async function undoPushedCommit(commit: GitLogEntry) {
         if (!commit.isHead || !commit.pushed || !hasRemote) return;
         const confirmed = await confirmAction(
-            `撤销已推送的提交 ${commit.id.slice(0, 8)}「${commit.message.split("\n")[0]}」？这会把补丁保存为 patch-${commit.parents[0]?.slice(0, 8)}.md，将当前分支重置到父提交，并强制更新远程分支。`,
+            `撤销已推送的提交 ${commit.id.slice(0, 8)}「${commit.message.split("\n")[0]}」？操作会临时生成 patch-${commit.parents[0]?.slice(0, 8)}.md，将当前分支重置到父提交并强制更新远程分支，然后自动恢复更改到工作区（未暂存）；成功后会删除补丁文件。`,
             { title: "撤销并推送", confirmLabel: "撤销并推送", cancelLabel: "取消" }
         );
         if (!confirmed) return;
@@ -263,7 +263,7 @@ function RepositoryPanel({ root }: { root: string }) {
         await run(async () => {
             await gitApi.undoPushedCommit(root, commit.id);
             if (revision) returnToLocal();
-            setNotice(`已撤销并推送，补丁保存在 patch-${commit.parents[0]?.slice(0, 8)}.md`);
+            setNotice("已撤销并推送，原提交更改已恢复到工作区（未暂存），补丁文件已清理");
         }, true);
     }
     async function restorePushedCommit(commit: GitLogEntry) {

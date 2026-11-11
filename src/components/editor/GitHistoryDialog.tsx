@@ -3,6 +3,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { gitApi } from "@/lib/api";
 import { GitDiffEditor } from "./GitDiffEditor";
 import { isBinaryAsset } from "@/lib/assets";
+import { Undo2 } from "lucide-react";
+import { confirmAction } from "@/lib/dialogs";
 
 type History = Awaited<ReturnType<typeof gitApi.pathHistory>>;
 
@@ -17,7 +19,11 @@ export function GitHistoryDialog({ path, onClose }: { path: string; onClose: () 
   const [diffLoading, setDiffLoading] = useState(false);
   const [error, setError] = useState("");
   const [diffError, setDiffError] = useState("");
+  const [log, setLog] = useState<Awaited<ReturnType<typeof gitApi.log>>>([]);
+  const [operationError, setOperationError] = useState("");
+  const [busy, setBusy] = useState(false);
   const entry = history?.entries.find(item => item.commit.id === selected);
+  const commit = log.find(item => item.id === selected);
   useEffect(() => {
     let alive = true;
     setLoading(true); setError("");
@@ -25,9 +31,25 @@ export function GitHistoryDialog({ path, onClose }: { path: string; onClose: () 
       if (!alive) return;
       setHistory(result);
       setSelected(previous => result.entries.some(item => item.commit.id === previous) ? previous : result.entries[0]?.commit.id ?? "");
+      void gitApi.log(result.root, 2000).then(items => { if (alive) setLog(items); });
     }).catch(e => { if (alive) setError(String(e)); }).finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [path, limit]);
+  async function undoSelected() {
+    if (!commit?.isHead || busy) return;
+    const pushed = commit.pushed;
+    if (!await confirmAction(pushed
+      ? `撤销已推送的提交 ${commit.id.slice(0, 8)}？这会重写远程分支历史，并将提交内容恢复为工作区更改。`
+      : `撤销提交 ${commit.id.slice(0, 8)}？提交会从当前分支移除，文件更改会保留在暂存区。`,
+    { title: pushed ? "撤销并推送" : "撤销本地提交", confirmLabel: pushed ? "撤销并推送" : "撤销提交", cancelLabel: "取消" })) return;
+    if (pushed && !await confirmAction("继续会强制更新远程分支并删除该提交；请确认团队已协调并接受此风险。", { title: "确认强制更新远程", confirmLabel: "确认撤销并强推", cancelLabel: "取消" })) return;
+    setBusy(true); setOperationError("");
+    try {
+      if (pushed) await gitApi.undoPushedCommit(history!.root, commit.id);
+      else await gitApi.undoCommit(history!.root, commit.id);
+      onClose();
+    } catch (e) { setOperationError(String(e)); } finally { setBusy(false); }
+  }
   useEffect(() => { setFile(entry?.changes[0]?.path ?? ""); }, [entry]);
   useEffect(() => {
     let alive = true;
@@ -47,10 +69,12 @@ export function GitHistoryDialog({ path, onClose }: { path: string; onClose: () 
         <div className="flex items-center gap-4 p-3 border-b border-ide-panel-border text-sm">
           <Dialog.Title className="shrink-0">Git 历史</Dialog.Title>
           <span className="truncate flex-1" title={path}>{path}</span>
+          {commit?.isHead && <button type="button" disabled={busy} onClick={() => void undoSelected()} className="flex items-center gap-1 px-2 py-1 hover:bg-white/10 disabled:opacity-40"><Undo2 size={14} />撤销</button>}
           <Dialog.Close aria-label="关闭">×</Dialog.Close>
         </div>
         <Dialog.Description id="git-history-description" className="px-3 py-2 text-xs text-gray-400">当前分支中影响所选路径的提交 · 选择提交和文件查看与父提交的差异 · F7 / Shift+F7 跳转差异</Dialog.Description>
         {error && <p role="alert" className="p-3 text-red-400">{error}</p>}
+        {operationError && <p role="alert" className="p-3 text-red-400">{operationError}</p>}
         <div className="flex min-h-0 flex-1">
           <div className="w-56 shrink-0 min-h-0 flex flex-col border-r border-ide-panel-border">
             <input aria-label="搜索提交" placeholder="搜索提交、作者或哈希…" value={query} onChange={e => setQuery(e.target.value)} className="m-2 min-w-0 p-2 bg-ide-bg border border-ide-panel-border text-xs focus:outline-none" />

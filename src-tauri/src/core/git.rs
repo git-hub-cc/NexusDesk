@@ -1,3 +1,4 @@
+use base64::Engine;
 use git2::{
     Cred, CredentialType, DiffOptions, ErrorCode, ProxyOptions, PushOptions, RemoteCallbacks,
     Repository, Sort, Status, StatusOptions,
@@ -783,7 +784,7 @@ pub fn undo_pushed_commit(repo_path: &str, commit_id: &str) -> Result<(), String
         return Err("该提交已有待恢复补丁".into());
     }
     let root = repo.workdir().ok_or("裸仓库不支持补丁撤销")?;
-    let diff = git_output(
+    let diff = git_output_bytes(
         root,
         &[
             "diff",
@@ -794,9 +795,9 @@ pub fn undo_pushed_commit(repo_path: &str, commit_id: &str) -> Result<(), String
     )?;
     let metadata = serde_json::json!({ "commit": oid.to_string(), "parent": parent.id().to_string(), "message": commit.message().unwrap_or("") });
     let contents = format!(
-        "# NexusDesk recovery patch\n\n```json\n{}\n```\n\n```diff\n{}\n```\n",
+        "# NexusDesk recovery patch\n\n```json\n{}\n```\n\n```base64\n{}\n```\n",
         serde_json::to_string_pretty(&metadata).map_err(|e| e.to_string())?,
-        diff
+        base64::engine::general_purpose::STANDARD.encode(&diff)
     );
     std::fs::write(&path, contents).map_err(|e| e.to_string())?;
     repo.reset(parent.as_object(), git2::ResetType::Hard, None)
@@ -808,10 +809,21 @@ pub fn undo_pushed_commit(repo_path: &str, commit_id: &str) -> Result<(), String
             path.display()
         ));
     }
+    let patch_temp = repo.path().join("nexusdesk-recovery-apply.patch");
+    std::fs::write(&patch_temp, &diff).map_err(|e| e.to_string())?;
+    let apply = git_output(root, &["apply", "--binary", &patch_temp.to_string_lossy()]);
+    let _ = std::fs::remove_file(&patch_temp);
+    apply?;
+    std::fs::remove_file(&path).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 fn git_output(root: &Path, args: &[&str]) -> Result<String, String> {
+    let output = git_output_bytes(root, args)?;
+    String::from_utf8(output).map_err(|e| e.to_string())
+}
+
+fn git_output_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
     let mut command = std::process::Command::new("git");
     command.arg("-C").arg(root).args(args);
     #[cfg(windows)]
@@ -823,7 +835,7 @@ fn git_output(root: &Path, args: &[&str]) -> Result<String, String> {
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).into_owned());
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(output.stdout)
 }
 
 pub fn restore_pushed_commit(repo_path: &str, base_id: &str) -> Result<(), String> {
@@ -835,11 +847,22 @@ pub fn restore_pushed_commit(repo_path: &str, base_id: &str) -> Result<(), Strin
     }
     let path = patch_path(&repo, base)?;
     let contents = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let parts: Vec<_> = contents.split("```diff\n").collect();
-    if parts.len() != 2 {
-        return Err("补丁文件格式无效".into());
-    }
-    let diff = parts[1].strip_suffix("```\n").unwrap_or(parts[1]);
+    let diff = if let Some(encoded) = contents.split("```base64\n").nth(1) {
+        let encoded = encoded.strip_suffix("```\n").unwrap_or(encoded);
+        base64::engine::general_purpose::STANDARD
+            .decode(encoded.trim())
+            .map_err(|e| format!("恢复补丁数据无效：{e}"))?
+    } else {
+        let parts: Vec<_> = contents.split("```diff\n").collect();
+        if parts.len() != 2 {
+            return Err("补丁文件格式无效".into());
+        }
+        parts[1]
+            .strip_suffix("```\n")
+            .unwrap_or(parts[1])
+            .as_bytes()
+            .to_vec()
+    };
     let metadata_section = contents
         .split("```json\n")
         .nth(1)
@@ -860,7 +883,7 @@ pub fn restore_pushed_commit(repo_path: &str, base_id: &str) -> Result<(), Strin
     }
     let root = repo.workdir().ok_or("裸仓库不支持补丁恢复")?;
     let patch_temp = repo.path().join("nexusdesk-recovery.patch");
-    std::fs::write(&patch_temp, diff).map_err(|e| e.to_string())?;
+    std::fs::write(&patch_temp, &diff).map_err(|e| e.to_string())?;
     let apply = git_output(
         root,
         &[
@@ -1447,7 +1470,9 @@ mod tests {
         let base = commit(f.path(), "base").unwrap();
         push(f.path()).unwrap();
         f.write("restored\n");
+        std::fs::write(f.0.join("picture.bin"), [0, 255, 17, 128, 10]).unwrap();
         stage(f.path(), "note.md", true).unwrap();
+        stage(f.path(), "picture.bin", true).unwrap();
         let changed = commit(f.path(), "recover this").unwrap();
         push(f.path()).unwrap();
 
@@ -1456,16 +1481,17 @@ mod tests {
             open(f.path()).unwrap().head().unwrap().target(),
             Some(git2::Oid::from_str(&base).unwrap())
         );
-        assert!(f.0.join(format!("patch-{}.md", &base[..8])).is_file());
-        assert!(log(f.path(), 100).unwrap()[0].recovery_patch);
-
-        restore_pushed_commit(f.path(), &base).unwrap();
         assert_eq!(
             std::fs::read_to_string(f.0.join("note.md")).unwrap(),
             "restored\n"
         );
-        assert_eq!(log(f.path(), 100).unwrap()[0].message, "recover this");
+        assert_eq!(
+            std::fs::read(f.0.join("picture.bin")).unwrap(),
+            [0, 255, 17, 128, 10]
+        );
         assert!(!f.0.join(format!("patch-{}.md", &base[..8])).exists());
+        assert!(!log(f.path(), 100).unwrap()[0].recovery_patch);
+        assert!(!get_status(f.path()).unwrap().is_empty());
         drop(Repository::open_bare(&remote_path).unwrap());
         std::fs::remove_dir_all(remote_path).unwrap();
     }
