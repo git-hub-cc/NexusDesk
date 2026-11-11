@@ -227,7 +227,7 @@ export function BottomPanel() {
         <div className="h-full min-w-0 flex-1" />
       </div>
       <div className="flex gap-1 shrink-0">
-        <label title="自动适应终端面板尺寸" onMouseEnter={() => {
+        {activeTab === "terminal" && <label title="自动适应终端面板尺寸" onMouseEnter={() => {
           if (activeTab === "terminal" && activeSessionId && !exitedSessions[activeSessionId]) {
             setResizeRequest(current => ({ sessionId: activeSessionId, version: current.version + 1 }));
           }
@@ -238,7 +238,7 @@ export function BottomPanel() {
             if (enabled) setResizeRequest(current => ({ sessionId: activeSessionId, version: current.version + 1 }));
           }} className="h-3 w-3 accent-ide-accent disabled:cursor-not-allowed" />
           <span>自动</span>
-        </label>
+        </label>}
         <button title="命令行工具设置" aria-label="命令行工具设置" onClick={() => setSettingsOpen(true)} className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-white/10 hover:text-white active:bg-white/15 opacity-0 group-hover/panel:opacity-100 transition-opacity"><Settings size={14} /></button>
         <PanelMinimizeButton panel="bottom" />
       </div>
