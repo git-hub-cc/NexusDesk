@@ -519,7 +519,7 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
         if (started && !exited) terminalInvoke("close_terminal", { id }).catch(() => {});
       });
     };
-  }, [session]);
+  }, [session.id, session.name, session.command, session.cwd, session.remoteId]);
 
   useEffect(() => {
     if (active && resizeRequest.sessionId === session.id && resizeRequest.version > 0) fitRef.current();
