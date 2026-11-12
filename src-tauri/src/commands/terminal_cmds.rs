@@ -189,32 +189,36 @@ impl TerminalState {
     }
 }
 
-static HISTORY_LOCK: Mutex<()> = Mutex::new(());
-
-fn history_path() -> Result<std::path::PathBuf, String> {
-    Ok(dirs::home_dir()
-        .ok_or("Cannot find home directory")?
-        .join(".nexus/terminal_history.json"))
-}
-
 fn read_history() -> Result<Vec<String>, String> {
-    match std::fs::read(history_path()?) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| e.to_string()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(e) => Err(e.to_string()),
-    }
+    let conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
+    let mut statement = conn
+        .prepare("SELECT command FROM terminal_history ORDER BY position")
+        .map_err(|error| error.to_string())?;
+    statement
+        .query_map([], |row| row.get(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 pub fn load_terminal_history() -> Result<Vec<String>, String> {
-    let _guard = HISTORY_LOCK.lock().map_err(|e| e.to_string())?;
     read_history()
 }
 
 #[tauri::command]
 pub fn save_terminal_history(command: String) -> Result<Vec<String>, String> {
-    let _guard = HISTORY_LOCK.lock().map_err(|e| e.to_string())?;
-    let mut history = read_history()?;
+    let mut conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
+    let tx = conn.transaction().map_err(|error| error.to_string())?;
+    let mut statement = tx
+        .prepare("SELECT command FROM terminal_history ORDER BY position")
+        .map_err(|error| error.to_string())?;
+    let mut history = statement
+        .query_map([], |row| row.get(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(|error| error.to_string())?;
+    drop(statement);
     let command = command.trim();
     if command.is_empty() || command.contains(['\r', '\n', '\0']) {
         return Ok(history);
@@ -222,10 +226,16 @@ pub fn save_terminal_history(command: String) -> Result<Vec<String>, String> {
     history.retain(|entry| entry != command);
     history.insert(0, command.to_owned());
     history.truncate(2000);
-    let path = history_path()?;
-    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
-    let bytes = serde_json::to_vec_pretty(&history).map_err(|e| e.to_string())?;
-    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM terminal_history", [])
+        .map_err(|e| e.to_string())?;
+    for (position, command) in history.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO terminal_history(command,position) VALUES (?1,?2)",
+            rusqlite::params![command, position as i64],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(history)
 }
 

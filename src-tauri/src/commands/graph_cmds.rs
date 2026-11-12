@@ -12,11 +12,7 @@ pub struct GraphCategory {
 }
 
 fn color_db() -> Result<Connection, String> {
-    let folder = dirs::home_dir()
-        .ok_or("Cannot find home directory")?
-        .join(".nexus");
-    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
-    let conn = Connection::open(folder.join("graph-colors.db")).map_err(|e| e.to_string())?;
+    let conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS colors (category TEXT PRIMARY KEY COLLATE NOCASE, color TEXT NOT NULL);").map_err(|e| e.to_string())?;
     Ok(conn)
 }

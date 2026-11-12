@@ -184,13 +184,14 @@ pub fn init_db(
         Some(p) => PathBuf::from(p),
         None => dirs::home_dir().ok_or("Cannot find home directory")?,
     };
-    db_path.push(".nexus");
-
-    if !db_path.exists() {
-        fs::create_dir_all(&db_path)?;
+    let global = custom_path.is_none();
+    if global {
+        db_path.push(".nexus/data");
+    } else {
+        db_path.push(".nexus");
     }
-
-    db_path.push("index.db");
+    fs::create_dir_all(&db_path)?;
+    db_path.push(if global { "nexus.db" } else { "index.db" });
     let conn = Connection::open(db_path)?;
     conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
 
@@ -240,6 +241,9 @@ pub fn init_db(
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS file_meta_accessed ON file_meta(last_accessed DESC);",
     )?;
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS global_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS terminal_history (command TEXT PRIMARY KEY, position INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS colors (category TEXT PRIMARY KEY COLLATE NOCASE, color TEXT NOT NULL);")?;
     crate::core::local_history::init(&conn)?;
     Ok(conn)
 }

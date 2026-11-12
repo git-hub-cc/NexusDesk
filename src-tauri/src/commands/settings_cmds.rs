@@ -1,9 +1,7 @@
 use serde_json::{Map, Value};
-use std::{
-    collections::BTreeMap,
-    fs::OpenOptions,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeMap, path::PathBuf};
+#[cfg(test)]
+use std::{fs::OpenOptions, path::Path};
 
 type Settings = BTreeMap<String, String>;
 
@@ -11,6 +9,20 @@ fn settings_path() -> Result<PathBuf, String> {
     Ok(dirs::home_dir()
         .ok_or("Cannot find home directory")?
         .join(".nexus/global_settings.json"))
+}
+
+fn database_settings() -> Result<Settings, String> {
+    let conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
+    let mut statement = conn
+        .prepare("SELECT key,value FROM global_settings")
+        .map_err(|error| error.to_string())?;
+    statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|error| error.to_string())
 }
 
 fn allowed(key: &str) -> bool {
@@ -32,6 +44,7 @@ fn allowed(key: &str) -> bool {
 }
 
 // Lock a separate file so atomic replacement of the JSON cannot bypass the lock.
+#[cfg(test)]
 fn transaction<T>(
     path: &Path,
     operation: impl FnOnce(&mut Settings) -> Result<T, String>,
@@ -180,9 +193,10 @@ fn update(values: &mut Settings, key: &str, previous: Option<&str>, value: &str)
 }
 
 pub fn needs_migration() -> Result<bool, String> {
-    Ok(!settings_path()?.exists())
+    Ok(database_settings()?.is_empty() && !settings_path()?.exists())
 }
 
+#[cfg(test)]
 fn import_entries(values: &mut Settings, entries: Settings) {
     for (key, value) in entries {
         if allowed(&key) {
@@ -216,14 +230,18 @@ pub async fn import_global_settings(
         return Err("Only the migration window can import settings".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
-        transaction(
-            &settings_path()?,
-            |values| {
-                import_entries(values, entries);
-                Ok(())
-            },
-            true,
-        )
+        let mut conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
+        let tx = conn.transaction().map_err(|error| error.to_string())?;
+        for (key, value) in entries {
+            if allowed(&key) {
+                tx.execute(
+                    "INSERT OR IGNORE INTO global_settings(key,value) VALUES (?1,?2)",
+                    rusqlite::params![key, value],
+                )
+                .map_err(|error| error.to_string())?;
+            }
+        }
+        tx.commit().map_err(|error| error.to_string())
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -234,11 +252,9 @@ pub async fn import_global_settings(
 
 #[tauri::command]
 pub async fn read_global_settings() -> Result<Settings, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        transaction(&settings_path()?, |values| Ok(values.clone()), false)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(|| database_settings())
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -251,11 +267,15 @@ pub async fn write_global_setting(
         return Err(format!("Unknown global setting: {key}"));
     }
     tauri::async_runtime::spawn_blocking(move || {
-        transaction(
-            &settings_path()?,
-            |values| Ok(update(values, &key, previous.as_deref(), &value)),
-            true,
-        )
+        let mut conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
+        let tx = conn.transaction().map_err(|error| error.to_string())?;
+        let mut values = Settings::new();
+        { let mut statement = tx.prepare("SELECT key,value FROM global_settings").map_err(|error| error.to_string())?;
+          for row in statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))).map_err(|error| error.to_string())? { let (key, value) = row.map_err(|error| error.to_string())?; values.insert(key, value); } }
+        let result = update(&mut values, &key, previous.as_deref(), &value);
+        tx.execute("INSERT INTO global_settings(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", rusqlite::params![key, result]).map_err(|error| error.to_string())?;
+        tx.commit().map_err(|error| error.to_string())?;
+        Ok(result)
     })
     .await
     .map_err(|e| e.to_string())?
