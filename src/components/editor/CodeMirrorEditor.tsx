@@ -298,18 +298,21 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
     view.focus();
   };
 
-  const insertHttpTemplate = (method: "GET" | "POST") => {
+  const insertHttpTemplate = (method: "GET" | "POST" | "IMAGE_EDIT") => {
     const view = viewRef.current;
     if (!view) return;
     const selection = view.state.selection.main;
     const template = method === "GET"
       ? "### GET 请求\nGET https://example.com\n\n"
-      : "### POST 请求\nPOST https://example.com\nContent-Type: application/json\n\n{}\n";
-    const urlStart = template.indexOf("https://example.com");
+      : method === "POST"
+        ? "### POST 请求\nPOST https://example.com\nContent-Type: application/json\n\n{}\n"
+        : "### 图片编辑 POST 请求\nPOST https://api.example.com/v1/images/edits\nAuthorization: Bearer YOUR_API_KEY\nUser-Agent: HTTP Client\nAccept: application/json\nContent-Type: multipart/form-data; boundary=ImageEditBoundary\n\n--ImageEditBoundary\nContent-Disposition: form-data; name=\"model\"\n\nYOUR_IMAGE_MODEL\n--ImageEditBoundary\nContent-Disposition: form-data; name=\"prompt\"\n\n在此填写图片编辑提示词。\n--ImageEditBoundary\nContent-Disposition: form-data; name=\"size\"\n\n1024x1024\n--ImageEditBoundary\nContent-Disposition: form-data; name=\"n\"\n\n1\n--ImageEditBoundary\nContent-Disposition: form-data; name=\"response_format\"\n\nurl\n--ImageEditBoundary\nContent-Disposition: form-data; name=\"image\"; filename=\"input.jpg\"\nContent-Type: image/jpeg\n\n< ./input.jpg\n--ImageEditBoundary--\n";
+    const urlStart = template.indexOf("https://example.com") >= 0 ? template.indexOf("https://example.com") : template.indexOf("https://api.example.com");
+    const urlLength = method === "IMAGE_EDIT" ? "https://api.example.com/v1/images/edits".length : "https://example.com".length;
     const from = selection.from;
     view.dispatch({
       changes: { from, to: selection.to, insert: template },
-      selection: { anchor: from + urlStart, head: from + urlStart + "https://example.com".length },
+      selection: { anchor: from + urlStart, head: from + urlStart + urlLength },
       userEvent: "input",
     });
     view.focus();
@@ -967,6 +970,9 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
               </ContextMenu.Item>
               <ContextMenu.Item className="ide-menu-item" onSelect={() => insertHttpTemplate("POST")}>
                 <Send size={14} className="text-gray-400" /> POST 请求模板
+              </ContextMenu.Item>
+              <ContextMenu.Item className="ide-menu-item" onSelect={() => insertHttpTemplate("IMAGE_EDIT")}>
+                <Send size={14} className="text-gray-400" /> POST 请求模板-图片
               </ContextMenu.Item>
             </>
           )}
