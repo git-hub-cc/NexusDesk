@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { compactResponseBase64 } from "@/lib/httpResponsePreview";
 import { extractResponseBase64 } from "@/lib/httpBase64Extraction";
 import { formatHttpMessage, recordNetworkRequest } from "@/lib/networkMonitor";
+import { isRemotePath, remotePath, remoteUri } from "@/lib/remote";
 
 const ResponseText = memo(({ content, className }: { content: string; className: string }) => {
   const preview = useMemo(() => compactResponseBase64(content), [content]);
@@ -122,6 +123,8 @@ const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: s
   const requests = useMemo(() => parseHttpFile(content), [content]);
   const [timeoutSeconds, setTimeoutSeconds] = useState(300);
   const [maxSizeMb, setMaxSizeMb] = useState(20);
+  const [maxImageSizeMb, setMaxImageSizeMb] = useState(20);
+  const [maxImageCount, setMaxImageCount] = useState(10);
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
   const [responseTab, setResponseTab] = useState<"body" | "extract" | "urls" | "base64">("body");
@@ -133,6 +136,7 @@ const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: s
   const [responses, setResponses] = useState<Record<string, HttpResponse>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const readAborters = useRef(new Map<string, () => void>());
 
   useEffect(() => {
     if (requests.length > 0 && !activeReqId) {
@@ -165,20 +169,88 @@ const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: s
   const sendRequest = async (req: HttpRequest) => {
     const startedAt = performance.now();
     const requestStartedAt = Date.now();
-    const requestMessage = formatHttpMessage(`${req.method} ${req.url}`, req.headers, req.body);
+    let requestBodyBytes: number[] | undefined;
+    let requestBody = req.body;
+    let requestMessage = formatHttpMessage(`${req.method} ${req.url}`, req.headers, requestBody);
     setLoading(prev => ({ ...prev, [req.id]: true }));
     setErrors(prev => ({ ...prev, [req.id]: "" }));
     try {
+      const fileParts = [...req.body.matchAll(/(Content-Disposition:\s*form-data;[^\r\n]*filename="[^"]+"[^\r\n]*\r?\nContent-Type:\s*[^\r\n]+\r?\n\r?\n)<\s*([^\r\n]+)/gi)];
+      if (fileParts.length) {
+        if (fileParts.length > maxImageCount) {
+          throw new Error(`图片数量超过限制（最多 ${maxImageCount} 张）`);
+        }
+        const maxImageSizeBytes = maxImageSizeMb * 1024 * 1024;
+        let abortRead!: () => void;
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const abortPromise = new Promise<never>((_, reject) => {
+          abortRead = () => reject(new Error("已取消图片读取"));
+        });
+        readAborters.current.set(req.id, abortRead);
+        try {
+          const encoder = new TextEncoder();
+          const chunks: Uint8Array[] = [];
+          let cursor = 0;
+          for (const filePart of fileParts) {
+            const start = filePart.index!;
+            chunks.push(encoder.encode(req.body.slice(cursor, start) + filePart[1]));
+            let imagePath = filePart[2].trim().replace(/^['"]|['"]$/g, "");
+            const remoteInput = isRemotePath(imagePath);
+            const localInput = /^(?:[a-z]:[\\/]|\\\\|\/)/i.test(imagePath);
+            if (!remoteInput && !localInput) {
+              if (filePath.startsWith("sftp://")) {
+                const remote = remotePath(filePath);
+                const directory = remote.path.slice(0, remote.path.lastIndexOf("/"));
+                imagePath = remoteUri(remote.id, `${directory}/${imagePath}`);
+              } else {
+                const separator = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+                const directory = separator < 0 ? "." : filePath.slice(0, separator);
+                imagePath = `${directory}/${imagePath}`.replace(/\\/g, "/");
+              }
+            }
+            const remote = isRemotePath(imagePath);
+            if (!remote && /^[a-z][a-z\d+.-]*:/i.test(imagePath) && !/^[a-z]:[\\/]/i.test(imagePath)) {
+              throw new Error(`不支持的图片路径协议: ${imagePath.split(":", 1)[0]}`);
+            }
+            let read: Promise<number[]>;
+            if (remote) {
+              const target = remotePath(imagePath);
+              read = invoke<number[]>("remote_files", { id: target.id, operation: "read_binary", path: target.path, content: String(maxImageSizeBytes) });
+            } else {
+              read = invoke<number[]>("read_binary_file_limited", { path: imagePath, maxSizeBytes: maxImageSizeBytes });
+            }
+            const timeoutMs = remote ? 30_000 : 5_000;
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              timeoutId = setTimeout(() => reject(new Error(`图片读取超时（${remote ? 30 : 5} 秒）`)), timeoutMs);
+            });
+            const imageBytes = await Promise.race([read, timeoutPromise, abortPromise]);
+            clearTimeout(timeoutId!);
+            chunks.push(new Uint8Array(imageBytes));
+            cursor = start + filePart[0].length;
+          }
+          chunks.push(encoder.encode(req.body.slice(cursor)));
+          const combined = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0));
+          let offset = 0;
+          for (const chunk of chunks) { combined.set(chunk, offset); offset += chunk.length; }
+          requestBodyBytes = Array.from(combined);
+          requestBody = "[multipart 二进制请求体]";
+        } finally {
+          clearTimeout(timeoutId!);
+          readAborters.current.delete(req.id);
+        }
+      }
+      requestMessage = formatHttpMessage(`${req.method} ${req.url}`, req.headers, requestBody);
       const res = await invoke<HttpResponse>("send_http_request", {
         requestId: req.id,
         method: req.method,
         url: req.url,
         headers: req.headers,
-        body: req.body,
+        body: requestBodyBytes ? "" : req.body,
+        bodyBytes: requestBodyBytes,
         timeout: timeoutSeconds,
         maxSizeBytes: Math.floor(maxSizeMb * 1024 * 1024),
       });
-      recordNetworkRequest({ url: req.url, method: req.method, status: res.status, timeMs: res.timeMs, requestBytes: new TextEncoder().encode(req.body).byteLength, responseBytes: res.sizeBytes,
+      recordNetworkRequest({ url: req.url, method: req.method, status: res.status, timeMs: res.timeMs, requestBytes: requestBodyBytes?.length ?? new TextEncoder().encode(req.body).byteLength, responseBytes: res.sizeBytes,
         startedAt: requestStartedAt, requestMessage,
         responseMessage: formatHttpMessage(`${res.status} ${res.statusText}`, res.headers, (res.isBinary ? "[二进制内容，Base64]\r\n" : "") + res.body + (res.truncated ? "\r\n[响应已按 HTTP 编辑器的大小限制截断，请调大截断大小后重新请求]" : "")) });
       setResponses(prev => ({ ...prev, [req.id]: res }));
@@ -192,6 +264,7 @@ const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: s
   };
 
   const cancelRequest = async (reqId: string) => {
+    readAborters.current.get(reqId)?.();
     try {
       await invoke("cancel_http_request", { requestId: reqId });
     } catch (e) {
@@ -235,6 +308,8 @@ const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: s
       <div className="flex flex-wrap items-center gap-3 px-3 py-2 border-b border-ide-panel-border text-xs">
         <label className="flex items-center gap-1">超时（秒）<input aria-label="请求超时（秒）" type="number" min={1} step={1} value={timeoutSeconds} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value > 0) setTimeoutSeconds(value); }} className="w-20 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" /></label>
         <label className="flex items-center gap-1">截断大小（MB）<input aria-label="响应截断大小（MB）" type="number" min={1} step={1} value={maxSizeMb} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value > 0 && Number.isSafeInteger(value * 1024 * 1024)) setMaxSizeMb(value); }} className="w-20 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" /></label>
+        <label className="flex items-center gap-1">单张图片（MB）<input aria-label="单张图片大小上限（MB）" type="number" min={1} step={1} value={maxImageSizeMb} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value > 0 && Number.isSafeInteger(value * 1024 * 1024)) setMaxImageSizeMb(value); }} className="w-20 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" /></label>
+        <label className="flex items-center gap-1">图片数量<input aria-label="图片数量上限" type="number" min={1} step={1} value={maxImageCount} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value > 0) setMaxImageCount(value); }} className="w-20 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" /></label>
       </div>
       <div className="flex-1 flex min-h-0">
         <div className="w-1/3 border-r border-ide-panel-border flex flex-col min-w-[200px]">

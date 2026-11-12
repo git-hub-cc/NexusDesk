@@ -13,6 +13,7 @@ type Reply = mpsc::Sender<Result<serde_json::Value, String>>;
 enum Request {
     Files(String, Reply),
     Read(String, Reply),
+    ReadBinary(String, usize, Reply),
     Write(String, String, Reply),
     Operation(String, String, Option<String>, Reply),
     Upload(String, String, Reply),
@@ -291,6 +292,23 @@ fn worker(ssh: ssh2::Session, sftp: ssh2::Sftp, rx: mpsc::Receiver<Request>) {
                         })();
                         (reply, result)
                     }
+                    Request::ReadBinary(path, max_size_bytes, reply) => {
+                        let result = (|| -> Result<_, String> {
+                            let file = sftp.open(Path::new(&path)).map_err(|e| e.to_string())?;
+                            let mut bytes = Vec::new();
+                            file.take(max_size_bytes.saturating_add(1) as u64)
+                                .read_to_end(&mut bytes)
+                                .map_err(|e| e.to_string())?;
+                            if bytes.len() > max_size_bytes {
+                                return Err(format!(
+                                    "图片文件超过 {} MB 限制",
+                                    max_size_bytes / (1024 * 1024)
+                                ));
+                            }
+                            Ok(serde_json::json!(bytes))
+                        })();
+                        (reply, result)
+                    }
                     Request::Write(path, content, reply) => {
                         let path = match sftp.realpath(Path::new(&path)) {
                             Ok(target) => target.to_string_lossy().into_owned(),
@@ -486,6 +504,16 @@ pub async fn remote_files(
             ),
             "list" => Request::Files(path, tx),
             "read" => Request::Read(path, tx),
+            "read_binary" => {
+                let max_size_bytes = content
+                    .ok_or("缺少图片大小限制")?
+                    .parse::<usize>()
+                    .map_err(|_| "无效的图片大小限制")?;
+                if max_size_bytes == 0 {
+                    return Err("图片大小限制必须大于 0".into());
+                }
+                Request::ReadBinary(path, max_size_bytes, tx)
+            }
             "write" => Request::Write(path, content.ok_or("缺少文件内容")?, tx),
             "upload_bytes" | "stat" | "create" | "mkdir" | "rename" | "delete" => {
                 Request::Operation(operation, path, content, tx)

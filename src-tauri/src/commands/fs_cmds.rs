@@ -67,6 +67,34 @@ pub async fn read_binary_file(path: String) -> Result<Vec<u8>, String> {
 }
 
 #[tauri::command]
+pub async fn read_binary_file_limited(
+    path: String,
+    max_size_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    if max_size_bytes == 0 {
+        return Err("图片大小限制必须大于 0".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Read;
+
+        let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        let mut bytes = Vec::new();
+        file.take(max_size_bytes.saturating_add(1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|e| e.to_string())?;
+        if bytes.len() > max_size_bytes {
+            return Err(format!(
+                "图片文件超过 {} MB 限制",
+                max_size_bytes / (1024 * 1024)
+            ));
+        }
+        Ok(bytes)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn write_binary_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         std::fs::write(path, bytes).map_err(|e| e.to_string())

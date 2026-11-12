@@ -33,6 +33,7 @@ pub async fn send_http_request(
     url: String,
     headers: Vec<(String, String)>,
     body: String,
+    body_bytes: Option<Vec<u8>>,
     timeout: Option<u64>,
     max_size_bytes: Option<usize>,
     state: State<'_, HttpState>,
@@ -68,7 +69,9 @@ pub async fn send_http_request(
         }
 
         let mut request = client.request(req_method, &url).headers(req_headers);
-        if !body.is_empty() {
+        if let Some(bytes) = body_bytes {
+            request = request.body(bytes);
+        } else if !body.is_empty() {
             request = request.body(body);
         }
 

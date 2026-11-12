@@ -341,6 +341,7 @@ pub fn run() {
             commands::fs_cmds::init_project_db,
             commands::fs_cmds::read_file,
             commands::fs_cmds::read_binary_file,
+            commands::fs_cmds::read_binary_file_limited,
             commands::document_cmds::convert_legacy_office,
             commands::fs_cmds::write_binary_file,
             commands::fs_cmds::import_asset,
