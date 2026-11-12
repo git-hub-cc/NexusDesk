@@ -8,6 +8,7 @@ const PROVIDER_KEY = "nexusdesk.navigation.provider";
 const LEGACY_TOKEN_KEY = "navhub-github-token";
 const LEGACY_REPO_KEY = "navhub-github-repo";
 const DATA_FILE = "navhub-data.json";
+const SYNC_TIMEOUT_MS = 15000;
 type SyncStatus = "disconnected" | "connecting" | "connected" | "syncing" | "error" | "conflict";
 export type NavigationSyncState = { status: SyncStatus; provider: NavigationSyncProvider; user: string; repo: string; lastSync: number | null; error: string };
 
@@ -41,6 +42,7 @@ async function request<T>(url: string, method = "GET", body?: unknown): Promise<
   const response = await fetch(url, {
     method,
     headers,
+    signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!response.ok) {
@@ -72,13 +74,13 @@ async function readRemote(): Promise<{ data: NavigationData | null; sha: string 
   const path = encodeURIComponent(DATA_FILE);
   const url = current.provider === "github" ? `https://api.github.com/repos/${current.repo}/contents/${path}?t=${Date.now()}` : current.provider === "gitlab" ? `https://gitlab.com/api/v4/projects/${encodeURIComponent(current.repo)}/repository/files/${path}?ref=main&t=${Date.now()}` : `https://gitee.com/api/v5/repos/${current.repo}/contents/${path}?ref=master&t=${Date.now()}`;
   const headers: Record<string, string> = current.provider === "github" ? { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } : current.provider === "gitlab" ? { "PRIVATE-TOKEN": token } : { Authorization: `token ${token}` };
-  const result = await fetch(url, { headers });
+  const result = await fetch(url, { headers, signal: AbortSignal.timeout(SYNC_TIMEOUT_MS) });
   if (result.status === 404) return { data: null, sha: null };
   if (!result.ok) throw new Error(`读取 GitHub 数据失败 (${result.status})`);
   const file = await result.json() as { content: string; sha?: string; blob_id?: string; last_commit_id?: string; encoding?: string; download_url?: string };
   let raw = file.content ? (current.provider === "gitlab" && file.encoding !== "base64" ? file.content : decodeBase64(file.content)) : "";
   if (!raw && file.download_url) {
-    const download = await fetch(file.download_url, { headers: { Authorization: `Bearer ${token}` } });
+    const download = await fetch(file.download_url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(SYNC_TIMEOUT_MS) });
     if (!download.ok) throw new Error(`下载 GitHub 数据失败 (${download.status})`);
     raw = await download.text();
   }
@@ -146,7 +148,7 @@ window.addEventListener("nexusdesk-navigation-preferences-changed", () => {
   if (!suppressSave) queuePush();
 });
 
-async function connect(tokenValue: string, repoValue: string, createIfMissing: boolean, provider = current.provider) {
+async function connect(tokenValue: string, repoValue: string, createIfMissing: boolean, provider = current.provider): Promise<NavigationData> {
   current = { ...current, provider };
   token = tokenValue.trim();
   if (!token) throw new Error("请输入 GitHub Token。");
@@ -161,7 +163,8 @@ async function connect(tokenValue: string, repoValue: string, createIfMissing: b
       throw new Error("仓库名称应为 owner/repository 格式。");
     }
     const repoPath = repoParts.map(encodeURIComponent).join("/");
-    const repoResponse = provider === "github" ? await fetch(`https://api.github.com/repos/${repoPath}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } }) : provider === "gitlab" ? await fetch(`https://gitlab.com/api/v4/projects/${encodeURIComponent(repo)}`, { headers: { "PRIVATE-TOKEN": token } }) : await fetch(`https://gitee.com/api/v5/repos/${repoPath}`, { headers: { Authorization: `token ${token}` } });
+    const options = { signal: AbortSignal.timeout(SYNC_TIMEOUT_MS) };
+    const repoResponse = provider === "github" ? await fetch(`https://api.github.com/repos/${repoPath}`, { ...options, headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } }) : provider === "gitlab" ? await fetch(`https://gitlab.com/api/v4/projects/${encodeURIComponent(repo)}`, { ...options, headers: { "PRIVATE-TOKEN": token } }) : await fetch(`https://gitee.com/api/v5/repos/${repoPath}`, { ...options, headers: { Authorization: `token ${token}` } });
     if (repoResponse.status === 404 && createIfMissing && provider === "github") {
       const repoName = repo.slice(repo.lastIndexOf("/") + 1);
       await request("https://api.github.com/user/repos", "POST", { name: repoName, description: "NexusDesk 导航数据", private: true, auto_init: true });
@@ -175,15 +178,16 @@ async function connect(tokenValue: string, repoValue: string, createIfMissing: b
     const remote = await readRemote();
     remoteSha = remote.sha;
     remoteFileExists = remote.sha !== null;
+    const merged = remote.data ? mergeNavigationData(local, remote.data) : local;
     if (remote.data) {
-      const merged = mergeNavigationData(local, remote.data);
       suppressSave = true;
       saveNavigationData(merged);
       suppressSave = false;
-      await push(merged);
-    } else await push(local);
+    }
+    await push(merged);
     ready = true;
     update({ status: "connected", lastSync: Date.now(), error: "" });
+    return merged;
   } catch (error) {
     ready = false;
     update({ status: "error", error: String(error) });
@@ -191,8 +195,8 @@ async function connect(tokenValue: string, repoValue: string, createIfMissing: b
   }
 }
 
-let initialized: Promise<void> | undefined;
-export function initializeNavigationSync(): Promise<void> {
+let initialized: Promise<NavigationData | null> | undefined;
+export function initializeNavigationSync(): Promise<NavigationData | null> {
   if (initialized) return initialized;
   initialized = (async () => {
     const storedProvider = settingsStorage.getItem(PROVIDER_KEY);
@@ -212,9 +216,11 @@ export function initializeNavigationSync(): Promise<void> {
         localStorage.removeItem(LEGACY_REPO_KEY);
       }
     }
-    if (savedToken) {
-      try { await connect(savedToken, savedRepo, false, provider); }
-      catch (error) { update({ status: "error", error: String(error) }); }
+    if (!savedToken) return null;
+    try { return await connect(savedToken, savedRepo, false, provider); }
+    catch (error) {
+      update({ status: "error", error: String(error) });
+      return null;
     }
   })();
   return initialized;
@@ -222,7 +228,7 @@ export function initializeNavigationSync(): Promise<void> {
 
 export async function connectNavigationSync(tokenValue: string, repoValue: string, provider: NavigationSyncProvider) {
   initialized = undefined;
-  await connect(tokenValue, repoValue, true, provider);
+  return connect(tokenValue, repoValue, true, provider);
 }
 
 export async function syncNavigationNow() {

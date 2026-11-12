@@ -32,6 +32,7 @@
 .nav-search-tab.active { color: white; background: #3574f0; }
 .nav-search-form { border-color: #43454a; background: var(--nav-sidebar); }
 .nav-section > header { border-color: var(--nav-border); }
+.nav-section { content-visibility: auto; contain-intrinsic-size: auto 420px; }
 .nav-add-button { color: var(--nav-muted); }
 .nav-add-button:hover { color: var(--nav-accent); background: color-mix(in srgb, var(--nav-accent) 12%, transparent); }
 .nav-card { border-color: var(--nav-border); background: var(--nav-card); transition: border-color .16s ease, background .16s ease; }
