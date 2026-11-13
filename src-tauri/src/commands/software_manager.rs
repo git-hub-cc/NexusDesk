@@ -1,6 +1,10 @@
 use serde::Serialize;
 use std::path::PathBuf;
+use std::time::Duration;
 use tokio::process::Command;
+
+const STATUS_TIMEOUT: Duration = Duration::from_secs(180);
+const OPERATION_TIMEOUT: Duration = Duration::from_secs(1800);
 
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -94,9 +98,27 @@ async fn winget(args: &[&str]) -> Result<String, String> {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    let output = command
-        .output()
+    command.kill_on_drop(true);
+    let is_status_query = matches!(args.first(), Some(&"list" | &"--version"));
+    let timeout = if is_status_query {
+        STATUS_TIMEOUT
+    } else {
+        OPERATION_TIMEOUT
+    };
+    let timeout_message = if is_status_query {
+        format!(
+            "winget 状态查询超时（{} 秒），请稍后刷新。",
+            timeout.as_secs()
+        )
+    } else {
+        format!(
+            "winget 操作超时（{} 秒），请检查安装状态后再重试。",
+            timeout.as_secs()
+        )
+    };
+    let output = tokio::time::timeout(timeout, command.output())
         .await
+        .map_err(|_| timeout_message)?
         .map_err(|error| format!("无法启动 winget：{error}"))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
