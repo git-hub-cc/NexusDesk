@@ -32,6 +32,7 @@ export const LogicalTree: React.FC = React.memo(() => {
   const openTab = useWorkspaceStore(state => state.openTab);
   const createLogicalFolder = useWorkspaceStore(state => state.createLogicalFolder);
   const locateSignal = useWorkspaceStore(state => state.locateSignal);
+  const setSidebarMode = useWorkspaceStore(state => state.setSidebarMode);
   const activeLeftTabId = useWorkspaceStore(state => state.activeLeftTabId);
   const activeRightTabId = useWorkspaceStore(state => state.activeRightTabId);
   const focusedPane = useWorkspaceStore(state => state.focusedPane);
@@ -220,6 +221,11 @@ export const LogicalTree: React.FC = React.memo(() => {
             if (directory) await openPath(filePath);
             else await revealItemInDir(filePath);
           })}>打开所在目录</ContextMenu.Item>}
+          {/* 路径比较按 Windows 规则处理，忽略大小写。 */}
+          {filePath && rootPath && !directory && filePath.replace(/\\/g, "/").toLocaleLowerCase().startsWith(`${rootPath.replace(/\\/g, "/").replace(/\/$/, "").toLocaleLowerCase()}/`) && <ContextMenu.Item className="ide-menu-item" disabled={missing || isRemotePath(filePath)} onSelect={() => {
+            setSidebarMode("physical");
+            useWorkspaceStore.getState().triggerLocate(filePath);
+          }}>定位当前文件（物理分区）</ContextMenu.Item>}
           {filePath && <ContextMenu.Item className="ide-menu-item" disabled={missing || isRemotePath(filePath)} onSelect={() => void run(async () => {
             await flushPendingWrites(); await fsApi.writeFileClipboard([filePath], false);
           })}>复制 <span className="ml-auto text-gray-500">Ctrl+C</span></ContextMenu.Item>}

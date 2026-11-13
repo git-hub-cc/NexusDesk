@@ -353,10 +353,11 @@ interface WorkspaceState {
   isSplitMode: boolean;
 
   locateSignal: number;
+  locatePath: string | null;
   editorJump: { path: string; line: number; pane: PaneType } | null;
   graphLocation: { path: string; line: number; pane: PaneType } | null;
   locateGraph: (path: string, line: number, pane: PaneType) => void;
-  triggerLocate: () => void;
+  triggerLocate: (path?: string) => void;
 
   navHistory: Array<{ path: string; pos: number }>;
   navIndex: number;
@@ -546,10 +547,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       isSplitMode: false,
 
       locateSignal: 0,
+      locatePath: null,
       editorJump: null,
       graphLocation: null,
-      locateGraph: (path, line, pane) => set(state => ({ graphLocation: { path, line, pane }, editorJump: { path, line, pane }, focusedPane: pane, locateSignal: state.locateSignal + 1 })),
-      triggerLocate: () => set(state => ({ locateSignal: state.locateSignal + 1 })),
+      locateGraph: (path, line, pane) => set(state => ({ graphLocation: { path, line, pane }, editorJump: { path, line, pane }, focusedPane: pane, locatePath: null, locateSignal: state.locateSignal + 1 })),
+      triggerLocate: (path) => set(state => ({ locatePath: path ?? null, locateSignal: state.locateSignal + 1 })),
 
       navHistory: [],
       navIndex: -1,

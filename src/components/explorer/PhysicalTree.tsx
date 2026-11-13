@@ -52,6 +52,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
   const createPhysicalFolder = useWorkspaceStore(state => state.createPhysicalFolder);
   const loadDirectory = useWorkspaceStore(state => state.loadDirectory);
   const locateSignal = useWorkspaceStore(state => state.locateSignal);
+  const locatePath = useWorkspaceStore(state => state.locatePath);
   const activeLeftTabId = useWorkspaceStore(state => state.activeLeftTabId);
   const activeRightTabId = useWorkspaceStore(state => state.activeRightTabId);
   const focusedPane = useWorkspaceStore(state => state.focusedPane);
@@ -143,14 +144,14 @@ export const PhysicalTree: React.FC = React.memo(() => {
         const activeTabId = focusedPane === "left" ? activeLeftTabId : activeRightTabId;
         const tabs = focusedPane === "left" ? leftTabs : rightTabs;
         const activeTab = tabs.find(t => t.id === activeTabId);
-        if (!activeTab || !activeTab.path) return;
-
-        const targetPath = activeTab.path;
+        const targetPath = locatePath ?? activeTab?.path;
+        if (!targetPath) return;
         const targetDir = parent(targetPath);
 
         const expandParents = async () => {
             const ancestors: string[] = [];
             let curr = targetDir;
+            // 路径比较按 Windows 规则处理，忽略大小写。
             const normalizedRoot = rootPath.replace(/\\/g, "/").toLowerCase();
             
             while (curr) {
