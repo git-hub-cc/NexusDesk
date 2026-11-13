@@ -16,6 +16,33 @@ export type NavigationData = { categories: NavigationCategory[] };
 const STORAGE_KEY = "nexusdesk-navigation-data-v1";
 const LEGACY_KEYS = ["my-awesome-nav-data", "nav-custom-user-sites-data", "nav-custom-data-sources"];
 const sourceFiles = [resourceDataUrl, serviceDataUrl];
+export const CUSTOM_CATEGORY_ID = "custom-user-sites";
+
+export function findNavigationBookmark(data: NavigationData, url: string): NavigationSite | undefined {
+  return data.categories.find(category => category.categoryId === CUSTOM_CATEGORY_ID)?.sites.find(site => {
+    try { return new URL(site.url).href === new URL(url).href; }
+    catch { return false; }
+  });
+}
+
+export function upsertNavigationSite(data: NavigationData, categoryId: string, site: NavigationSite): NavigationData {
+  let categories = data.categories;
+  if (!categories.some(category => category.categoryId === categoryId)) {
+    if (categoryId !== CUSTOM_CATEGORY_ID) throw new Error("导航分类已不存在，请重新打开后再试");
+    categories = [{ categoryId, categoryName: "我的导航", sites: [] }, ...categories];
+  }
+  return { categories: categories.map(category => {
+    if (category.categoryId !== categoryId) return category;
+    const duplicate = category.sites.find(item => {
+      if (item.id === site.id) return false;
+      try { return new URL(item.url).href === new URL(site.url).href; }
+      catch { return false; }
+    });
+    if (duplicate) throw new Error("该网址已存在，请编辑已有网站");
+    const exists = category.sites.some(item => item.id === site.id);
+    return { ...category, sites: exists ? category.sites.map(item => item.id === site.id ? site : item) : [site, ...category.sites] };
+  }) };
+}
 
 function parseData(value: unknown): NavigationData | null {
   if (!value || typeof value !== "object" || !Array.isArray((value as NavigationData).categories)) return null;
@@ -60,7 +87,9 @@ export async function loadNavigationData(): Promise<NavigationData> {
   try { stored = parseData(JSON.parse(localStorage.getItem(STORAGE_KEY) || "null")); }
   catch { localStorage.removeItem(STORAGE_KEY); }
   if (stored) {
-    const normalized = { categories: stored.categories.map(category => ({
+    const custom = stored.categories.find(category => category.categoryId === CUSTOM_CATEGORY_ID)
+      ?? { categoryId: CUSTOM_CATEGORY_ID, categoryName: "我的导航", sites: [] };
+    const normalized = { categories: [custom, ...stored.categories.filter(category => category.categoryId !== CUSTOM_CATEGORY_ID)].map(category => ({
       ...category,
       sites: category.sites.map(site => ({ ...site, id: site.id || crypto.randomUUID() })),
     })) };
@@ -86,7 +115,10 @@ export async function loadNavigationData(): Promise<NavigationData> {
   if (!merged.some(category => category.categoryId === "custom-user-sites")) {
     merged.unshift({ categoryId: "custom-user-sites", categoryName: "我的导航", sites: [] });
   }
-  const migrated = { categories: merged };
+  const migrated = { categories: [
+    ...merged.filter(category => category.categoryId === CUSTOM_CATEGORY_ID),
+    ...merged.filter(category => category.categoryId !== CUSTOM_CATEGORY_ID),
+  ] };
   saveNavigationData(migrated);
   return migrated;
 }

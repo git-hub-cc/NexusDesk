@@ -2,10 +2,12 @@ import { ArrowLeft, ArrowRight, Globe, House, RotateCw } from "lucide-react";
 import { useRef, type KeyboardEvent } from "react";
 import { BrowserExtensions, CHROME_EXTENSION_STORE_URL } from "./BrowserExtensions";
 import { BrowserPasswords } from "./BrowserPasswords";
+import { BrowserBookmarks } from "./BrowserBookmarks";
 
 interface BrowserToolbarProps {
   address: string;
   currentUrl: string;
+  pageTitle?: string;
   ready: boolean;
   extensionsReady?: boolean;
   getLabel: () => string;
@@ -25,7 +27,7 @@ interface BrowserToolbarProps {
 }
 
 export function BrowserToolbar({
-  address, currentUrl, ready, extensionsReady = ready, getLabel,
+  address, currentUrl, pageTitle = "", ready, extensionsReady = ready, getLabel,
   onAddressChange, onNavigate, onBack, onForward, onReload, onHome,
   onAutofill, onOpenStore, onExtensionInstalled, onAddressFocus,
   onAddressBlur, canGoBack = ready, canGoForward = ready,
@@ -46,11 +48,15 @@ export function BrowserToolbar({
     <BrowserPasswords onImported={onAutofill} />
     <BrowserExtensions disabled={!extensionsReady} getLabel={getLabel}
       onOpenStore={() => onOpenStore(CHROME_EXTENSION_STORE_URL)} onInstalled={onExtensionInstalled} />
+    {/^https?:\/\//i.test(currentUrl) && <BrowserBookmarks currentUrl={currentUrl} pageTitle={pageTitle} />}
+    {currentUrl && <button type="button" title="导航页" aria-label="导航页" disabled={!ready} onClick={onHome}
+      className="rounded p-1.5 hover:bg-white/10 hover:text-white disabled:opacity-40">
+      <House size={15} />
+    </button>}
     {([
       ["后退", ArrowLeft, onBack, canGoBack, true],
       ["前进", ArrowRight, onForward, canGoForward, true],
       ["刷新", RotateCw, onReload, ready, false],
-      ["主页", House, onHome, ready, false],
     ] as const).map(([title, Icon, onClick, enabled, historyButton]) => <button key={title} type="button" title={title} aria-label={title}
       disabled={!enabled} onClick={onClick} className={`rounded p-1.5 ${historyButton
         ? enabled ? "hover:bg-white/10 hover:text-white" : "cursor-not-allowed text-gray-500/60"

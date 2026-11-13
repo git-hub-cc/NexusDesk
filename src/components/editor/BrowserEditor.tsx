@@ -473,7 +473,7 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
       onReload={() => setRefreshKey(value => value + 1)} onHome={() => { setHomeAddress(""); setError(""); setRefreshKey(value => value + 1); }}
       onAutofill={async () => { await action("autofill"); }} onOpenStore={async url => { openNavigationUrl(url); }}
       onExtensionInstalled={async () => { await action("reload"); }} canGoBack={ready} canGoForward={false} />
-      : <BrowserToolbar address={address} currentUrl={currentUrl.current} ready getLabel={() => labelRef.current}
+      : <BrowserToolbar address={address} currentUrl={currentUrl.current} pageTitle={tab.title} ready getLabel={() => labelRef.current}
         onAddressChange={setAddress} onNavigate={navigate} onBack={() => void action("back")} onForward={() => void action("forward")}
         onReload={() => void action("reload")} onHome={() => { void showHome(); }}
         onAutofill={async () => { await action("autofill"); }}

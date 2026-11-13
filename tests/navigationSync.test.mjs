@@ -30,7 +30,7 @@ function createSync(fetch) {
   };
   const exports = {};
   const context = {
-    exports, fetch, window, localStorage: storage, atob, btoa, TextEncoder, TextDecoder, Uint8Array, console,
+    exports, fetch, window, localStorage: storage, atob, btoa, TextEncoder, TextDecoder, Uint8Array, AbortSignal, console,
     require(name) {
       if (name === '@/lib/globalSettings') return { settingsStorage: storage };
       if (name === './navigationData') return { loadNavigationData: async () => data, mergeNavigationData: (local) => local, saveNavigationData() {} };

@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ExternalLink, Globe, Plus, Search, Trash2, X } from "lucide-react";
+import { ExternalLink, Globe, Plus, Search, Trash2 } from "lucide-react";
 import engineConfigUrl from "@/assets/navigation/data/00engines.json?url";
 import sprite01 from "@/assets/navigation/img/sprite-01.webp";
 import sprite02 from "@/assets/navigation/img/sprite-02.webp";
 import sprite03 from "@/assets/navigation/img/sprite-03.webp";
 import sprite04 from "@/assets/navigation/img/sprite-04.webp";
 import sprite05 from "@/assets/navigation/img/sprite-05.webp";
-import { loadNavigationData, mergeNavigationData, saveNavigationData, type NavigationCategory, type NavigationData, type NavigationSite } from "./navigationData";
+import { loadNavigationData, mergeNavigationData, saveNavigationData, type NavigationCategory, type NavigationData, type NavigationSite, CUSTOM_CATEGORY_ID, upsertNavigationSite } from "./navigationData";
 import { initializeNavigationSync } from "./navigationSync";
+import { NavigationSiteDialog } from "./NavigationSiteDialog";
 import "./navigation.css";
 
 type SearchEngine = { name: string; url: string; proxy?: boolean; desc?: string };
 type SearchConfig = { categories: { label: string; value: string }[]; engines: Record<string, SearchEngine[]> };
-const CUSTOM_CATEGORY_ID = "custom-user-sites";
 const spriteUrls: Record<string, string> = {
   "sprite-01.webp": sprite01,
   "sprite-02.webp": sprite02,
@@ -38,11 +38,13 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
   const [loadAttempt, setLoadAttempt] = useState(0);
   const editedDuringLoad = useRef(false);
   const dataRef = useRef(data);
+  const dataRevision = useRef(0);
   dataRef.current = data;
 
   useEffect(() => {
     let alive = true;
     void (async () => {
+      const revision = dataRevision.current;
       const [navigation, config] = await Promise.all([
         loadNavigationData(),
         fetch(engineConfigUrl, { signal: AbortSignal.timeout(10000) }).then(response => {
@@ -51,7 +53,7 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
         }),
       ]);
       if (!alive) return;
-      setData(navigation);
+      if (revision === dataRevision.current) setData(navigation);
       setSearchConfig(config);
       setSearchType(config.categories[0]?.value || "");
       setSelectedEngines(config.engines[config.categories[0]?.value || ""]?.[0] ? [config.engines[config.categories[0]?.value || ""][0].name] : []);
@@ -62,7 +64,9 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
       console.error("无法加载导航数据:", error);
       if (alive) setLoadError(String(error));
     });
-    void initializeNavigationSync().then(syncedNavigation => {
+    void initializeNavigationSync().then(async result => {
+      if (!alive || !result) return;
+      const syncedNavigation = await loadNavigationData();
       if (!alive || !syncedNavigation) return;
       if (editedDuringLoad.current) {
         window.alert("云端同步已完成。同步期间你编辑了导航，已保留这些编辑并与同步结果合并。");
@@ -85,6 +89,17 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
       window.removeEventListener("nexusdesk-navigation-preferences-changed", updatePreferences);
     };
   }, [loadAttempt]);
+
+  useEffect(() => {
+    const update = (event: Event) => {
+      const next = (event as CustomEvent<NavigationData>).detail;
+      dataRevision.current += 1;
+      dataRef.current = next;
+      setData(next);
+    };
+    window.addEventListener("nexusdesk-navigation-data-changed", update);
+    return () => window.removeEventListener("nexusdesk-navigation-data-changed", update);
+  }, []);
 
   const commit = (next: NavigationData) => { editedDuringLoad.current = true; dataRef.current = next; setData(next); saveNavigationData(next); };
   const engines = useMemo(() => (searchConfig.engines[searchType] || []).filter(engine => proxyMode || !engine.proxy), [proxyMode, searchConfig, searchType]);
@@ -112,26 +127,10 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
     window.dispatchEvent(new Event("nexusdesk-navigation-preferences-changed"));
   };
 
-  const saveSite = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const saveSite = async (site: NavigationSite) => {
     if (!editing) return;
-    const form = new FormData(event.currentTarget);
-    const title = String(form.get("title") || "").trim();
-    const rawUrl = String(form.get("url") || "").trim();
-    if (!title || !rawUrl) return;
-    let url: string;
-    try { url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`).href; }
-    catch { return; }
-    const site: NavigationSite = { ...editing.site, title, url, desc: String(form.get("desc") || "").trim(), proxy: form.get("proxy") === "on" };
-    commit({ categories: data.categories.map(category => {
-      if (category.categoryId !== editing.categoryId) return category;
-      const index = category.sites.findIndex(item => item.id === editing.site.id);
-      const sites = [...category.sites];
-      if (index < 0) sites.push(site);
-      else sites[index] = site;
-      return { ...category, sites };
-    }) });
-    setEditing(null);
+    const latest = await loadNavigationData();
+    commit(upsertNavigationSite(latest, editing.categoryId, site));
   };
 
   const deleteSite = (categoryId: string, siteId: string) => {
@@ -195,17 +194,8 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
         </div>
       </main>
     </div>
-    {editing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setEditing(null); }}>
-      <section role="dialog" aria-modal="true" className="nav-dialog w-full max-w-md rounded-md border p-5 shadow-2xl">
-        <header className="mb-5 flex items-center justify-between"><h2 className="text-base font-semibold">{editing.site.title ? "编辑网站" : "新增网站"}</h2><button type="button" aria-label="关闭" onClick={() => setEditing(null)}><X size={18} /></button></header>
-        <form onSubmit={saveSite} className="space-y-3">
-          <label className="block text-xs">名称<input name="title" required autoFocus defaultValue={editing.site.title} className="nav-field mt-1 block w-full rounded border px-3 py-2 text-sm" /></label>
-          <label className="block text-xs">网址<input name="url" required defaultValue={editing.site.url} className="nav-field mt-1 block w-full rounded border px-3 py-2 text-sm" /></label>
-          <label className="block text-xs">描述<input name="desc" defaultValue={editing.site.desc} className="nav-field mt-1 block w-full rounded border px-3 py-2 text-sm" /></label>
-          <label className="flex items-center gap-2 text-xs"><input name="proxy" type="checkbox" defaultChecked={editing.site.proxy} />需要代理</label>
-          <footer className="flex justify-end gap-2 pt-2"><button type="button" className="nav-secondary rounded px-3 py-2 text-xs" onClick={() => setEditing(null)}>取消</button><button className="nav-primary rounded px-3 py-2 text-xs">保存</button></footer>
-        </form>
-      </section>
-    </div>}
+    {editing && <NavigationSiteDialog key={editing.site.id} site={editing.site}
+      mode={data.categories.find(category => category.categoryId === editing.categoryId)?.sites.some(site => site.id === editing.site.id) ? "edit" : "add"}
+      onSave={saveSite} onClose={() => setEditing(null)} />}
   </div>;
 }
