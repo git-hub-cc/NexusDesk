@@ -1,8 +1,9 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { open, save, confirm } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { KeyRound, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { confirmAction } from "@/lib/dialogs";
 
 type PasswordStats = { sites: number; passwords: number; updated_at: string | null };
 
@@ -50,7 +51,7 @@ export function BrowserPasswords({ onImported }: { onImported?: () => Promise<vo
         setOpened(false);
         setMessage("");
       } else {
-        if (!await confirm("导出的 CSV 文件包含明文账号和密码，任何能读取该文件的人都能查看。是否继续？", { title: "导出密码", kind: "warning" })) return;
+        if (!await confirmAction("导出的 CSV 文件包含明文账号和密码，任何能读取该文件的人都能查看。是否继续？", { title: "导出密码", confirmLabel: "继续导出", cancelLabel: "取消" })) return;
         const file = await save({ title: "导出密码", defaultPath: "NexusDesk Passwords.csv", filters });
         if (!file) return;
         const count = await invoke<number>("browser_export_passwords", { file });

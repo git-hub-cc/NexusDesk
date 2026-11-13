@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ExternalLink, Globe, Plus, Search, Trash2 } from "lucide-react";
+import { confirmAction, showMessage } from "@/lib/dialogs";
 import engineConfigUrl from "@/assets/navigation/data/00engines.json?url";
 import sprite01 from "@/assets/navigation/img/sprite-01.webp";
 import sprite02 from "@/assets/navigation/img/sprite-02.webp";
@@ -69,11 +70,11 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
       const syncedNavigation = await loadNavigationData();
       if (!alive || !syncedNavigation) return;
       if (editedDuringLoad.current) {
-        window.alert("云端同步已完成。同步期间你编辑了导航，已保留这些编辑并与同步结果合并。");
         const merged = mergeNavigationData(dataRef.current, syncedNavigation);
         dataRef.current = merged;
         saveNavigationData(merged);
         setData(merged);
+        showMessage("云端同步已完成。同步期间你编辑了导航，已保留这些编辑并与同步结果合并。", "导航同步完成");
       } else setData(syncedNavigation);
     }).catch(error => console.error("导航云同步初始化失败:", error));
     const theme = localStorage.getItem("theme-preference");
@@ -133,9 +134,9 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
     commit(upsertNavigationSite(latest, editing.categoryId, site));
   };
 
-  const deleteSite = (categoryId: string, siteId: string) => {
-    if (!window.confirm("删除这个网站？")) return;
-    commit({ categories: data.categories.map(category => category.categoryId === categoryId ? { ...category, sites: category.sites.filter(site => site.id !== siteId) } : category) });
+  const deleteSite = async (categoryId: string, siteId: string) => {
+    if (!await confirmAction("删除这个网站？", { title: "删除网站", confirmLabel: "删除", cancelLabel: "取消" })) return;
+    commit({ categories: dataRef.current.categories.map(category => category.categoryId === categoryId ? { ...category, sites: category.sites.filter(site => site.id !== siteId) } : category) });
   };
 
   const canEdit = (category: NavigationCategory) => category.categoryId === CUSTOM_CATEGORY_ID || category.categoryId.startsWith("custom-");

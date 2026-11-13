@@ -16,6 +16,10 @@ export function confirmAction(description: string, options: { title: string; con
   });
 }
 
+export function showMessage(description: string, title: string) {
+  useDialogStore.setState(state => ({ queue: [...state.queue, { title, description, resolve: () => {} }] }));
+}
+
 export function showError(description: string) {
-  useDialogStore.setState(state => ({ queue: [...state.queue, { title: "操作失败", description, resolve: () => {} }] }));
+  showMessage(description, "操作失败");
 }
