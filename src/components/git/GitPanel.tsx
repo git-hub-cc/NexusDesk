@@ -45,6 +45,9 @@ function RepositoryPanel({ root }: { root: string }) {
         messageHistory.current = null;
         setMessage(value);
     }
+    function appendCommitMessage(commitMessage: string) {
+        changeMessage(message.trim() ? `${message.trimEnd()}\n\n${commitMessage}` : commitMessage);
+    }
     function navigateMessageHistory(event: React.KeyboardEvent<HTMLTextAreaElement>) {
         if (event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
         if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
@@ -243,7 +246,7 @@ function RepositoryPanel({ root }: { root: string }) {
         await run(async () => {
             await gitApi.undoCommit(root, commit.id);
             if (!mounted.current) return;
-            changeMessage(commit.message);
+            appendCommitMessage(commit.message);
             if (revision) returnToLocal();
             setNotice(`已撤销提交 ${commit.id.slice(0, 8)}，更改已保留在暂存区`);
         }, true);
@@ -262,6 +265,8 @@ function RepositoryPanel({ root }: { root: string }) {
         if (!riskConfirmed) return;
         await run(async () => {
             await gitApi.undoPushedCommit(root, commit.id);
+            if (!mounted.current) return;
+            appendCommitMessage(commit.message);
             if (revision) returnToLocal();
             setNotice("已撤销并推送，原提交更改已恢复到工作区（未暂存），补丁文件已清理");
         }, true);
