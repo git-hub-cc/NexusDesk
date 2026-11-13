@@ -1,4 +1,4 @@
-import { fsApi } from "./api";
+import { fsApi, gitApi } from "./api";
 
 const drafts = new Map<string, string>();
 const updates = new Map<string, Promise<void>>();
@@ -8,12 +8,16 @@ export function rememberCommitDraft(root: string, message: string) {
   drafts.set(root, message);
 }
 
+export async function codexCommitMessagePath(root: string): Promise<string> {
+  const gitDir = await gitApi.directory(root);
+  return `${gitDir.replace(/[\\/]$/, "")}/nexusdesk_commit_msg.txt`;
+}
+
 export async function fillCodexCommitMessage(root: string, message: string): Promise<void> {
   if (!message.trim() || message.trimStart().startsWith("/")) return;
   const previous = updates.get(root) ?? Promise.resolve();
   const update = previous.catch(() => {}).then(async () => {
-    const path = `${root}/.git/nexusdesk_commit_msg.txt`;
-    if (!await fsApi.isDirectory(`${root}/.git`)) return;
+    const path = await codexCommitMessagePath(root);
     let saved = drafts.get(root);
     if (saved === undefined) {
       try { saved = await fsApi.readFile(path); } catch { saved = ""; }

@@ -445,13 +445,8 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
       }
       if (!started) { pendingInput.push(data); return; }
       if (started && !exited) {
-        if (data === '\r' && !composing && /\bcodex\b/i.test(session.command)) {
-          const message = codexComposerInput(terminal.buffer.active);
-          const root = useWorkspaceStore.getState().rootPath;
-          if (message && root && !isRemotePath(root) && !remoteId) {
-            void fillCodexCommitMessage(root, message).catch(error => console.error("Cannot fill commit message", error));
-          }
-        }
+        const codexMessage = data === '\r' && !composing && /\bcodex\b/i.test(session.command)
+          ? codexComposerInput(terminal.buffer.active) : undefined;
         if (data === '\r' && !historySubmission) {
           const command = readCommand();
           if (/^\s*(?:cls|clear)\s*$/i.test(command ?? '')) clearScrollbackAfterCommand.current = true;
@@ -465,6 +460,20 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
         // Enter also submits history entries and pasted commands; local keystroke
         // buffering cannot tell whether the application has a command to execute.
         writeQueue = writeQueue.then(() => terminalInvoke<void>("write_terminal", { id, data })).catch(report);
+        if (data === '\r' && !composing && /\bcodex\b/i.test(session.command)) {
+          const fillDraft = (message: string | undefined) => {
+            const root = useWorkspaceStore.getState().rootPath;
+            if (!message || !root || isRemotePath(root) || remoteId) return;
+            void fillCodexCommitMessage(root, message).catch(error => {
+              console.error("Cannot fill commit message", error);
+              report(`无法写入 Codex 提交说明：${String(error)}`);
+            });
+          };
+          if (codexMessage) fillDraft(codexMessage);
+          else void writeQueue.then(() => new Promise<void>(resolve => setTimeout(resolve, 100))).then(() => {
+            if (!disposed && !exited) fillDraft(codexComposerInput(terminal.buffer.active));
+          });
+        }
       }
     });
 

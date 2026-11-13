@@ -8,7 +8,7 @@ import { GitFileTree, type GitTreeTarget } from "./GitFileTree";
 import { isBinaryAsset, isImage } from "@/lib/assets";
 import { confirmAction } from "@/lib/dialogs";
 import { isRemotePath } from "@/lib/remote";
-import { commitDraftEvent, getCommitDraft, rememberCommitDraft } from "@/lib/codexCommitMessage";
+import { codexCommitMessagePath, commitDraftEvent, getCommitDraft, rememberCommitDraft } from "@/lib/codexCommitMessage";
 import { setSpeechTarget } from "@/lib/speechTarget";
 
 export function GitPanel() {
@@ -97,11 +97,8 @@ function RepositoryPanel({ root }: { root: string }) {
 
     useEffect(() => {
         let alive = true;
-        fsApi.isDirectory(`${root}/.git`).then(isRepo => {
-            if (!isRepo) return;
-            return fsApi.readFile(`${root}/.git/nexusdesk_commit_msg.txt`).then(content => {
-                if (alive) setMessage(getCommitDraft(root) ?? content);
-            }).catch(() => {});
+        codexCommitMessagePath(root).then(path => fsApi.readFile(path)).then(content => {
+            if (alive) setMessage(getCommitDraft(root) ?? content);
         }).catch(() => {}).finally(() => { if (alive) setMsgLoaded(true); });
         return () => { alive = false; };
     }, [root]);
@@ -109,10 +106,9 @@ function RepositoryPanel({ root }: { root: string }) {
     useEffect(() => {
         if (!msgLoaded) return;
         let alive = true;
-        const msgPath = `${root}/.git/nexusdesk_commit_msg.txt`;
         const timer = setTimeout(() => {
-            fsApi.isDirectory(`${root}/.git`).then(isRepo => {
-                if (alive && isRepo) return fsApi.writeFile(msgPath, message);
+            codexCommitMessagePath(root).then(path => {
+                if (alive) return fsApi.writeFile(path, message);
             }).catch(() => {});
         }, 500);
         return () => { alive = false; clearTimeout(timer); };

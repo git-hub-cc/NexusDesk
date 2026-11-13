@@ -158,6 +158,7 @@ export const gitApi = {
     restorePushedCommit: (repoPath: string, baseId: string): Promise<void> => invoke("restore_pushed_git_commit", { repoPath, baseId }),
     initRepository: (repoPath: string): Promise<void> => invoke("init_git_repository", { repoPath }),
     isRepository: (repoPath: string): Promise<boolean> => invoke("is_git_repository", { repoPath }),
+    directory: (repoPath: string): Promise<string> => invoke("get_git_directory", { repoPath }),
     treeStatus: (repoPath: string): Promise<GitTreeStatus[]> => invoke("get_git_tree_status", { repoPath }),
     revert: (repoPath: string, path: string): Promise<void> => invoke("revert_git_file", { repoPath, path }),
     revertMany: (repoPath: string, paths: string[]): Promise<void> => invoke("revert_git_files", { repoPath, paths }),

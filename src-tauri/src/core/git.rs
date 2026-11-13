@@ -42,6 +42,10 @@ pub fn is_repository(path: &str) -> Result<bool, String> {
         Err(error) => Err(error.to_string()),
     }
 }
+pub fn repository_git_dir(path: &str) -> Result<String, String> {
+    let repo = open(path)?;
+    Ok(repo.path().to_string_lossy().into_owned())
+}
 pub fn init_repository(path: &str) -> Result<(), String> {
     if Repository::discover(path).is_ok() {
         return Err("该目录已经是 Git 仓库".into());

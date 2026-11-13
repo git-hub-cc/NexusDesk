@@ -4,18 +4,17 @@ import fs from 'node:fs';
 import ts from 'typescript';
 
 const source = fs.readFileSync(new URL('../src/lib/codexCommitMessage.ts', import.meta.url), 'utf8');
-function setup(saved = '', beforeWrite = async () => {}) {
+function setup(saved = '', beforeWrite = async () => {}, gitDir = 'repo/.git') {
   const writes = [];
   const api = {
-    isDirectory: async () => true,
     readFile: async () => saved,
     writeFile: async (...args) => { await beforeWrite(...args); writes.push(args); },
   };
   const compiled = ts.transpileModule(source.replace(/^import .*;$/m, '').replace(/export /g, ''), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText;
-  const helpers = new Function('fsApi', 'window', 'CustomEvent', compiled + '\nreturn {fillCodexCommitMessage, rememberCommitDraft, codexComposerInput};')(
-    api, { dispatchEvent() {} }, class { constructor(type, options) { Object.assign(this, options); } },
+  const helpers = new Function('fsApi', 'gitApi', 'window', 'CustomEvent', compiled + '\nreturn {fillCodexCommitMessage, rememberCommitDraft, codexComposerInput, codexCommitMessagePath};')(
+    api, { directory: async () => gitDir }, { dispatchEvent() {} }, class { constructor(type, options) { Object.assign(this, options); } },
   );
   return { ...helpers, writes };
 }
@@ -34,6 +33,13 @@ test('Codex fills an empty draft and appends to existing or edited descriptions'
   edited.rememberCommitDraft('repo', 'manual edit');
   await pending;
   assert.deepEqual(edited.writes, [['repo/.git/nexusdesk_commit_msg.txt', 'manual edit\nnew']]);
+});
+
+test('Codex stores drafts in the resolved git directory for linked worktrees', async () => {
+  const state = setup('', async () => {}, 'repo/.git/worktrees/feature');
+  assert.equal(await state.codexCommitMessagePath('repo'), 'repo/.git/worktrees/feature/nexusdesk_commit_msg.txt');
+  await state.fillCodexCommitMessage('repo', 'worktree change');
+  assert.equal(state.writes[0][0], 'repo/.git/worktrees/feature/nexusdesk_commit_msg.txt');
 });
 
 test('serializes concurrent Codex drafts so an older write cannot erase a newer prompt', async () => {

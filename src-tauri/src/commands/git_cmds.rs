@@ -224,6 +224,11 @@ pub fn init_git_repository(repo_path: String) -> Result<(), String> {
 pub fn is_git_repository(repo_path: String) -> Result<bool, String> {
     git::is_repository(&repo_path)
 }
+
+#[tauri::command]
+pub fn get_git_directory(repo_path: String) -> Result<String, String> {
+    git::repository_git_dir(&repo_path)
+}
 #[tauri::command]
 pub async fn push_git_repository(repo_path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || git::push(&repo_path))
