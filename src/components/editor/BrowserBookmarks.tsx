@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Star } from "lucide-react";
-import { CUSTOM_CATEGORY_ID, findNavigationBookmark, loadNavigationData, saveNavigationData, upsertNavigationSite, type NavigationData, type NavigationSite } from "@/components/navigation/navigationData";
+import { CUSTOM_CATEGORY_ID, findNavigationBookmark, loadNavigationData, navigationFaviconUrl, saveNavigationData, upsertNavigationSite, type NavigationData, type NavigationSite } from "@/components/navigation/navigationData";
 import { NavigationSiteDialog } from "@/components/navigation/NavigationSiteDialog";
 import { initializeNavigationSync } from "@/components/navigation/navigationSync";
 
@@ -42,7 +42,7 @@ export function BrowserBookmarks({ currentUrl, pageTitle }: { currentUrl: string
       const latest = await loadNavigationData();
       const existing = findNavigationBookmark(latest, url.href);
       setEditing(existing ? { site: existing, mode: "edit" } : {
-        site: { id: crypto.randomUUID(), title, url: url.href, desc: "", proxy: false }, mode: "add",
+        site: { id: crypto.randomUUID(), title, url: url.href, desc: "", icon: navigationFaviconUrl(url.href), proxy: false }, mode: "add",
       });
     } catch (reason) { opening.current = false; setError(String(reason)); }
   };
@@ -55,6 +55,13 @@ export function BrowserBookmarks({ currentUrl, pageTitle }: { currentUrl: string
     </button>
     {(message || error) && <span role={error ? "alert" : "status"} className={`max-w-48 truncate text-xs ${error ? "text-red-400" : "text-green-400"}`} title={error || message}>{error || message}</span>}
     {editing && <NavigationSiteDialog key={editing.site.id} site={editing.site} mode={editing.mode} focusDescription
+      onRemove={editing.mode === "edit" ? async () => {
+        const latest = await loadNavigationData();
+        saveNavigationData({ categories: latest.categories.map(category => category.categoryId === CUSTOM_CATEGORY_ID
+          ? { ...category, sites: category.sites.filter(site => site.id !== editing.site.id) }
+          : category) });
+        setMessage("书签已移除");
+      } : undefined}
       onClose={() => { opening.current = false; setEditing(null); }} onSave={async site => {
         const latest = await loadNavigationData();
         const existing = findNavigationBookmark(latest, site.url);

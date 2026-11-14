@@ -2,26 +2,14 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ExternalLink, Globe, Plus, Search, Trash2 } from "lucide-react";
 import { confirmAction, showMessage } from "@/lib/dialogs";
 import engineConfigUrl from "@/assets/navigation/data/00engines.json?url";
-import sprite01 from "@/assets/navigation/img/sprite-01.webp";
-import sprite02 from "@/assets/navigation/img/sprite-02.webp";
-import sprite03 from "@/assets/navigation/img/sprite-03.webp";
-import sprite04 from "@/assets/navigation/img/sprite-04.webp";
-import sprite05 from "@/assets/navigation/img/sprite-05.webp";
 import { loadNavigationData, mergeNavigationData, saveNavigationData, type NavigationCategory, type NavigationData, type NavigationSite, CUSTOM_CATEGORY_ID, upsertNavigationSite } from "./navigationData";
 import { initializeNavigationSync } from "./navigationSync";
 import { NavigationSiteDialog } from "./NavigationSiteDialog";
+import { NavigationSiteIcon } from "./NavigationSiteIcon";
 import "./navigation.css";
 
 type SearchEngine = { name: string; url: string; proxy?: boolean; desc?: string };
 type SearchConfig = { categories: { label: string; value: string }[]; engines: Record<string, SearchEngine[]> };
-const spriteUrls: Record<string, string> = {
-  "sprite-01.webp": sprite01,
-  "sprite-02.webp": sprite02,
-  "sprite-03.webp": sprite03,
-  "sprite-04.webp": sprite04,
-  "sprite-05.webp": sprite05,
-};
-
 function newSite(): NavigationSite { return { id: crypto.randomUUID(), title: "", url: "https://", desc: "", proxy: false }; }
 
 export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => void }) {
@@ -180,7 +168,7 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
                 {site.proxy && <span title="需代理" className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-amber-400" />}
                 <button type="button" onClick={() => onNavigate(site.url)} className="w-full text-left" title={site.url}>
                   <div className="flex min-w-0 items-center gap-2.5">
-                    {typeof site.icon === "string" ? <img loading="lazy" decoding="async" src={site.icon} alt="" className="h-6 w-6 shrink-0 object-contain" onError={event => { event.currentTarget.style.visibility = "hidden"; }} /> : site.icon ? <span aria-hidden="true" className="h-6 w-6 shrink-0 bg-no-repeat" style={{ backgroundImage: `url(${spriteUrls[site.icon.sprite.split("/").pop() || ""] || ""})`, backgroundPosition: `-${site.icon.x * (24 / site.icon.width)}px -${site.icon.y * (24 / site.icon.height)}px`, backgroundSize: `${site.icon.spriteWidth * (24 / site.icon.width)}px ${site.icon.spriteHeight * (24 / site.icon.height)}px` }} /> : <Globe size={20} className="shrink-0 opacity-55" />}
+                    <NavigationSiteIcon icon={site.icon} />
                     <h3 className="truncate text-sm font-medium">{site.title}</h3>
                   </div>
                   <p className="mt-2 line-clamp-2 text-xs leading-5 opacity-60">{site.desc || site.url}</p>

@@ -62,3 +62,30 @@ test('legacy stored navigation gets a first custom category without losing other
   assert.equal(next.categories[0].sites[0].id, newSite.id);
   assert.equal(next.categories[1].categoryId, 'resources');
 });
+
+test('bookmark icons survive saving, editing and reloading, and can be removed', async () => {
+  const { api } = createNavigation({ categories: [{ categoryId: 'custom-user-sites', categoryName: '我的导航', sites: [oldSite] }] });
+  const icons = [
+    'https://example.com/custom-icon.png',
+    'data:image/png;base64,aWNvbg==',
+    { sprite: 'sprite-01.webp', x: 0, y: 24, width: 24, height: 24, spriteWidth: 240, spriteHeight: 240 },
+    undefined,
+  ];
+  for (const icon of icons) {
+    const data = await api.loadNavigationData();
+    api.saveNavigationData(api.upsertNavigationSite(data, api.CUSTOM_CATEGORY_ID, { ...oldSite, icon }));
+    const reloaded = await api.loadNavigationData();
+    const savedIcon = api.findNavigationBookmark(reloaded, oldSite.url).icon;
+    if (icon && typeof icon === 'object') assert.deepEqual({ ...savedIcon }, icon);
+    else assert.equal(savedIcon, icon);
+  }
+});
+
+test('bookmark favicon uses the website origin and supports addresses without a scheme', () => {
+  const { api } = createNavigation();
+  assert.equal(api.navigationFaviconUrl('https://example.com/Page?q=Hello#section'), 'https://example.com/favicon.ico');
+  assert.equal(api.navigationFaviconUrl(' example.com/path '), 'https://example.com/favicon.ico');
+  assert.equal(api.navigationFaviconUrl('http://localhost:8080/path'), 'http://localhost:8080/favicon.ico');
+  assert.throws(() => api.navigationFaviconUrl('file:///secret'));
+  assert.throws(() => api.navigationFaviconUrl('https://'));
+});

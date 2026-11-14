@@ -18,6 +18,12 @@ const LEGACY_KEYS = ["my-awesome-nav-data", "nav-custom-user-sites-data", "nav-c
 const sourceFiles = [resourceDataUrl, serviceDataUrl];
 export const CUSTOM_CATEGORY_ID = "custom-user-sites";
 
+export function navigationFaviconUrl(value: string): string {
+  const url = new URL(/^[a-z][a-z\d+.-]*:/i.test(value.trim()) ? value.trim() : `https://${value.trim()}`);
+  if (!["http:", "https:"].includes(url.protocol) || !url.hostname) throw new Error("请输入 HTTP 或 HTTPS 网站地址");
+  return `${url.origin}/favicon.ico`;
+}
+
 export function findNavigationBookmark(data: NavigationData, url: string): NavigationSite | undefined {
   return data.categories.find(category => category.categoryId === CUSTOM_CATEGORY_ID)?.sites.find(site => {
     try { return new URL(site.url).href === new URL(url).href; }
