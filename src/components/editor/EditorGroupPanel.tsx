@@ -5,7 +5,8 @@ import { BrowserEditor } from "./BrowserEditor";
 import { MarkdownEditor, VideoTabPreview } from "./MarkdownEditor";
 import { ImageEditor } from "./ImageEditor";
 import { HttpEditor } from "./HttpEditor";
-import { isImage, isVideo } from "@/lib/assets";
+import { DocumentPreview } from "./DocumentPreview";
+import { isImage, isVideo, isPreviewDocument } from "@/lib/assets";
 import { MIRROR_HOME, useWorkspaceStore, type Tab } from "@/store/workspaceStore";
 
 interface EditorGroupPanelProps {
@@ -24,7 +25,9 @@ function TextTabPanel({ tab, pane, active }: { tab: Tab; pane: "left" | "right";
     // from painting so graph previews cannot bleed through the active tab.
     style={{ display: active ? "block" : "none", visibility: active ? "visible" : "hidden", pointerEvents: active ? "auto" : "none" }}
     aria-hidden={!active} inert={!active}>
-    {/\.(http|rest)$/i.test(tab.path) && tab.diff === undefined && !tab.revision
+    {isPreviewDocument(tab.path) && tab.diff === undefined && !tab.revision
+      ? <DocumentPreview path={tab.path} active={active} />
+      : /\.(http|rest)$/i.test(tab.path) && tab.diff === undefined && !tab.revision
       ? <HttpEditor tab={tab} pane={pane} active={active} />
       : <MarkdownEditor tabId={tab.id} pane={pane} active={active} />}
   </div>;

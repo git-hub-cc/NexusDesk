@@ -345,6 +345,8 @@ pub fn run() {
             commands::fs_cmds::read_binary_file,
             commands::fs_cmds::read_binary_file_limited,
             commands::document_cmds::convert_legacy_office,
+            commands::document_cmds::prepare_document_preview,
+            commands::document_cmds::cancel_document_preview,
             commands::fs_cmds::write_binary_file,
             commands::fs_cmds::import_asset,
             commands::fs_cmds::write_file,

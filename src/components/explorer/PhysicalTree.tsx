@@ -26,7 +26,7 @@ import { selectTreeNode, activateTreeFile } from "./treeInteraction";
 import { useTreeSpeedSearch } from "./useTreeSpeedSearch";
 import { useTreeOpenState } from "./useTreeOpenState";
 import { treeStatusFor, statusLabels } from "@/lib/fileTreeAppearance";
-import { isBinaryAsset, isImage, isVideo } from "@/lib/assets";
+import { isBinaryAsset, isImage, isVideo, isPreviewDocument } from "@/lib/assets";
 import { isRemotePath, remotePath, remoteUri } from "@/lib/remote";
 import { ANDROID_FILE_TYPE, downloadAndroidFiles, parseAndroidFiles, readAndroidClipboard, type AndroidFiles } from "@/lib/androidTransfer";
 
@@ -427,8 +427,9 @@ export const PhysicalTree: React.FC = React.memo(() => {
 
         if (node.isLeaf) {
             try {
+                if (remote && isPreviewDocument(node.data.id)) throw new Error("请先将文档保存到本地，再进行预览。");
                 if (remote && (isImage(node.data.id) || isVideo(node.data.id))) throw new Error("暂不支持远程媒体预览");
-                if ((isImage(node.data.id) && !/\.svg$/i.test(node.data.id)) || isVideo(node.data.id)) {
+                if ((isImage(node.data.id) && !/\.svg$/i.test(node.data.id)) || isVideo(node.data.id) || isPreviewDocument(node.data.id)) {
                     openTab({
                         id: node.data.id.replace(/\\/g, "/").replace(/\/$/, ""),
                         title: node.data.name,

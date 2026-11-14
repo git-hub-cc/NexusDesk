@@ -8,6 +8,10 @@ export function isVideo(path: string) {
   return /\.(mp4|m4v|webm|ogg|mov|mkv|avi|ogv)$/i.test(path);
 }
 
+export function isPreviewDocument(path: string) {
+  return /\.(pdf|docx?|pptx?|xlsx?)$/i.test(path);
+}
+
 export function isTextFile(path: string) {
   return /\.(txt|md|markdown|mdx|json|js|jsx|ts|tsx|css|scss|less|html?|xml|svg|yaml|yml|toml|csv|log|ini|conf|env|rs|py|java|c|cc|cpp|h|hpp|go|php|rb|sh|bat|cmd|ps1|sql|vue|svelte)$/i.test(path);
 }
