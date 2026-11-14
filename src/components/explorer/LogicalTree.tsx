@@ -240,9 +240,8 @@ export const LogicalTree: React.FC = React.memo(() => {
             <ContextMenu.Item className="ide-menu-item" disabled={!rootPath || isRemotePath(rootPath)} onSelect={() => void run(async () => {
               if (!rootPath) return;
               const cwd = await fsApi.prepareLogicalSandbox(rootPath, name);
-              const { profiles, defaultProfileId, createSession } = useTerminalStore.getState();
-              const profile = profiles.find(profile => profile.id === defaultProfileId) || profiles[0];
-              if (!profile) throw new Error("请先配置终端");
+              const { profiles, createSession } = useTerminalStore.getState();
+              const profile = profiles.find(profile => profile.id === "shell") || { id: "shell", name: "终端", command: "" };
               if (!await createSession(profile, cwd)) throw new Error(useTerminalStore.getState().launchError);
               useLayoutStore.getState().openBottomPanel("terminal");
             })}>打开所在目录（终端）</ContextMenu.Item>

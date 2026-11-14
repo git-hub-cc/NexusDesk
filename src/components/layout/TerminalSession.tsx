@@ -7,7 +7,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
-import type { SessionInfo } from "@/store/terminalStore";
+import { useTerminalStore, type SessionInfo } from "@/store/terminalStore";
 import { fsApi } from "@/lib/api";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { resolveTerminalPath, terminalBufferFileLinks } from "@/lib/terminalLinks";
@@ -24,6 +24,7 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
   onExit?: (id: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const historyTransparency = useTerminalStore(state => state.historyTransparency);
   const [history, setHistory] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [dismissedHistoryQuery, setDismissedHistoryQuery] = useState<string | null>(null);
@@ -547,11 +548,11 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
 
   return (
     <>
-      <div style={{ display: active ? "flex" : "none", background: "#2b2d30" }} className="terminal-pane h-full w-full min-h-0 flex-col p-2">
+      <div style={{ display: active ? "flex" : "none", background: "#2b2d30" }} className="terminal-pane relative h-full w-full min-h-0 flex-col p-2">
         <div ref={host} onKeyDown={event => event.stopPropagation()} className="terminal-host min-h-0 flex-1 w-full overflow-hidden" />
-        {matches.length > 0 && <div className="shrink-0 border-t border-white/10 pt-1" aria-label="命令历史候选">
-          <div className="mb-1 flex justify-between text-[10px] text-gray-500"><span>命令历史 · 单击回填，双击执行</span><span>{matches.length} 条</span></div>
-          <div className="max-h-36 overflow-y-auto">
+        {matches.length > 0 && <div className="absolute inset-x-2 bottom-8 z-10 flex max-h-[calc(100%-3rem)] flex-col rounded border border-white/10 p-2 shadow-lg" style={{ backgroundColor: `rgba(43, 45, 48, ${1 - historyTransparency / 100})`, textShadow: "0 1px 2px #000" }} aria-label="命令历史候选">
+          <div className="mb-1 flex shrink-0 justify-between text-[10px] text-gray-300"><span>命令历史 · 单击回填，双击执行</span><span>{matches.length} 条</span></div>
+          <div className="min-h-0 max-h-36 overflow-y-auto">
             {matches.map(match => <button key={match.command} type="button" title={match.command}
               onMouseDown={event => event.preventDefault()} onClick={event => {
                 clearTimeout(historyClickTimer.current);

@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Cloud, GitBranch, Mic, Package, X } from "lucide-react";
+import { Cloud, GitBranch, Mic, Package, Terminal, X } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
 import { DndContext, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent, closestCenter, DragOverlay } from "@dnd-kit/core";
@@ -15,6 +15,7 @@ import { EditorGroupPanel } from "@/components/editor/EditorGroupPanel";
 import { RelationalView } from "@/components/relations/RelationalView";
 import { GitSettings } from "./GitSettings";
 import { SpeechRecognitionSettings } from "./SpeechRecognitionSettings";
+import { TerminalSettings } from "./TerminalSettings";
 import { SoftwareSettings } from "./SoftwareSettings";
 import { CodexSettings } from "./CodexSettings";
 import { NavigationSyncSettings } from "@/components/navigation/NavigationSyncSettings";
@@ -141,7 +142,7 @@ export const Workspace: React.FC = () => {
   const activeLeftTabId = useWorkspaceStore(state => state.activeLeftTabId);
   const activeRightTabId = useWorkspaceStore(state => state.activeRightTabId);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<"git" | "speech" | "software" | "codex" | "navigation">("git");
+  const [settingsSection, setSettingsSection] = useState<"git" | "speech" | "software" | "codex" | "navigation" | "terminal">("git");
   useEffect(() => {
     if (activeLeftTabId || activeRightTabId) setSettingsOpen(false);
   }, [activeLeftTabId, activeRightTabId]);
@@ -291,7 +292,7 @@ export const Workspace: React.FC = () => {
                 if (bottomContainer.current) bottomContainer.current.style.height = `${height}%`;
                 updatePanelSize("bottomPanelHeight", height, setBottomPanelHeight);
               }} onPointerUp={event => { event.currentTarget.releasePointerCapture(event.pointerId); onPanelDragging(false); }} onLostPointerCapture={() => onPanelDragging(false)} />
-              <div className="min-h-0 flex-1 overflow-hidden"><BottomPanel /></div>
+              <div className="min-h-0 flex-1 overflow-hidden"><BottomPanel onOpenTerminalSettings={() => { setSettingsSection("terminal"); setSettingsOpen(true); }} /></div>
             </div>
           </div>
         </div>
@@ -312,8 +313,9 @@ export const Workspace: React.FC = () => {
               <button type="button" onClick={() => setSettingsSection("software")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "software" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "software" ? "page" : undefined}><Package size={16} />软件管理</button>
               <button type="button" onClick={() => setSettingsSection("codex")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "codex" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "codex" ? "page" : undefined}><img src={openAiIcon} alt="" aria-hidden="true" className="h-4 w-4 shrink-0" />Codex</button>
               <button type="button" onClick={() => setSettingsSection("navigation")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "navigation" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "navigation" ? "page" : undefined}><Cloud size={16} />导航云同步</button>
+              <button type="button" onClick={() => setSettingsSection("terminal")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "terminal" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "terminal" ? "page" : undefined}><Terminal size={16} />终端</button>
             </nav>
-            <div className="min-h-0 min-w-0 flex-1 overflow-auto">{settingsSection === "git" ? <GitSettings /> : settingsSection === "speech" ? <SpeechRecognitionSettings /> : settingsSection === "software" ? <SoftwareSettings /> : settingsSection === "codex" ? <CodexSettings /> : <NavigationSyncSettings />}</div>
+            <div className="min-h-0 min-w-0 flex-1 overflow-auto">{settingsSection === "git" ? <GitSettings /> : settingsSection === "speech" ? <SpeechRecognitionSettings /> : settingsSection === "software" ? <SoftwareSettings /> : settingsSection === "codex" ? <CodexSettings /> : settingsSection === "navigation" ? <NavigationSyncSettings /> : <TerminalSettings />}</div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

@@ -8,7 +8,7 @@ import vm from "node:vm";
 test("settings overlay preserves the workspace tree and browser component positions", () => {
   let settingsOpen = false;
   const component = name => Object.assign(() => null, { displayName: name });
-  const names = ["Bot", "GitBranch", "Mic", "Package", "X", "Panel", "PanelGroup", "PanelResizeHandle", "DndContext", "PointerSensor", "DragOverlay", "WindowTitleBar", "ActivityBar", "Sidebar", "BottomPanel", "TabUI", "EditorGroupPanel", "RelationalView", "GitSettings", "CodexSettings", "SpeechRecognitionSettings", "SoftwareSettings"];
+  const names = ["Bot", "Cloud", "Terminal", "GitBranch", "Mic", "Package", "X", "Panel", "PanelGroup", "PanelResizeHandle", "DndContext", "PointerSensor", "DragOverlay", "WindowTitleBar", "ActivityBar", "Sidebar", "BottomPanel", "TabUI", "EditorGroupPanel", "RelationalView", "GitSettings", "CodexSettings", "SpeechRecognitionSettings", "SoftwareSettings"];
   const components = Object.fromEntries(names.map(name => [name, component(name)]));
   const context = {
     ...components, React, AndroidMirrorWorkspace: component("AndroidMirrorWorkspace"),

@@ -622,12 +622,10 @@ export const PhysicalTree: React.FC = React.memo(() => {
                 }}>打开所在目录</ContextMenu.Item>
                 <ContextMenu.Item className="ide-menu-item" onSelect={() => {
                     const dir = directory ? path : parent(path);
-                    const { profiles, defaultProfileId, createSession } = useTerminalStore.getState();
-                    const profile = profiles.find(p => p.id === defaultProfileId) || profiles[0];
-                    if (profile) {
-                        createSession(profile, dir);
-                        useLayoutStore.getState().openBottomPanel("terminal");
-                    }
+                    const { profiles, createSession } = useTerminalStore.getState();
+                    const profile = profiles.find(p => p.id === "shell") || { id: "shell", name: "终端", command: "" };
+                    createSession(profile, dir);
+                    useLayoutStore.getState().openBottomPanel("terminal");
                 }}>打开所在目录（在终端）</ContextMenu.Item>
                 {!remote && codexInstalled && <ContextMenu.Item className="ide-menu-item" onSelect={() => {
                     const dir = directory ? path : parent(path);

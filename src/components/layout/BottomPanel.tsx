@@ -3,7 +3,7 @@ import { PanelMinimizeButton } from "./PanelMinimizeButton";
 import { isSnapshot } from "@/lib/snapshot";
 import { useEffect, useRef, useState } from "react";
 import { gitApi } from "@/lib/api";
-import { ClipboardCheck, GitBranch, Settings, Terminal, X, CircleDot, ChevronDown, Pin } from "lucide-react";
+import { ClipboardCheck, GitBranch, Terminal, X, CircleDot, ChevronDown, Pin } from "lucide-react";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, horizontalListSortingStrategy, useSortable, type SortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -17,7 +17,6 @@ import { settingsStorage } from "@/lib/globalSettings";
 import { AUTO_REVIEW_PROMPT_KEY, DEFAULT_AUTO_REVIEW_PROMPT } from "@/lib/codexReview";
 import { useTerminalStore, type TerminalProfile } from "@/store/terminalStore";
 import { GitPanel } from "@/components/git/GitPanel";
-import { TerminalSettings } from "./TerminalSettings";
 import { TerminalSession } from "./TerminalSession";
 
 function SessionTab({ id, pinned, children }: { id: string; pinned: boolean; children: React.ReactNode }) {
@@ -37,10 +36,9 @@ const sessionSortingStrategy: SortingStrategy = args => {
   return args.index < pinnedCount ? null : horizontalListSortingStrategy(args);
 };
 
-export function BottomPanel() {
+export function BottomPanel({ onOpenTerminalSettings }: { onOpenTerminalSettings: () => void }) {
   const { bottomPanelTab: activeTab, setBottomPanelTab } = useLayoutStore();
   const { profiles, sessions, activeSessionId, createSession, removeSession, setActiveSessionId, reorderSessions, toggleSessionPin, launchError, clearLaunchError } = useTerminalStore();
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [autoResizeTerminal, setAutoResizeTerminal] = useState(false);
   const [gitInstalled, setGitInstalled] = useState<boolean | null>(null);
   const [exitedSessions, setExitedSessions] = useState<Record<string, boolean>>({});
@@ -239,19 +237,17 @@ export function BottomPanel() {
           }} className="h-3 w-3 accent-ide-accent disabled:cursor-not-allowed" />
           <span>自动</span>
         </label>}
-        <button title="命令行工具设置" aria-label="命令行工具设置" onClick={() => setSettingsOpen(true)} className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-white/10 hover:text-white active:bg-white/15 opacity-0 group-hover/panel:opacity-100 transition-opacity"><Settings size={14} /></button>
         <PanelMinimizeButton panel="bottom" />
       </div>
     </div>
     {launchError && <div role="alert" className="flex items-center gap-2 px-3 py-2 text-xs text-red-400">
       <span className="flex-1">{launchError}</span>
-      <button onClick={() => setSettingsOpen(true)} className="underline shrink-0">修改配置</button>
+      <button onClick={onOpenTerminalSettings} className="underline shrink-0">修改配置</button>
       <button onClick={clearLaunchError} aria-label="关闭错误提示"><X size={14} /></button>
     </div>}
     <div className="flex-1 min-h-0 overflow-hidden">
       {gitInstalled && activeTab === "git" && <GitPanel />}
       {sessions.map(session => <TerminalSession key={session.id} session={session} active={activeTab === "terminal" && activeSessionId === session.id} autoResize={autoResizeTerminal} resizeRequest={resizeRequest} onExit={handleExit} />)}
     </div>
-    {settingsOpen && <TerminalSettings onClose={() => setSettingsOpen(false)} />}
   </div>;
 }

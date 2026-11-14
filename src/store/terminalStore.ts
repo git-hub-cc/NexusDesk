@@ -4,6 +4,8 @@ import { globalJsonStorage } from "@/lib/globalSettings";
 import { invoke } from "@tauri-apps/api/core";
 import { isRemotePath, remotePath } from "@/lib/remote";
 
+export const DEFAULT_HISTORY_TRANSPARENCY = 25;
+
 export interface TerminalProfile {
   id: string;
   name: string;
@@ -21,8 +23,9 @@ export interface SessionInfo {
 
 interface TerminalState {
   profiles: TerminalProfile[];
-  defaultProfileId: string;
-  saveProfiles: (profiles: TerminalProfile[], defaultProfileId: string) => void;
+  historyTransparency: number;
+  setHistoryTransparency: (value: number) => void;
+  saveProfiles: (profiles: TerminalProfile[]) => void;
   sessions: SessionInfo[];
   activeSessionId: string;
   launchError: string;
@@ -40,8 +43,9 @@ export const useTerminalStore = create<TerminalState>()(persist(
       { id: "shell", name: "终端", command: "" },
       { id: "codex", name: "Codex", command: "codex" },
     ],
-    defaultProfileId: "shell",
-    saveProfiles: (profiles, defaultProfileId) => set({ profiles, defaultProfileId }),
+    historyTransparency: DEFAULT_HISTORY_TRANSPARENCY,
+    setHistoryTransparency: (value) => set({ historyTransparency: Number.isFinite(value) ? Math.min(80, Math.max(0, Math.round(value))) : DEFAULT_HISTORY_TRANSPARENCY }),
+    saveProfiles: (profiles) => set({ profiles }),
     sessions: [],
     activeSessionId: "",
     launchError: "",
@@ -91,7 +95,7 @@ export const useTerminalStore = create<TerminalState>()(persist(
     storage: globalJsonStorage,
     version: 1,
     migrate: (persistedState) => {
-      const state = persistedState as Pick<TerminalState, "profiles" | "defaultProfileId">;
+      const state = persistedState as Pick<TerminalState, "profiles">;
       const hasCodex = state.profiles.some(profile =>
         profile.id === "codex" || /\bcodex\b/i.test(profile.command) || profile.name.toLowerCase() === "codex"
       );
@@ -103,6 +107,6 @@ export const useTerminalStore = create<TerminalState>()(persist(
         ],
       };
     },
-    partialize: (state) => ({ profiles: state.profiles, defaultProfileId: state.defaultProfileId }),
+    partialize: (state) => ({ profiles: state.profiles, historyTransparency: state.historyTransparency }),
   }
 ));

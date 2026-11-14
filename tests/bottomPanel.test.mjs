@@ -45,7 +45,7 @@ function harness(installed) {
   function render() {
     index = 0;
     effects = [];
-    const tree = context.exports.BottomPanel();
+    const tree = context.exports.BottomPanel({ onOpenTerminalSettings() {} });
     effects.forEach(effect => effect());
     return tree;
   }

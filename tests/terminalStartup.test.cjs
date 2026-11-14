@@ -41,6 +41,7 @@ test('terminal preserves early TUI probe replies and passes alternate-screen key
     writeln() {} hasSelection() { return false; }
   }
   const mocks = {
+    '@/store/terminalStore': { useTerminalStore: selector => selector({ historyTransparency: 0 }) },
     react: { useRef: value => ({ current: value === null ? element : value }), useState: value => [value, () => {}], useEffect: effect => effects.push(effect) },
     '@/lib/terminalHistory': { matchTerminalHistory: () => [], terminalPromptInput: () => undefined },
     '@/lib/speechTarget': { getSpeechTarget: () => null, setSpeechTarget() {} },
