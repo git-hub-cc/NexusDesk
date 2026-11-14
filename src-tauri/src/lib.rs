@@ -241,6 +241,7 @@ pub fn run() {
             commands::settings_cmds::write_global_setting,
             commands::settings_cmds::import_global_settings,
             commands::capture_cmds::capture_start,
+            commands::capture_cmds::document_ocr,
             commands::capture_cmds::capture_cancel,
             stt_shortcut_register,
             stt_shortcut_unregister,

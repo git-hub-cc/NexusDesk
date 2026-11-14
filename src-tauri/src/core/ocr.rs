@@ -88,7 +88,15 @@ impl Ocr {
         })
     }
     pub fn recognize(&mut self, image: &RgbImage) -> Result<String, String> {
-        let scale = (960. / image.width().max(image.height()) as f32).min(1.);
+        self.recognize_with_size(image, 960.)
+    }
+
+    pub fn recognize_with_size(
+        &mut self,
+        image: &RgbImage,
+        max_side: f32,
+    ) -> Result<String, String> {
+        let scale = (max_side / image.width().max(image.height()) as f32).min(1.);
         let w = ((image.width() as f32 * scale / 32.).round() as u32 * 32).max(32);
         let h = ((image.height() as f32 * scale / 32.).round() as u32 * 32).max(32);
         let (shape, prob) = infer(&mut self.det, image, w, h, true)?;
@@ -235,6 +243,15 @@ mod tests {
             .to_rgb8();
         let result = ocr.recognize(&image).unwrap();
         println!("OCR: {result}");
+        assert!(result.contains("中文测试"), "{result}");
+        assert!(result.contains("12345"), "{result}");
+        let document = imageops::resize(
+            &image,
+            1920,
+            image.height() * 1920 / image.width(),
+            imageops::FilterType::Lanczos3,
+        );
+        let result = ocr.recognize_with_size(&document, 1920.).unwrap();
         assert!(result.contains("中文测试"), "{result}");
         assert!(result.contains("12345"), "{result}");
         assert!(

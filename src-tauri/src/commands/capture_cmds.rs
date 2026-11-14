@@ -14,11 +14,49 @@ pub struct CaptureState {
 }
 
 impl CaptureState {
+    fn recognize(
+        &self,
+        app: &tauri::AppHandle,
+        image: &image::RgbImage,
+        document: bool,
+    ) -> Result<String, String> {
+        let mut engine = self.ocr.lock().map_err(|e| e.to_string())?;
+        if engine.is_none() {
+            *engine = Some(crate::core::ocr::Ocr::load(
+                &app.path()
+                    .resource_dir()
+                    .map_err(|e| e.to_string())?
+                    .join("resources/ocr"),
+            )?);
+        }
+        let engine = engine.as_mut().ok_or("OCR 初始化失败")?;
+        if document {
+            engine.recognize_with_size(image, 1920.)
+        } else {
+            engine.recognize(image)
+        }
+    }
+
     pub fn shutdown(&self) {
         if let Some(proxy) = self.proxy.get() {
             let _ = proxy.send_event(super::native_capture::Message::Shutdown);
         }
     }
+}
+
+#[tauri::command]
+pub async fn document_ocr(app: tauri::AppHandle, bytes: Vec<u8>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let image = image::load_from_memory(&bytes)
+            .map_err(|e| e.to_string())?
+            .to_rgb8();
+        if image.width() > 1920 || image.height() > 1200 {
+            return Err("OCR 图像分块尺寸过大".into());
+        }
+        app.state::<CaptureState>().recognize(&app, &image, true)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 pub fn start(app: &tauri::AppHandle) -> Result<(), String> {
@@ -125,19 +163,11 @@ pub(crate) fn complete(
             match action {
                 "ocr" => {
                     let state = app.state::<CaptureState>();
-                    let mut engine = state.ocr.lock().map_err(|e| e.to_string())?;
-                    if engine.is_none() {
-                        *engine = Some(crate::core::ocr::Ocr::load(
-                            &app.path()
-                                .resource_dir()
-                                .map_err(|e| e.to_string())?
-                                .join("resources/ocr"),
-                        )?);
-                    }
-                    let text = engine
-                        .as_mut()
-                        .unwrap()
-                        .recognize(&image::DynamicImage::ImageRgba8(image).to_rgb8())?;
+                    let text = state.recognize(
+                        &app,
+                        &image::DynamicImage::ImageRgba8(image).to_rgb8(),
+                        false,
+                    )?;
                     arboard::Clipboard::new()
                         .and_then(|mut clipboard| clipboard.set_text(text.clone()))
                         .map_err(|e| e.to_string())?;

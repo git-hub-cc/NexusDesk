@@ -17,6 +17,7 @@ import { useTerminalStore } from "@/store/terminalStore";
 import { useLayoutStore } from "@/store/layoutStore";
 import { fsApi, videoApi } from "@/lib/api";
 import { documentExtension, isConvertibleDocument } from "@/lib/documentConverter";
+import { isOcrDocument } from "@/lib/documentOcr";
 import { useElementSize } from "@/hooks/useElementSize";
 import { openContextMenuFromKeyboard } from "@/lib/contextMenu";
 
@@ -69,6 +70,9 @@ export const PhysicalTree: React.FC = React.memo(() => {
     const busy = useRef(false);
     const [converting, setConverting] = useState(false);
     const [convertingPath, setConvertingPath] = useState<string | null>(null);
+    const [ocrProgress, setOcrProgress] = useState<string | null>(null);
+    const ocrController = useRef<AbortController | null>(null);
+    useEffect(() => () => ocrController.current?.abort(), []);
     const [historyPath, setHistoryPath] = useState<string | null>(null);
     const [gitHistoryPath, setGitHistoryPath] = useState<string | null>(null);
     const [error, setError] = useState("");
@@ -220,23 +224,32 @@ export const PhysicalTree: React.FC = React.memo(() => {
         finally { fileOperationHistory.endGroup(); busy.current = false; }
     };
 
-    const handleConvertToMd = (sourcePath: string) => runOperation(async () => {
+    const handleConvertToMd = (sourcePath: string, ocr = false) => runOperation(async () => {
         const project = rootPath;
+        const controller = ocr ? new AbortController() : null;
+        if (controller) {
+            ocrController.current = controller;
+            setOcrProgress("正在准备 OCR 识别...");
+        }
         setConverting(true);
         try {
             const extension = documentExtension(sourcePath);
             const { convertDocumentToMarkdown } = await import("@/lib/documentConverter");
             const bytes = await fsApi.readBinaryFile(sourcePath);
-            const name = sourcePath.split(/[/\\]/).pop()!.replace(/\.[^.]+$/, ".md");
+            const name = sourcePath.split(/[/\\]/).pop()!.replace(/\.[^.]+$/, ocr ? ".ocr.md" : ".md");
             const directory = parent(sourcePath);
             const saveAsset = async (assetBytes: Uint8Array, assetName: string) => {
                 const asset = await fsApi.importAsset(`${directory}/${name}`, { name: assetName, bytes: Array.from(assetBytes) });
                 return `.asset/${encodeURIComponent(asset.split(/[/\\]/).pop()!)}`;
             };
-            const content = await convertDocumentToMarkdown(new Uint8Array(bytes).buffer, extension, {
+            const content = controller ? await (await import("@/lib/documentOcr")).convertDocumentWithOcr(new Uint8Array(bytes), extension, {
+                signal: controller.signal,
+                onProgress: (page, total) => setOcrProgress(`正在识别，第 ${page} / ${total} 页`),
+            }) : await convertDocumentToMarkdown(new Uint8Array(bytes).buffer, extension, {
                 saveImage: saveAsset,
                 saveAsset,
             });
+            if (controller?.signal.aborted) throw new Error("CANCELLED");
             // importFile creates exclusively and adds a suffix if the name already exists.
             const path = await fsApi.importFile(directory, name, Array.from(new TextEncoder().encode(content)));
             if (useWorkspaceStore.getState().rootPath !== project) return;
@@ -246,6 +259,10 @@ export const PhysicalTree: React.FC = React.memo(() => {
             openTab({ id: path, title: path.split(/[/\\]/).pop()!, path, content, isDirty: false });
         } finally {
             setConverting(false);
+            if (controller) {
+                ocrController.current = null;
+                setOcrProgress(null);
+            }
         }
     });
 
@@ -597,6 +614,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
                 <ContextMenu.Item className="ide-menu-item" onSelect={() => void importFromDialog(directory ? path : parent(path))}>导入文件...</ContextMenu.Item>
                 {!directory && <ContextMenu.Item disabled={remote} className="ide-menu-item" onSelect={() => { void openPath(path).catch(error => setError(String(error))); }}>打开文件（系统程序）</ContextMenu.Item>}
                 {!directory && isConvertibleDocument(path) && <ContextMenu.Item disabled={remote || multiple || converting} className="ide-menu-item text-ide-accent" onSelect={() => void handleConvertToMd(path)}>提取为 Markdown...</ContextMenu.Item>}
+                {!directory && isOcrDocument(path) && <ContextMenu.Item disabled={remote || multiple || converting} className="ide-menu-item text-ide-accent" onSelect={() => void handleConvertToMd(path, true)}>提取为 Markdown（OCR）...</ContextMenu.Item>}
                 {!directory && /\.mkv$/i.test(path) && <ContextMenu.Item disabled={remote || multiple || converting} className="ide-menu-item text-ide-accent" onSelect={() => void handleConvertMkvToMp4(path)}>转换为 MP4...</ContextMenu.Item>}
                 <ContextMenu.Item disabled={remote} className="ide-menu-item" onSelect={() => {
                     const action = directory ? openPath(path) : revealItemInDir(path);
@@ -759,6 +777,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
             )}
 
             {convertingPath && <div className="flex items-center gap-2 p-2 text-xs text-gray-400" role="status"><span className="flex-1 truncate">正在转换：{convertingPath.split(/[\\/]/).pop()}</span><button type="button" className="rounded p-1 text-gray-300 hover:bg-white/10" title="取消转码" aria-label="取消转码" onClick={() => void cancelConvertMkvToMp4()}><Square size={13} fill="currentColor" /></button></div>}
+            {ocrProgress && <div className="flex items-center gap-2 p-2 text-xs text-gray-400" role="status"><span className="flex-1 truncate">{ocrProgress}</span><button type="button" className="rounded p-1 text-gray-300 hover:bg-white/10" title="取消识别" aria-label="取消识别" onClick={() => { ocrController.current?.abort(); setOcrProgress("正在取消识别..."); }}><Square size={13} fill="currentColor" /></button></div>}
             {error && <div role="alert" className="p-2 text-xs text-red-400 break-words">{error}</div>}
             <div ref={containerRef} onKeyDownCapture={speedSearch.onKeyDownCapture} className="relative flex-1 w-full p-1 overflow-hidden">
                 {speedSearch.searchBox}
