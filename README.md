@@ -120,3 +120,7 @@ winget source remove --name msstore
 Set-Service -Name camsvc -StartupType Manual
 ```
 
+## 无法进行调试
+```powershell
+npm run tauri dev -- -- -- --project "C:\Users\user\Desktop\Final-DebugData"
+```
