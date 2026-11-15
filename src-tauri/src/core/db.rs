@@ -7,6 +7,62 @@ use std::path::PathBuf;
 #[cfg(test)]
 mod tests {
     #[test]
+    fn link_deletion_and_normalized_lookups_use_indexes() {
+        let root = std::env::temp_dir().join(format!(
+            "nexusdesk-link-plans-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let conn = super::init_db(Some(root.to_str().unwrap())).unwrap();
+        let collation = if cfg!(windows) { " COLLATE NOCASE" } else { "" };
+        let queries = [
+            "DELETE FROM links WHERE source_path=?1".to_owned(),
+            format!(
+                "SELECT target_path FROM links WHERE REPLACE(source_path, '\\', '/')=?1{collation}"
+            ),
+            format!(
+                "SELECT source_path FROM links WHERE REPLACE(target_path, '\\', '/')=?1{collation}"
+            ),
+        ];
+        for query in queries {
+            let mut statement = conn
+                .prepare(&format!("EXPLAIN QUERY PLAN {query}"))
+                .unwrap();
+            let details = statement
+                .query_map(["C:/notes/a.md"], |row| row.get::<_, String>(3))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            assert!(
+                details
+                    .iter()
+                    .any(|line| line.contains("SEARCH links") && line.contains("INDEX")),
+                "{details:?}"
+            );
+        }
+        let query = format!(
+            "EXPLAIN QUERY PLAN SELECT path FROM file_meta WHERE REPLACE(path, '\\', '/'){collation}=?1 OR (REPLACE(path, '\\', '/'){collation}>=?2 AND REPLACE(path, '\\', '/'){collation}<?3)"
+        );
+        let mut statement = conn.prepare(&query).unwrap();
+        let details = statement
+            .query_map(["C:/notes", "C:/notes/", "C:/notes0"], |r| {
+                r.get::<_, String>(3)
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(
+            details.iter().all(|line| !line.contains("SCAN file_meta")),
+            "{details:?}"
+        );
+        drop(statement);
+        drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn wal_readers_can_read_during_an_uncommitted_write() {
         let root = std::env::temp_dir().join(format!(
             "nexusdesk-wal-{}-{}",
@@ -265,6 +321,16 @@ pub fn init_db(
     conn.execute_batch("CREATE TABLE IF NOT EXISTS global_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS terminal_history (command TEXT PRIMARY KEY, position INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS colors (category TEXT PRIMARY KEY COLLATE NOCASE, color TEXT NOT NULL);")?;
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS links_source ON links(source_path);")?;
+    let collation = if cfg!(windows) { " COLLATE NOCASE" } else { "" };
+    for column in ["source_path", "target_path"] {
+        conn.execute_batch(&format!(
+            "CREATE INDEX IF NOT EXISTS links_{column}_normalized ON links(REPLACE({column}, '\\', '/'){collation});"
+        ))?;
+    }
+    conn.execute_batch(&format!(
+        "CREATE INDEX IF NOT EXISTS file_meta_path_normalized ON file_meta(REPLACE(path, '\\', '/'){collation});"
+    ))?;
     crate::core::local_history::init(&conn)?;
     Ok(conn)
 }
@@ -323,6 +389,10 @@ pub fn insert_logical_folder(conn: &Connection, name: &str) -> Result<()> {
 }
 
 pub fn get_logical_tree(conn: &Connection) -> Result<Vec<FileNode>> {
+    Ok(resolve_logical_tree(read_logical_tree(conn)?))
+}
+
+pub fn read_logical_tree(conn: &Connection) -> Result<Vec<FileNode>> {
     let mut type_map: HashMap<String, Vec<FileNode>> = HashMap::new();
 
     let mut folder_stmt = conn.prepare("SELECT name FROM logical_folders")?;
@@ -346,7 +416,7 @@ pub fn get_logical_tree(conn: &Connection) -> Result<Vec<FileNode>> {
                 .to_string_lossy()
                 .to_string();
             let node = FileNode {
-                missing: !std::path::Path::new(&path).exists(),
+                missing: false,
                 id: path,
                 name,
                 children: None,
@@ -366,21 +436,16 @@ pub fn get_logical_tree(conn: &Connection) -> Result<Vec<FileNode>> {
         let (path, category) = reference?;
         // Explicit references take precedence over legacy frontmatter categories.
         let source = PathBuf::from(&path);
-        let is_dir = source.is_dir();
         type_map.entry(category).or_default().push(FileNode {
-            missing: !source.exists(),
+            missing: false,
             id: path,
             name: source
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string(),
-            children: if is_dir {
-                Some(crate::core::fs::read_dir_shallow(&source).unwrap_or_default())
-            } else {
-                None
-            },
-            is_leaf: !is_dir,
+            children: None,
+            is_leaf: false,
         });
     }
     let mut root_nodes = Vec::new();
@@ -406,6 +471,27 @@ pub fn get_logical_tree(conn: &Connection) -> Result<Vec<FileNode>> {
 
     root_nodes.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(root_nodes)
+}
+
+pub fn resolve_logical_tree(mut nodes: Vec<FileNode>) -> Vec<FileNode> {
+    for category in &mut nodes {
+        if let Some(children) = &mut category.children {
+            for node in children.iter_mut() {
+                let path = std::path::Path::new(&node.id);
+                let metadata = std::fs::metadata(path).ok();
+                node.missing = metadata.is_none();
+                let directory = !node.is_leaf && metadata.is_some_and(|meta| meta.is_dir());
+                node.is_leaf = !directory;
+                node.children = if directory {
+                    Some(crate::core::fs::read_dir_shallow(path).unwrap_or_default())
+                } else {
+                    None
+                };
+            }
+            children.sort_by(|a, b| a.is_leaf.cmp(&b.is_leaf).then_with(|| a.name.cmp(&b.name)));
+        }
+    }
+    nodes
 }
 
 #[cfg(test)]

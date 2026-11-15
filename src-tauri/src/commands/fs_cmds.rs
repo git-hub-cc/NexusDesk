@@ -302,47 +302,86 @@ pub async fn read_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn write_file(path: String, content: String, state: State<'_, AppState>) -> Result<(), String> {
-    let guard = state.db_conn.lock().map_err(|e| e.to_string())?;
-    let old = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+pub async fn write_file(
+    path: String,
+    content: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let connection = state.db_conn.clone();
+    tauri::async_runtime::spawn_blocking(move || write_file_blocking(&path, &content, &connection))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn write_file_blocking(
+    path: &str,
+    content: &str,
+    connection: &std::sync::Mutex<Option<rusqlite::Connection>>,
+) -> Result<bool, String> {
+    use std::sync::{Arc, Mutex, OnceLock, Weak};
+    static WRITES: OnceLock<Mutex<std::collections::HashMap<String, Weak<Mutex<()>>>>> =
+        OnceLock::new();
+    let file_lock = {
+        let mut writes = WRITES
+            .get_or_init(Mutex::default)
+            .lock()
+            .map_err(|e| e.to_string())?;
+        writes.retain(|_, lock| lock.strong_count() > 0);
+        let key = if cfg!(windows) {
+            path.replace('\\', "/").to_lowercase()
+        } else {
+            path.to_owned()
+        };
+        let lock = writes
+            .get(&key)
+            .and_then(Weak::upgrade)
+            .unwrap_or_else(|| Arc::new(Mutex::new(())));
+        writes.insert(key, Arc::downgrade(&lock));
+        lock
+    };
+    let _file_guard = file_lock.lock().map_err(|e| e.to_string())?;
+    let (old, existed) = match std::fs::read_to_string(path) {
+        Ok(text) => (text, true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (String::new(), false),
         Err(e) => return Err(e.to_string()),
     };
-    let original_time = std::fs::metadata(&path)
+    let original_time = std::fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|t| t.as_millis() as i64)
         .unwrap_or_else(crate::core::local_history::now);
+    let markdown = path.to_lowercase().ends_with(".md");
+    let logical_type = markdown.then(|| fs::markdown_type(content)).flatten();
+    let logical_changed = !existed || (markdown && fs::markdown_type(&old) != logical_type);
+    let links = fs::collect_links(std::path::Path::new(path), content)?;
+    {
+        let guard = connection.lock().map_err(|e| e.to_string())?;
+        if let Some(conn) = guard.as_ref() {
+            let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+            crate::core::local_history::record(&tx, path, &old, content, original_time)?;
+            tx.commit().map_err(|e| e.to_string())?;
+        }
+    }
+    fs::write_markdown_file(path, content)?;
+    let modified = std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let guard = connection.lock().map_err(|e| e.to_string())?;
     if let Some(conn) = guard.as_ref() {
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-        crate::core::local_history::record(&tx, &path, &old, &content, original_time)?;
-        tx.commit().map_err(|e| e.to_string())?;
-    }
-    fs::write_markdown_file(&path, &content)?;
-    if let Some(conn) = guard.as_ref() {
-        let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-        fs::index_links(&path, &content, &transaction)?;
-        if path.to_lowercase().ends_with(".md") {
-            let matter = gray_matter::Matter::<gray_matter::engine::YAML>::new();
-            let logical_type = matter
-                .parse(&content)
-                .data
-                .and_then(|data| data.as_hashmap().ok())
-                .and_then(|fields| fields.get("type").and_then(|value| value.as_string().ok()));
-            let modified = std::fs::metadata(&path)
-                .and_then(|m| m.modified())
-                .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-                .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64;
-            db::upsert_file_meta(&transaction, &path, logical_type.as_deref(), None, modified)
+        db::replace_links(&tx, path, &links).map_err(|e| e.to_string())?;
+        if markdown {
+            db::upsert_file_meta(&tx, path, logical_type.as_deref(), None, modified)
                 .map_err(|e| e.to_string())?;
         }
-        transaction.commit().map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
     }
-    Ok(())
+    fs::invalidate_index_snapshot(path);
+    Ok(logical_changed)
 }
 
 #[tauri::command]
@@ -365,38 +404,121 @@ pub async fn read_directory(path: String) -> Result<Vec<FileNode>, String> {
         .map_err(|e| e.to_string())?
 }
 
+fn index_scopes(root: &std::path::Path, paths: Option<Vec<String>>) -> Vec<PathBuf> {
+    let root_key = fs::index_path_key(&root.to_string_lossy());
+    let mut scopes: Vec<PathBuf> = paths
+        .unwrap_or_else(|| vec![root.to_string_lossy().into_owned()])
+        .into_iter()
+        .map(PathBuf::from)
+        .filter(|path| {
+            let key = fs::index_path_key(&path.to_string_lossy());
+            (key == root_key || key.starts_with(&format!("{root_key}/")))
+                && !path.components().any(|part| {
+                    matches!(
+                        part.as_os_str().to_str(),
+                        Some(".." | ".git" | ".nexus" | "node_modules")
+                    )
+                })
+        })
+        .collect();
+    scopes.sort_by_key(|path| fs::index_path_key(&path.to_string_lossy()));
+    scopes.dedup_by_key(|path| fs::index_path_key(&path.to_string_lossy()));
+    let mut selected: Vec<PathBuf> = Vec::new();
+    let mut selected_keys = std::collections::HashSet::new();
+    for scope in scopes {
+        let key = fs::index_path_key(&scope.to_string_lossy());
+        if !scope
+            .ancestors()
+            .any(|parent| selected_keys.contains(&fs::index_path_key(&parent.to_string_lossy())))
+        {
+            selected_keys.insert(key);
+            selected.push(scope);
+        }
+    }
+    selected
+}
+
 #[tauri::command]
-pub async fn sync_project_index(path: String, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn sync_project_index(
+    path: String,
+    paths: Option<Vec<String>>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let connection = state.db_conn.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        // Snapshot existing paths briefly, then perform every filesystem operation unlocked.
-        let indexed_paths = {
-            let guard = connection.lock().map_err(|e| e.to_string())?;
-            let Some(conn) = guard.as_ref() else { return Ok(()); };
-            let mut statement = conn.prepare("SELECT path FROM file_meta").map_err(|e| e.to_string())?;
-            statement.query_map([], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?
-                .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
-        };
-        let root = std::path::Path::new(&path);
-        let files = fs::collect_workspace_metadata(root)?;
-        let missing: Vec<_> = indexed_paths.into_iter().filter(|p| {
-            let candidate = std::path::Path::new(p);
-            candidate.starts_with(root) && !candidate.exists()
-        }).collect();
+        sync_project_index_blocking(path, paths, &connection)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
+fn sync_project_index_blocking(
+    path: String,
+    paths: Option<Vec<String>>,
+    connection: &std::sync::Mutex<Option<rusqlite::Connection>>,
+) -> Result<(), String> {
+    let root = std::path::Path::new(&path);
+    let scopes = index_scopes(root, paths);
+    let indexed_paths = {
         let guard = connection.lock().map_err(|e| e.to_string())?;
-        if let Some(conn) = guard.as_ref() {
-            let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-            fs::apply_workspace_metadata(&files, &transaction)?;
-            for p in missing {
-                transaction.execute("INSERT OR IGNORE INTO logical_refs(path, category) SELECT path, logical_type FROM file_meta WHERE path=?1 AND logical_type IS NOT NULL AND logical_type != ''", [&p]).map_err(|e| e.to_string())?;
-                transaction.execute("DELETE FROM file_meta WHERE path=?1", [&p]).map_err(|e| e.to_string())?;
-                transaction.execute("DELETE FROM links WHERE source_path=?1", [&p]).map_err(|e| e.to_string())?;
-            }
-            transaction.commit().map_err(|e| e.to_string())?;
+        let Some(conn) = guard.as_ref() else {
+            return Ok(());
+        };
+        let collation = if cfg!(windows) { " COLLATE NOCASE" } else { "" };
+        let normalized = format!("REPLACE(path, '\\', '/'){collation}");
+        let sql = format!(
+            "SELECT path FROM file_meta WHERE {normalized}=?1 OR ({normalized}>=?2 AND {normalized}<?3)"
+        );
+        let mut statement = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let mut paths = Vec::new();
+        for scope in &scopes {
+            let key = fs::index_path_key(&scope.to_string_lossy());
+            paths.extend(
+                statement
+                    .query_map(
+                        rusqlite::params![key, format!("{key}/"), format!("{key}0")],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .map_err(|e| e.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| e.to_string())?,
+            );
         }
-        Ok(())
-    }).await.map_err(|e| e.to_string())?
+        paths
+    };
+    let mut files = Vec::new();
+    for scope in &scopes {
+        if scope.exists() {
+            files.extend(fs::collect_workspace_metadata(scope)?);
+        }
+    }
+    let missing: Vec<_> = indexed_paths
+        .into_iter()
+        .filter_map(|p| {
+            let revision = fs::index_revision(&p);
+            (!std::path::Path::new(&p).exists()).then_some((p, revision))
+        })
+        .collect();
+
+    let guard = connection.lock().map_err(|e| e.to_string())?;
+    if let Some(conn) = guard.as_ref() {
+        let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        fs::apply_workspace_metadata(&files, &transaction)?;
+        for (p, revision) in missing {
+            if fs::index_revision(&p) != revision {
+                continue;
+            }
+            transaction.execute("INSERT OR IGNORE INTO logical_refs(path, category) SELECT path, logical_type FROM file_meta WHERE path=?1 AND logical_type IS NOT NULL AND logical_type != ''", [&p]).map_err(|e| e.to_string())?;
+            transaction
+                .execute("DELETE FROM file_meta WHERE path=?1", [&p])
+                .map_err(|e| e.to_string())?;
+            transaction
+                .execute("DELETE FROM links WHERE source_path=?1", [&p])
+                .map_err(|e| e.to_string())?;
+        }
+        transaction.commit().map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -731,12 +853,14 @@ fn apply_logical_sync_data_in_db(
 }
 
 fn get_logical_tree_blocking(state: &AppState) -> Result<Vec<FileNode>, String> {
-    let guard = state.db_conn.lock().unwrap();
-    if let Some(conn) = guard.as_ref() {
-        db::get_logical_tree(conn).map_err(|e| e.to_string())
-    } else {
-        Ok(Vec::new())
-    }
+    let snapshot = {
+        let guard = state.db_conn.lock().map_err(|e| e.to_string())?;
+        match guard.as_ref() {
+            Some(conn) => db::read_logical_tree(conn).map_err(|e| e.to_string())?,
+            None => Vec::new(),
+        }
+    };
+    Ok(db::resolve_logical_tree(snapshot))
 }
 
 #[tauri::command]
@@ -1409,5 +1533,178 @@ mod path_remap_tests {
         assert_eq!(count("project/moved/nested.tree"), 1);
         assert_eq!(count("project/folder-other/keep.tree"), 1);
         assert_eq!(count("project/old.tree"), 0);
+    }
+}
+
+#[cfg(test)]
+mod index_performance_tests {
+    use super::*;
+
+    fn workspace() -> (PathBuf, std::sync::Mutex<Option<rusqlite::Connection>>) {
+        let root = std::env::temp_dir().join(format!(
+            "nexusdesk-incremental-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let conn = db::init_db(Some(root.to_str().unwrap())).unwrap();
+        (root, std::sync::Mutex::new(Some(conn)))
+    }
+
+    fn category(
+        connection: &std::sync::Mutex<Option<rusqlite::Connection>>,
+        path: &std::path::Path,
+    ) -> String {
+        connection
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .query_row(
+                "SELECT logical_type FROM file_meta WHERE path=?1",
+                [path.to_str().unwrap()],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn git_ignored_documents_keep_categories_and_links_in_full_and_incremental_indexes() {
+        let (root, conn) = workspace();
+        std::fs::create_dir_all(root.join("private")).unwrap();
+        std::fs::write(root.join(".gitignore"), "private/\n").unwrap();
+        std::fs::write(root.join(".ignore"), "private/\n").unwrap();
+        let path = root.join("private").join("note.md");
+        std::fs::write(&path, "---\ntype: initial\n---\n[[old.md]]").unwrap();
+        let root_path = root.to_string_lossy().into_owned();
+        let file_path = path.to_string_lossy().into_owned();
+        sync_project_index_blocking(root_path.clone(), None, &conn).unwrap();
+        assert_eq!(category(&conn, &path), "initial");
+
+        std::fs::write(&path, "---\ntype: updated\n---\n[[new.md]]").unwrap();
+        sync_project_index_blocking(root_path.clone(), Some(vec![file_path.clone()]), &conn)
+            .unwrap();
+        assert_eq!(category(&conn, &path), "updated");
+
+        std::fs::write(&path, "---\ntype: rescanned\n---\n[[final.md]]").unwrap();
+        sync_project_index_blocking(root_path, None, &conn).unwrap();
+        assert_eq!(category(&conn, &path), "rescanned");
+        {
+            let guard = conn.lock().unwrap();
+            let links = db::get_links(guard.as_ref().unwrap(), &file_path, false).unwrap();
+            assert_eq!(links.len(), 1);
+            assert!(links[0].0.ends_with("/final.md"));
+        }
+        drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn incremental_index_only_reads_changed_paths_and_preserves_renamed_references() {
+        let (root, conn) = workspace();
+        let old_dir = root.join("old");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        let a = old_dir.join("a.md");
+        let b = root.join("b.md");
+        std::fs::write(&a, "---\ntype: alpha\n---\n[[../b.md]]").unwrap();
+        std::fs::write(&b, "---\ntype: beta\n---").unwrap();
+        sync_project_index_blocking(root.to_string_lossy().into_owned(), None, &conn).unwrap();
+        std::fs::write(&a, "---\ntype: changed\n---").unwrap();
+        std::fs::write(&b, "---\ntype: not-in-this-event\n---").unwrap();
+        sync_project_index_blocking(
+            root.to_string_lossy().into_owned(),
+            Some(vec![a.to_string_lossy().into_owned()]),
+            &conn,
+        )
+        .unwrap();
+        assert_eq!(category(&conn, &a), "changed");
+        assert_eq!(category(&conn, &b), "beta");
+        let new_dir = root.join("renamed");
+        std::fs::rename(&old_dir, &new_dir).unwrap();
+        sync_project_index_blocking(
+            root.to_string_lossy().into_owned(),
+            Some(vec![
+                old_dir.to_string_lossy().into_owned(),
+                new_dir.to_string_lossy().into_owned(),
+            ]),
+            &conn,
+        )
+        .unwrap();
+        assert_eq!(category(&conn, &new_dir.join("a.md")), "changed");
+        let tree = get_logical_tree_blocking(&AppState {
+            db_conn: std::sync::Arc::new(conn),
+        })
+        .unwrap();
+        let entries = tree
+            .iter()
+            .find(|n| n.name == "changed")
+            .unwrap()
+            .children
+            .as_ref()
+            .unwrap();
+        assert!(
+            entries
+                .iter()
+                .any(|n| n.id == a.to_string_lossy() && n.missing)
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|n| n.id == new_dir.join("a.md").to_string_lossy() && !n.missing)
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn saved_metadata_cannot_be_overwritten_by_an_older_index_snapshot() {
+        let (root, conn) = workspace();
+        let path = root.join("note.md");
+        std::fs::write(&path, "---\ntype: old\n---\n[[old.md]]").unwrap();
+        let snapshot = fs::collect_workspace_metadata(&root).unwrap();
+        assert!(
+            write_file_blocking(
+                path.to_str().unwrap(),
+                "---\ntype: new\n---\n[[new.md]]",
+                &conn
+            )
+            .unwrap()
+        );
+        {
+            let guard = conn.lock().unwrap();
+            let db = guard.as_ref().unwrap();
+            fs::apply_workspace_metadata(&snapshot, db).unwrap();
+            let links = db::get_links(db, path.to_str().unwrap(), false).unwrap();
+            assert_eq!(links.len(), 1);
+            assert!(links[0].0.ends_with("/new.md"));
+        }
+        assert_eq!(category(&conn, &path), "new");
+        assert!(
+            !write_file_blocking(
+                path.to_str().unwrap(),
+                "---\ntype: new\n---\nbody only",
+                &conn
+            )
+            .unwrap()
+        );
+        drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn changed_scopes_merge_subtrees_and_reject_outside_paths() {
+        let root = PathBuf::from("workspace");
+        let scopes = index_scopes(
+            &root,
+            Some(vec![
+                "workspace/a/note.md".into(),
+                "workspace/a".into(),
+                "workspace/a-other/note.md".into(),
+                "workspace2/out.md".into(),
+                "workspace/../out.md".into(),
+            ]),
+        );
+        assert_eq!(scopes, vec![root.join("a"), root.join("a-other/note.md")]);
     }
 }

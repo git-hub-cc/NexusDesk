@@ -174,74 +174,22 @@ pub fn save_settings(
     }
     Ok(())
 }
-pub fn get_status(repo_path: &str) -> Result<Vec<FileStatus>, String> {
-    let repo = match Repository::discover(repo_path) {
-        Ok(repo) => repo,
-        Err(error) if error.code() == ErrorCode::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error.to_string()),
-    };
-    let mut opts = StatusOptions::new();
-    opts.include_untracked(true)
-        .include_ignored(false)
-        .recurse_untracked_dirs(true)
-        .renames_head_to_index(false)
-        .renames_index_to_workdir(false)
-        .update_index(true);
-    let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?;
-    Ok(statuses
-        .iter()
-        .filter_map(|e| {
-            e.path().map(|path| {
-                let s = e.status();
-                FileStatus {
-                    path: path.into(),
-                    worktree_path: repo
-                        .workdir()
-                        .unwrap_or_else(|| Path::new(repo_path))
-                        .join(path)
-                        .to_string_lossy()
-                        .replace('\\', "/"),
-                    staged: s.intersects(
-                        Status::INDEX_NEW
-                            | Status::INDEX_MODIFIED
-                            | Status::INDEX_DELETED
-                            | Status::INDEX_TYPECHANGE
-                            | Status::INDEX_RENAMED,
-                    ),
-                    unstaged: s.intersects(
-                        Status::WT_NEW
-                            | Status::WT_MODIFIED
-                            | Status::WT_DELETED
-                            | Status::WT_TYPECHANGE
-                            | Status::WT_RENAMED,
-                    ),
-                    conflict: s.is_conflicted(),
-                    status: if s.is_conflicted() {
-                        "冲突"
-                    } else if s.intersects(Status::WT_DELETED | Status::INDEX_DELETED) {
-                        "删除"
-                    } else if s.intersects(Status::WT_NEW | Status::INDEX_NEW) {
-                        "新增"
-                    } else {
-                        "修改"
-                    }
-                    .into(),
-                }
-            })
-        })
-        .collect())
-}
 #[derive(Serialize)]
 pub struct TreeStatus {
     pub path: String,
     pub status: String,
 }
 
-// Keep ignored entries separate from the commit panel's actionable changes.
-pub fn tree_status(repo_path: &str) -> Result<Vec<TreeStatus>, String> {
+#[derive(Serialize, Default)]
+pub struct StatusSnapshot {
+    pub files: Vec<FileStatus>,
+    pub tree: Vec<TreeStatus>,
+}
+
+pub fn status_snapshot(repo_path: &str) -> Result<StatusSnapshot, String> {
     let repo = match Repository::discover(repo_path) {
         Ok(repo) => repo,
-        Err(error) if error.code() == ErrorCode::NotFound => return Ok(Vec::new()),
+        Err(error) if error.code() == ErrorCode::NotFound => return Ok(StatusSnapshot::default()),
         Err(error) => return Err(error.to_string()),
     };
     let workdir = repo.workdir().ok_or("Bare repository")?;
@@ -250,36 +198,80 @@ pub fn tree_status(repo_path: &str) -> Result<Vec<TreeStatus>, String> {
         .include_untracked(true)
         .include_ignored(true)
         .recurse_untracked_dirs(true)
-        .update_index(true)
-        .recurse_ignored_dirs(false);
+        .recurse_ignored_dirs(false)
+        .renames_head_to_index(false)
+        .renames_index_to_workdir(false)
+        .update_index(true);
     let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?;
-    Ok(statuses
-        .iter()
-        .filter_map(|entry| {
-            entry.path().map(|path| {
-                let s = entry.status();
-                let status = if s.is_conflicted() {
-                    "conflict"
-                } else if s.is_ignored() {
-                    "ignored"
-                } else if s.intersects(Status::INDEX_DELETED | Status::WT_DELETED) {
-                    "deleted"
-                } else if s.contains(Status::INDEX_NEW) {
-                    "added"
-                } else if s.contains(Status::WT_NEW) {
-                    "untracked"
-                } else if s.is_empty() {
-                    "clean"
+    let mut snapshot = StatusSnapshot::default();
+    for entry in statuses.iter() {
+        let Some(path) = entry.path() else {
+            continue;
+        };
+        let s = entry.status();
+        if !s.is_empty() && !s.is_ignored() {
+            snapshot.files.push(FileStatus {
+                path: path.into(),
+                worktree_path: workdir.join(path).to_string_lossy().replace('\\', "/"),
+                staged: s.intersects(
+                    Status::INDEX_NEW
+                        | Status::INDEX_MODIFIED
+                        | Status::INDEX_DELETED
+                        | Status::INDEX_TYPECHANGE
+                        | Status::INDEX_RENAMED,
+                ),
+                unstaged: s.intersects(
+                    Status::WT_NEW
+                        | Status::WT_MODIFIED
+                        | Status::WT_DELETED
+                        | Status::WT_TYPECHANGE
+                        | Status::WT_RENAMED,
+                ),
+                conflict: s.is_conflicted(),
+                status: if s.is_conflicted() {
+                    "冲突"
+                } else if s.intersects(Status::WT_DELETED | Status::INDEX_DELETED) {
+                    "删除"
+                } else if s.intersects(Status::WT_NEW | Status::INDEX_NEW) {
+                    "新增"
                 } else {
-                    "modified"
-                };
-                TreeStatus {
-                    path: workdir.join(path).to_string_lossy().replace('\\', "/"),
-                    status: status.into(),
+                    "修改"
                 }
-            })
-        })
-        .collect())
+                .into(),
+            });
+        }
+        let tree_entry = {
+            let status = if s.is_conflicted() {
+                "conflict"
+            } else if s.is_ignored() {
+                "ignored"
+            } else if s.intersects(Status::INDEX_DELETED | Status::WT_DELETED) {
+                "deleted"
+            } else if s.contains(Status::INDEX_NEW) {
+                "added"
+            } else if s.contains(Status::WT_NEW) {
+                "untracked"
+            } else if s.is_empty() {
+                "clean"
+            } else {
+                "modified"
+            };
+            TreeStatus {
+                path: workdir.join(path).to_string_lossy().replace('\\', "/"),
+                status: status.into(),
+            }
+        };
+        snapshot.tree.push(tree_entry);
+    }
+    Ok(snapshot)
+}
+
+pub fn get_status(repo_path: &str) -> Result<Vec<FileStatus>, String> {
+    Ok(status_snapshot(repo_path)?.files)
+}
+
+pub fn tree_status(repo_path: &str) -> Result<Vec<TreeStatus>, String> {
+    Ok(status_snapshot(repo_path)?.tree)
 }
 
 pub fn stage(repo_path: &str, path: &str, staged: bool) -> Result<(), String> {

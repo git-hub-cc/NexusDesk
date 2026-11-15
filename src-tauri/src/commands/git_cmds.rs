@@ -254,6 +254,13 @@ pub async fn restore_pushed_git_commit(repo_path: String, base_id: String) -> Re
         .map_err(|e| e.to_string())?
 }
 #[tauri::command]
+pub async fn get_git_status_snapshot(repo_path: String) -> Result<git::StatusSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || git::status_snapshot(&repo_path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn get_git_tree_status(repo_path: String) -> Result<Vec<git::TreeStatus>, String> {
     tauri::async_runtime::spawn_blocking(move || git::tree_status(&repo_path))
         .await

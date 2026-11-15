@@ -26,7 +26,7 @@ globalThis.__saveTest = { fileOperationHistory: { selectProject() {}, clear() {}
 } };
 const source = readFileSync(new URL("../src/store/workspaceStore.ts", import.meta.url), "utf8")
   .replace(/^import .*;$/gm, "");
-const compiled = ts.transpileModule("const isSnapshot = false; const globalJsonStorage = undefined; const settingsStorage = { getItem: () => null }; const { fileOperationHistory, create, debounce, fsApi, persist, isRemotePath, remotePath, tauriInvoke, useTerminalStore, useLayoutStore, restoreProjectLayout, showError } = globalThis.__saveTest;\n" + source,
+const compiled = ts.transpileModule("const isSnapshot = false; const isTauri = () => false; const window = { dispatchEvent() {} }; const globalJsonStorage = undefined; const settingsStorage = { getItem: () => null }; const { fileOperationHistory, create, debounce, fsApi, persist, isRemotePath, remotePath, tauriInvoke, useTerminalStore, useLayoutStore, restoreProjectLayout, showError } = globalThis.__saveTest;\n" + source,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
 const { useWorkspaceStore: store, flushPendingWrites, retryFileSave, queueEditorContent } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
 const edit = content => store.getState().updateTabContent("a", content, "left");
@@ -138,7 +138,8 @@ test("autosave coalesces edits, serializes writes, preserves dirty state and ret
   await flushPendingWrites();
   assert.deepEqual(writes, [["a.md", "three"]]);
   assert.equal(current().isDirty, false);
-  assert.deepEqual(store.getState().logicalTreeData, [{ id: "updated" }]);
+  assert.deepEqual(store.getState().logicalTreeData, [], "body edits do not rebuild the logical tree");
+  assert.ok(store.getState().indexRevision > 0, "link views still refresh after saves");
   edit("temporary"); edit("three");
   await flushPendingWrites();
   assert.equal(writes.length, 1, "returning to saved content avoids I/O");
@@ -169,6 +170,40 @@ test("autosave coalesces edits, serializes writes, preserves dirty state and ret
   assert.equal(current().isDirty, false);
 });
 
+
+test("category changes refresh the logical tree after a successful save", async () => {
+  const original = write;
+  write = async (path, content) => { writes.push([path, content]); return true; };
+  try {
+    edit("---\ntype: notes\n---\nchanged category");
+    await flushPendingWrites();
+    assert.deepEqual(store.getState().logicalTreeData, [{ id: "updated" }]);
+  } finally { write = original; }
+});
+
+test("logical tree requests coalesce and repeat once if data changes during a read", async () => {
+  const api = globalThis.__saveTest.fsApi;
+  const original = api.getLogicalTree;
+  let reads = 0;
+  let release;
+  let started;
+  const reading = new Promise(resolve => { started = resolve; });
+  api.getLogicalTree = async () => {
+    if (++reads === 1) { started(); await new Promise(resolve => { release = resolve; }); }
+    return [{ id: `revision-${reads}` }];
+  };
+  try {
+    const first = store.getState().fetchLogicalTree();
+    const burst = store.getState().fetchLogicalTree();
+    await reading;
+    const newer = store.getState().fetchLogicalTree();
+    store.getState().fetchLogicalTree();
+    release();
+    await Promise.all([first, burst, newer]);
+    assert.equal(reads, 2);
+    assert.deepEqual(store.getState().logicalTreeData, [{ id: "revision-2" }]);
+  } finally { api.getLogicalTree = original; }
+});
 
 test("editor changes defer serialization and store updates, and flush before close or save", async () => {
   store.setState({ leftTabs: [{ id: "b", path: "b.md", title: "b", content: "initial" }], rightTabs: [], activeLeftTabId: "b" });

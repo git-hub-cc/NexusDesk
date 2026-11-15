@@ -2,40 +2,64 @@ import { useEffect } from "react";
 import { isSnapshot } from "@/lib/snapshot";
 import { listen } from "@tauri-apps/api/event";
 import debounce from "lodash/debounce";
-import { fsApi } from "@/lib/api";
+import { fsApi, gitApi } from "@/lib/api";
 import { isRecentlySavedPath, refreshOpenFiles, useWorkspaceStore } from "@/store/workspaceStore";
 
 export function useWorkspaceWatcher() {
   useEffect(() => {
     if (isSnapshot) return;
     let disposed = false;
-    let queue = Promise.resolve();
+    let running = false;
     const pending = new Map<string, Set<string>>();
-    const flush = debounce(() => {
-      const batches = [...pending];
-      pending.clear();
-      for (const [root, paths] of batches) {
-        const payload = { root, paths: [...paths] };
-        queue = queue.then(async () => {
+    const normalize = (path: string) => {
+      const value = path.replace(/\\/g, "/").replace(/\/+$/, "");
+      return /^(?:[a-z]:|\/\/)/i.test(value) ? value.toLowerCase() : value;
+    };
+    const drain = async () => {
+      if (running) return;
+      running = true;
+      try {
+        while (!disposed && pending.size) {
+          const [root, changed] = pending.entries().next().value!;
+          pending.delete(root);
           const state = useWorkspaceStore.getState();
-          if (disposed || state.rootPath !== payload.root) return;
-          const directories = new Set<string>([payload.root]);
+          if (state.rootPath !== root) continue;
+          const paths = [...changed];
+          const affected = new Set(paths.map(normalize));
+          const parents = new Set([...affected].map(path => path.slice(0, path.lastIndexOf("/"))));
+          const loaded = new Set<string>([root]);
           const walk = (nodes: any[]) => nodes.forEach(node => {
-            if (!node.isLeaf && node.children?.length) { directories.add(node.id); walk(node.children); }
+            if (!node.isLeaf && Array.isArray(node.children)) { loaded.add(node.id); walk(node.children); }
           });
           walk(state.fileTreeData);
-          await Promise.all([...directories].map(path => state.loadDirectory(path, false, true)));
-          await state.refreshTreeStatuses();
-          await refreshOpenFiles(payload.paths);
-          if (useWorkspaceStore.getState().rootPath !== payload.root) return;
-          await fsApi.syncProjectIndex(payload.root);
-          if (useWorkspaceStore.getState().rootPath === payload.root) await state.fetchLogicalTree();
-        }).catch(console.error);
-      }
-    }, 300);
+          const directories = [...loaded].filter(directory => {
+            let candidate = normalize(directory);
+            if (!paths.length || parents.has(candidate)) return true;
+            while (candidate) {
+              if (affected.has(candidate)) return true;
+              const separator = candidate.lastIndexOf("/");
+              if (separator < 0) break;
+              candidate = candidate.slice(0, separator);
+            }
+            return false;
+          });
+          try {
+            await Promise.all(directories.map(path => state.loadDirectory(path, false, true)));
+            if (disposed || useWorkspaceStore.getState().rootPath !== root) continue;
+            await refreshOpenFiles(paths);
+            if (disposed || useWorkspaceStore.getState().rootPath !== root) continue;
+            await fsApi.syncProjectIndex(root, paths.length ? paths : undefined);
+            if (!disposed && useWorkspaceStore.getState().rootPath === root) await state.fetchLogicalTree();
+          } catch (error) { console.error(error); }
+        }
+      } finally { running = false; }
+    };
+    const flush = debounce(() => { void drain(); }, 300, { maxWait: 1000 });
     const subscription = listen<{ root: string; paths: string[] }>("workspace-changed", ({ payload }) => {
       if (disposed || useWorkspaceStore.getState().rootPath !== payload.root) return;
       fsApi.invalidateTreeFiles(payload.paths);
+      gitApi.invalidateStatus(payload.root);
+      void useWorkspaceStore.getState().refreshTreeStatuses();
       // Classify on arrival, before debounce/queued work can outlive the 1s window.
       // Autosave already updates the matching tabs' dirty/error state silently.
       const externalPaths = payload.paths.filter(path => !isRecentlySavedPath(path));

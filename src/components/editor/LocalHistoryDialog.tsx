@@ -58,7 +58,7 @@ export function LocalHistoryDialog({ path, onClose }: { path: string; onClose: (
       state.updateTabContent(tab.id, newContent, pane);
     } else {
       // Serialize writes so an older edit cannot overwrite a newer one.
-      writes.current = writes.current.then(() => fsApi.writeFile(path, newContent))
+      writes.current = writes.current.then(async () => { await fsApi.writeFile(path, newContent); })
         .catch(e => setError(String(e)));
     }
   };

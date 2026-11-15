@@ -150,12 +150,13 @@ function saveFile(path: string) {
     try {
       // notify can arrive before the write command resolves.
       recordRecentSave(path);
-      await fsApi.writeFile(path, content);
+      const logicalChanged = await fsApi.writeFile(path, content);
       recordRecentSave(path);
       entry.saved = content;
       entry.error = undefined;
       markFile(path, content, false);
-      await useWorkspaceStore.getState().fetchLogicalTree();
+      if (logicalChanged) await useWorkspaceStore.getState().fetchLogicalTree();
+      else useWorkspaceStore.setState(state => ({ indexRevision: state.indexRevision + 1 }));
     } catch (error) {
       forgetRecentSave(path);
       entry.error = String(error);
@@ -293,6 +294,7 @@ const parentPath = (path: string) => {
 let projectVersion = 0;
 let treeStatusRequest = 0;
 let logicalTreeRequest = 0;
+const logicalTreeRefreshes = new Map<number, { pending: boolean; request: Promise<void> }>();
 const directoryRequests = new Map<string, Promise<void>>();
 const loadedDirectories = new Set<string>();
 
@@ -722,22 +724,29 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       setSidebarMode: (mode) => set({ sidebarMode: mode, partitionSearchPaths: null }),
 
       fetchLogicalTree: async () => {
-        if (isSnapshot) return;
-        if (!get().rootPath) return;
-        if (isRemotePath(get().rootPath)) return;
-        try {
-          const version = projectVersion;
-          const request = ++logicalTreeRequest;
-          const data = await fsApi.getLogicalTree();
-          if (version !== projectVersion || request !== logicalTreeRequest) return;
-          for (const key of loadedDirectories) {
-            if (key.startsWith(`${version}:true:`)) loadedDirectories.delete(key);
-          }
-          set(state => ({ logicalTreeData: data, indexRevision: state.indexRevision + 1 }));
-          window.dispatchEvent(new Event("nexusdesk-logical-data-changed"));
-        } catch (error) {
-          console.error("Failed to fetch logical tree:", error);
-        }
+        if (isSnapshot || !get().rootPath || isRemotePath(get().rootPath)) return;
+        const version = projectVersion;
+        const existing = logicalTreeRefreshes.get(version);
+        if (existing) { existing.pending = true; return existing.request; }
+        const refresh = { pending: false, request: Promise.resolve() };
+        refresh.request = (async () => {
+          await new Promise(resolve => setTimeout(resolve, 40));
+          do {
+            refresh.pending = false;
+            if (version !== projectVersion) return;
+            const request = ++logicalTreeRequest;
+            const data = await fsApi.getLogicalTree();
+            if (version !== projectVersion || request !== logicalTreeRequest) return;
+            for (const key of loadedDirectories) {
+              if (key.startsWith(`${version}:true:`)) loadedDirectories.delete(key);
+            }
+            set(state => ({ logicalTreeData: data, indexRevision: state.indexRevision + 1 }));
+            window.dispatchEvent(new Event("nexusdesk-logical-data-changed"));
+          } while (refresh.pending);
+        })().catch(error => console.error("Failed to fetch logical tree:", error))
+          .finally(() => { logicalTreeRefreshes.delete(version); });
+        logicalTreeRefreshes.set(version, refresh);
+        return refresh.request;
       },
 
       createLogicalFolder: async (name) => {

@@ -380,6 +380,7 @@ pub fn run() {
             commands::fs_cmds::create_physical_file,
             commands::fs_cmds::create_physical_dir,
             commands::git_cmds::get_git_status,
+            commands::git_cmds::get_git_status_snapshot,
             commands::git_cmds::get_git_tree_status,
             commands::git_cmds::revert_git_file,
             commands::git_cmds::revert_git_files,

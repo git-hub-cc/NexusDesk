@@ -106,13 +106,14 @@ export const fsApi = {
 
     readTreeFile: (path: string): Promise<string> => readCachedTreeFile(path, fsApi.readFile),
     invalidateTreeFiles,
-    writeFile: async (path: string, content: string): Promise<void> => {
-        await invoke("write_file", { path, content });
+    writeFile: async (path: string, content: string): Promise<boolean> => {
+        const changed = await invoke<boolean | null>("write_file", { path, content });
         invalidateTreeFiles([path]);
+        return changed === true;
     },
     getFileLinks: (path: string, reverse: boolean): Promise<[string, string][]> => invoke("get_file_links", { path, reverse }),
 
-    syncProjectIndex: (path: string): Promise<void> => invoke("sync_project_index", { path }),
+    syncProjectIndex: (path: string, paths?: string[]): Promise<void> => invoke("sync_project_index", { path, paths }),
 
     readDirectory: (path: string): Promise<any[]> => invoke("read_directory", { path }),
 
@@ -156,7 +157,40 @@ export interface GitRepository { name: string; fullName: string; cloneUrl: strin
 export interface GitCloneAuth { token: string; provider: GitProvider }
 export type TreeFileStatus = "clean" | "ignored" | "modified" | "added" | "untracked" | "conflict" | "deleted";
 export interface GitTreeStatus { path: string; status: TreeFileStatus }
+interface GitStatusSnapshot { files: GitFileStatus[]; tree: GitTreeStatus[] }
+const gitStatusRequests = new Map<string, { revision: number; request?: Promise<GitStatusSnapshot> }>();
+function invalidateGitStatus(repoPath: string) {
+    const entry = gitStatusRequests.get(repoPath);
+    if (entry) entry.revision++;
+}
+function gitStatusSnapshot(repoPath: string): Promise<GitStatusSnapshot> {
+    let entry = gitStatusRequests.get(repoPath);
+    if (!entry) {
+        entry = { revision: 0 };
+        gitStatusRequests.set(repoPath, entry);
+    }
+    if (entry.request) return entry.request;
+    const current = entry;
+    current.request = (async () => {
+        // 合并同一批事件中来自文件树与 Git 面板的请求。
+        await new Promise(resolve => setTimeout(resolve, 40));
+        while (true) {
+            const revision = current.revision;
+            const result = await invoke<GitStatusSnapshot>("get_git_status_snapshot", { repoPath });
+            if (revision === current.revision) return result;
+        }
+    })().finally(() => { gitStatusRequests.delete(repoPath); });
+    return current.request;
+}
+async function mutateGit<T>(command: string, args: Record<string, unknown>): Promise<T> {
+    const repoPath = args.repoPath as string;
+    invalidateGitStatus(repoPath);
+    try { return await invoke<T>(command, args); }
+    finally { invalidateGitStatus(repoPath); }
+}
+
 export const gitApi = {
+    invalidateStatus: invalidateGitStatus,
     pathHistory: (path: string, limit = 100): Promise<{ root: string; entries: { commit: GitLogEntry; changes: GitRevisionChange[] }[] }> => invoke("get_git_path_history", { path, limit }),
     openSnapshot: (repoPath: string, commitId: string): Promise<void> => invoke("open_git_snapshot", { repoPath, commitId }),
     isInstalled: (): Promise<boolean> => invoke("is_git_installed"),
@@ -164,25 +198,25 @@ export const gitApi = {
     saveSettings: (repoPath: string, settings: GitSettings): Promise<void> => invoke("save_git_settings", { repoPath, settings }),
     listRepositories: (provider: GitProvider, token: string): Promise<GitRepository[]> => invoke("list_git_repositories", { provider, token }),
     cloneRepository: (url: string, targetPath: string, auth?: GitCloneAuth): Promise<void> => invoke("clone_git_repository", { url, targetPath, token: auth?.token, provider: auth?.provider }),
-    push: (repoPath: string): Promise<void> => invoke("push_git_repository", { repoPath }),
-    undoCommit: (repoPath: string, commitId: string): Promise<void> => invoke("undo_git_commit", { repoPath, commitId }),
-    undoPushedCommit: (repoPath: string, commitId: string): Promise<void> => invoke("undo_pushed_git_commit", { repoPath, commitId }),
-    restorePushedCommit: (repoPath: string, baseId: string): Promise<void> => invoke("restore_pushed_git_commit", { repoPath, baseId }),
-    initRepository: (repoPath: string): Promise<void> => invoke("init_git_repository", { repoPath }),
+    push: (repoPath: string): Promise<void> => mutateGit("push_git_repository", { repoPath }),
+    undoCommit: (repoPath: string, commitId: string): Promise<void> => mutateGit("undo_git_commit", { repoPath, commitId }),
+    undoPushedCommit: (repoPath: string, commitId: string): Promise<void> => mutateGit("undo_pushed_git_commit", { repoPath, commitId }),
+    restorePushedCommit: (repoPath: string, baseId: string): Promise<void> => mutateGit("restore_pushed_git_commit", { repoPath, baseId }),
+    initRepository: (repoPath: string): Promise<void> => mutateGit("init_git_repository", { repoPath }),
     isRepository: (repoPath: string): Promise<boolean> => invoke("is_git_repository", { repoPath }),
     directory: (repoPath: string): Promise<string> => invoke("get_git_directory", { repoPath }),
-    treeStatus: (repoPath: string): Promise<GitTreeStatus[]> => invoke("get_git_tree_status", { repoPath }),
-    revert: (repoPath: string, path: string): Promise<void> => invoke("revert_git_file", { repoPath, path }),
-    revertMany: (repoPath: string, paths: string[]): Promise<void> => invoke("revert_git_files", { repoPath, paths }),
-    undoRevert: (repoPath: string): Promise<string[]> => invoke("undo_git_revert", { repoPath }),
-    ignore: (repoPath: string, path: string): Promise<void> => invoke("ignore_git_file", { repoPath, path }),
+    treeStatus: (repoPath: string): Promise<GitTreeStatus[]> => gitStatusSnapshot(repoPath).then(snapshot => snapshot.tree),
+    revert: (repoPath: string, path: string): Promise<void> => mutateGit("revert_git_file", { repoPath, path }),
+    revertMany: (repoPath: string, paths: string[]): Promise<void> => mutateGit("revert_git_files", { repoPath, paths }),
+    undoRevert: (repoPath: string): Promise<string[]> => mutateGit("undo_git_revert", { repoPath }),
+    ignore: (repoPath: string, path: string): Promise<void> => mutateGit("ignore_git_file", { repoPath, path }),
     revisionChanges: (repoPath: string, commitId: string): Promise<GitRevisionChange[]> => invoke("get_git_revision_changes", { repoPath, commitId }),
     revisionDiff: (repoPath: string, commitId: string, path: string): Promise<string> => invoke("get_git_revision_diff", { repoPath, commitId, path }),
     revisionFiles: (repoPath: string, commitId: string): Promise<{ path: string }[]> => invoke("get_git_revision_files", { repoPath, commitId }),
     revisionContent: (repoPath: string, commitId: string, path: string): Promise<string> => invoke("get_git_revision_content", { repoPath, commitId, path }),
-    status: (repoPath: string): Promise<GitFileStatus[]> => invoke("get_git_status", { repoPath }),
-    stage: (repoPath: string, path: string, staged: boolean): Promise<void> => invoke("stage_git_file", { repoPath, path, staged }),
-    commit: (repoPath: string, message: string): Promise<string> => invoke("commit_git", { repoPath, message }),
+    status: (repoPath: string): Promise<GitFileStatus[]> => gitStatusSnapshot(repoPath).then(snapshot => snapshot.files),
+    stage: (repoPath: string, path: string, staged: boolean): Promise<void> => mutateGit("stage_git_file", { repoPath, path, staged }),
+    commit: (repoPath: string, message: string): Promise<string> => mutateGit("commit_git", { repoPath, message }),
     log: (repoPath: string, limit = 100): Promise<GitLogEntry[]> => invoke("get_git_log", { repoPath, limit }),
     diff: (repoPath: string, path: string, staged: boolean): Promise<string> => invoke("get_git_diff", { repoPath, path, staged }),
 };

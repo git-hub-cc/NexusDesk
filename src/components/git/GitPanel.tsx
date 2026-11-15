@@ -116,8 +116,11 @@ function RepositoryPanel({ root }: { root: string }) {
 
     const refreshStatus = useCallback(async () => {
         const request = ++statusRequest.current;
-        const status = await gitApi.status(root);
-        if (useWorkspaceStore.getState().rootPath === root) await useWorkspaceStore.getState().refreshTreeStatuses();
+        const [status] = await Promise.all([
+            gitApi.status(root),
+            useWorkspaceStore.getState().rootPath === root
+                ? useWorkspaceStore.getState().refreshTreeStatuses() : Promise.resolve(),
+        ]);
         if (mounted.current && request === statusRequest.current) setFiles(previous => {
             const old = new Map(previous.map(f => [f.path, f]));
             return status.map(f => {

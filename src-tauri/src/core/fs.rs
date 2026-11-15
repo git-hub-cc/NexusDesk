@@ -126,9 +126,11 @@ pub fn index_links<P: AsRef<Path>>(
         })
 }
 
-fn collect_links(path: &Path, content: &str) -> Result<Vec<(String, String)>, String> {
-    let re = regex::Regex::new(r"\[\[([^\]|#]*)(?:#([^\]|]+))?(?:\|[^\]]*)?\]\]")
-        .map_err(|e| e.to_string())?;
+pub fn collect_links(path: &Path, content: &str) -> Result<Vec<(String, String)>, String> {
+    static LINKS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = LINKS.get_or_init(|| {
+        regex::Regex::new(r"\[\[([^\]|#]*)(?:#([^\]|]+))?(?:\|[^\]]*)?\]\]").unwrap()
+    });
     let mut links = Vec::new();
     for cap in re.captures_iter(content) {
         let decode = |value: &str| {
@@ -193,6 +195,24 @@ pub struct WatcherState(
     pub std::sync::Mutex<std::collections::HashMap<String, notify::RecommendedWatcher>>,
 );
 
+fn should_emit_workspace_path(root: &Path, path: &Path) -> bool {
+    let Ok(relative) = path.strip_prefix(root) else {
+        return false;
+    };
+    if relative.components().any(|part| part.as_os_str() == ".git") {
+        return false;
+    }
+    // 数据库自身的写入不能再次触发索引；其余可浏览文件仍需通知编辑器。
+    let key = index_path_key(&relative.to_string_lossy());
+    !matches!(
+        key.as_str(),
+        ".nexus/index.db"
+            | ".nexus/index.db-wal"
+            | ".nexus/index.db-shm"
+            | ".nexus/index.db-journal"
+    )
+}
+
 pub fn start_file_watcher(
     path: &str,
     app: tauri::AppHandle,
@@ -232,13 +252,7 @@ pub fn start_file_watcher(
                 .filter_map(Result::ok)
                 .filter(|e| !matches!(e.kind, notify::EventKind::Access(_)))
                 .flat_map(|e| e.paths)
-                .filter(|p| {
-                    p.strip_prefix(&watched_root)
-                        .map(|relative| {
-                            !relative.components().any(|part| part.as_os_str() == ".git")
-                        })
-                        .unwrap_or(false)
-                })
+                .filter(|p| should_emit_workspace_path(&watched_root, p))
                 .collect();
             if !paths.is_empty() {
                 let _ = app.emit(
@@ -251,7 +265,37 @@ pub fn start_file_watcher(
     Ok(())
 }
 
+fn index_revisions() -> &'static std::sync::Mutex<std::collections::HashMap<String, u64>> {
+    static REVISIONS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, u64>>,
+    > = std::sync::OnceLock::new();
+    REVISIONS.get_or_init(Default::default)
+}
+
+pub fn index_path_key(path: &str) -> String {
+    let value = path.replace('\\', "/").trim_end_matches('/').to_owned();
+    if cfg!(windows) {
+        value.to_ascii_lowercase()
+    } else {
+        value
+    }
+}
+
+pub fn index_revision(path: &str) -> u64 {
+    *index_revisions()
+        .lock()
+        .unwrap()
+        .get(&index_path_key(path))
+        .unwrap_or(&0)
+}
+
+pub fn invalidate_index_snapshot(path: &str) {
+    let mut revisions = index_revisions().lock().unwrap();
+    *revisions.entry(index_path_key(path)).or_default() += 1;
+}
+
 pub struct IndexedFile {
+    revision: u64,
     path: String,
     logical_type: Option<String>,
     modified: i64,
@@ -266,43 +310,42 @@ pub fn collect_workspace_metadata(path: &Path) -> Result<Vec<IndexedFile>, Strin
 }
 
 fn collect_directory_metadata(path: &Path, files: &mut Vec<IndexedFile>) -> Result<(), String> {
-    let entries = fs::read_dir(path).map_err(|e| e.to_string())?;
-    let matter = Matter::<YAML>::new();
-    for entry in entries.flatten() {
+    let walker = ignore::WalkBuilder::new(path)
+        // Git 的忽略规则不决定文档分类，单文件与目录扫描使用同一策略。
+        .standard_filters(false)
+        .follow_links(false)
+        .filter_entry(|entry| {
+            !matches!(
+                entry.file_name().to_str(),
+                Some(".git" | ".nexus" | "node_modules")
+            )
+        })
+        .build();
+    for entry in walker.flatten() {
+        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+            continue;
+        }
         let path = entry.path();
-        if entry.file_name() == ".git" {
-            continue;
-        }
-        let file_type = match entry.file_type() {
-            Ok(file_type) => file_type,
-            Err(_) => continue,
-        };
-        if file_type.is_symlink() {
-            continue;
-        }
-        if file_type.is_dir() {
-            // Preserve best-effort indexing of inaccessible subdirectories.
-            let _ = collect_directory_metadata(&path, files);
-        } else if path.extension().and_then(|s| s.to_str()) == Some("md") {
-            if let Ok(content) = fs::read_to_string(&path) {
-                let logical_type = matter.parse(&content).data.and_then(|parsed| {
-                    parsed.as_hashmap().ok().and_then(|fields| {
-                        fields.get("type").and_then(|value| value.as_string().ok())
-                    })
-                });
-                let metadata = fs::metadata(&path).map_err(|e| e.to_string())?;
+        if path
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+        {
+            let revision = index_revision(&path.to_string_lossy());
+            if let Ok(content) = fs::read_to_string(path) {
+                let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
                 let modified = metadata
                     .modified()
                     .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
                     .duration_since(std::time::SystemTime::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs() as i64;
-                let links = collect_links(&path, &content)?;
                 files.push(IndexedFile {
+                    revision,
                     path: path.to_string_lossy().into_owned(),
-                    logical_type,
+                    logical_type: markdown_type(&content),
                     modified,
-                    links,
+                    links: collect_links(path, &content)?,
                 });
             }
         }
@@ -310,9 +353,25 @@ fn collect_directory_metadata(path: &Path, files: &mut Vec<IndexedFile>) -> Resu
     Ok(())
 }
 
+pub fn markdown_type(content: &str) -> Option<String> {
+    Matter::<YAML>::new()
+        .parse(content)
+        .data
+        .and_then(|parsed| {
+            parsed
+                .as_hashmap()
+                .ok()
+                .and_then(|fields| fields.get("type").and_then(|value| value.as_string().ok()))
+        })
+}
+
 // Database-only phase: callers can apply the snapshot in one short transaction.
 pub fn apply_workspace_metadata(files: &[IndexedFile], conn: &Connection) -> Result<(), String> {
     for file in files {
+        // 保存完成后，旧的后台扫描结果不能覆盖新的分类和链接。
+        if index_revision(&file.path) != file.revision {
+            continue;
+        }
         db::replace_links(conn, &file.path, &file.links)
             .map_err(|e| e.to_string())
             .or_else(|e| {
@@ -426,6 +485,40 @@ pub fn transfer_entry_named(
         .to_string_lossy()
         .trim_start_matches(r"\\?\")
         .to_string())
+}
+
+#[cfg(test)]
+mod workspace_watcher_tests {
+    use super::*;
+
+    #[test]
+    fn browsable_files_emit_events_but_index_database_writes_do_not() {
+        let root = Path::new("workspace");
+        for relative in [
+            "node_modules/package/index.js",
+            "node_modules/package/new.js",
+            ".nexus/settings.json",
+            "docs/.nexus/note.md",
+            "docs/index.db",
+            ".nexus/index.db.backup",
+        ] {
+            assert!(should_emit_workspace_path(root, &root.join(relative)));
+        }
+        for relative in [
+            ".git/index",
+            "nested/.git/HEAD",
+            ".nexus/index.db",
+            ".nexus/index.db-wal",
+            ".nexus/index.db-shm",
+            ".nexus/index.db-journal",
+        ] {
+            assert!(!should_emit_workspace_path(root, &root.join(relative)));
+        }
+        assert!(!should_emit_workspace_path(
+            root,
+            Path::new("outside/note.md")
+        ));
+    }
 }
 
 #[cfg(test)]
