@@ -109,14 +109,21 @@ function NavigationEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "rig
     };
   }, [pane, tab.browser!.root]);
 
-  const openUrl = (value: string) => {
+  const openUrl = (value: string, newTab = false) => {
     try {
       const url = new URL(value);
       if (!["https:", "http:", "chrome-extension:"].includes(url.protocol)) throw new Error("请输入网页或扩展页面地址");
       const state = useWorkspaceStore.getState();
       state.setFocusedPane(pane);
-      const id = `browser:${crypto.randomUUID()}`;
-      state.openTab({ id, path: id, title: url.hostname, browser: { root: tab.browser!.root, url: url.href } });
+      if (newTab) {
+        const id = `browser:${crypto.randomUUID()}`;
+        state.openTab({ id, path: id, title: url.hostname, browser: { root: tab.browser!.root, url: url.href } });
+      } else {
+        const update = (tabs: Tab[]) => tabs.map(item => item.id === tab.id && item.browser
+          ? { ...item, title: url.hostname, browser: { ...item.browser, url: url.href, homeHistory: undefined } }
+          : item);
+        useWorkspaceStore.setState(current => ({ leftTabs: update(current.leftTabs), rightTabs: update(current.rightTabs) }));
+      }
     } catch (reason) { setError(reason instanceof Error ? reason.message : "请输入有效的网址"); }
   };
   const navigateAddress = (value: string) => {
@@ -375,22 +382,6 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
     };
   }, [tab.id, tab.browser!.root, viewGeneration, pane]);
 
-  const openNavigationUrl = (value: string) => {
-    try {
-      const url = new URL(value);
-      if (!["https:", "http:", "chrome-extension:"].includes(url.protocol)) throw new Error("请输入网页或扩展页面地址");
-      const state = useWorkspaceStore.getState();
-      state.setFocusedPane(pane);
-      const id = `browser:${crypto.randomUUID()}`;
-      state.openTab({ id, path: id, title: url.hostname, browser: { root: tab.browser!.root, url: url.href } });
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "请输入有效的网址"); }
-  };
-  const navigateFromHome = (value: string) => {
-    try {
-      openNavigationUrl(validateBrowserAddress(value));
-      setHomeAddress("");
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "请输入有效的网址"); }
-  };
   const returnToPage = () => {
     const history = tab.browser!.homeHistory;
     if (!history) return;
@@ -442,10 +433,15 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
         }
       }
       if (name === "navigate" && url) {
-        const clearHomeHistory = (tabs: Tab[]) => tabs.map(item => item.id === tab.id && item.browser?.homeHistory
-          ? { ...item, browser: { ...item.browser, homeHistory: undefined } }
+        const parsedUrl = new URL(url);
+        const updateNavigationState = (tabs: Tab[]) => tabs.map(item => item.id === tab.id && item.browser
+          ? {
+            ...item,
+            ...(item.browser.homeHistory || item.browser.url === BROWSER_HOME ? { title: parsedUrl.hostname } : {}),
+            browser: { ...item.browser, ...(item.browser.homeHistory || item.browser.url === BROWSER_HOME ? { url } : {}), homeHistory: undefined },
+          }
           : item);
-        useWorkspaceStore.setState(state => ({ leftTabs: clearHomeHistory(state.leftTabs), rightTabs: clearHomeHistory(state.rightTabs) }));
+        useWorkspaceStore.setState(state => ({ leftTabs: updateNavigationState(state.leftTabs), rightTabs: updateNavigationState(state.rightTabs) }));
         // A new navigation invalidates the retained forward chain.
         for (const old of retainedViews.current.splice(retainedIndex.current + 1)) {
           void invoke("browser_action", { label: old, action: "close" }).catch(() => {});
@@ -456,6 +452,26 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
       await invoke("browser_action", { label: labelRef.current, action: retryUrl ? "navigate" : name, url: retryUrl ?? url });
       refreshNativeHistory.current();
     } catch (reason) { setError(String(reason)); }
+  };
+  const openNavigationUrl = (value: string, newTab = false) => {
+    try {
+      const url = new URL(value);
+      if (!["https:", "http:", "chrome-extension:"].includes(url.protocol)) throw new Error("请输入网页或扩展页面地址");
+      if (!newTab) {
+        void action("navigate", url.href);
+        return;
+      }
+      const state = useWorkspaceStore.getState();
+      state.setFocusedPane(pane);
+      const id = `browser:${crypto.randomUUID()}`;
+      state.openTab({ id, path: id, title: url.hostname, browser: { root: tab.browser!.root, url: url.href } });
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "请输入有效的网址"); }
+  };
+  const navigateFromHome = (value: string) => {
+    try {
+      openNavigationUrl(validateBrowserAddress(value));
+      setHomeAddress("");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "请输入有效的网址"); }
   };
   const navigate = (value: string) => {
     if (!ready) return;

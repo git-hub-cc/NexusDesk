@@ -12,7 +12,7 @@ type SearchEngine = { name: string; url: string; proxy?: boolean; desc?: string 
 type SearchConfig = { categories: { label: string; value: string }[]; engines: Record<string, SearchEngine[]> };
 function newSite(): NavigationSite { return { id: crypto.randomUUID(), title: "", url: "https://", desc: "", proxy: false }; }
 
-export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => void }) {
+export function NavigationHome({ onNavigate }: { onNavigate: (url: string, newTab?: boolean) => void }) {
   const [data, setData] = useState<NavigationData>({ categories: [] });
   const [searchConfig, setSearchConfig] = useState<SearchConfig>({ categories: [], engines: {} });
   const [searchType, setSearchType] = useState("");
@@ -104,9 +104,9 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
     if (!query.trim() || !engines.length) return;
-    for (const engine of engines.filter(item => selectedEngines.includes(item.name))) {
-      onNavigate(engine.url.replace("%s", encodeURIComponent(query.trim())));
-    }
+    engines.filter(item => selectedEngines.includes(item.name)).forEach((engine, index) => {
+      onNavigate(engine.url.replace("%s", encodeURIComponent(query.trim())), index > 0);
+    });
   };
 
   const toggleProxy = () => {
@@ -164,9 +164,9 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string) => vo
               {canEdit(category) && <button type="button" className="nav-add-button flex items-center gap-1 rounded px-2 py-1 text-xs" onClick={() => setEditing({ categoryId: category.categoryId, site: newSite() })}><Plus size={14} />新增网站</button>}
             </header>
             <div className="nav-card-grid grid grid-cols-[repeat(auto-fill,minmax(195px,1fr))] gap-2.5">
-              {sites.map(({ site }) => <article key={site.id || site.url} className="nav-card group relative min-h-[98px] rounded-md border p-3" onDoubleClick={() => onNavigate(site.url)}>
+              {sites.map(({ site }) => <article key={site.id || site.url} className="nav-card group relative min-h-[98px] rounded-md border p-3">
                 {site.proxy && <span title="需代理" className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-amber-400" />}
-                <button type="button" onClick={() => onNavigate(site.url)} className="w-full text-left" title={site.url}>
+                <button type="button" onClick={event => onNavigate(site.url, event.ctrlKey)} className="w-full text-left" title={site.url}>
                   <div className="flex min-w-0 items-center gap-2.5">
                     <NavigationSiteIcon icon={site.icon} />
                     <h3 className="truncate text-sm font-medium">{site.title}</h3>
