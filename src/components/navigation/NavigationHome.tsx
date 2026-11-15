@@ -20,7 +20,6 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string, newTa
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("");
   const [proxyMode, setProxyMode] = useState(localStorage.getItem("proxy-mode-preference") === "true");
-  const [dark, setDark] = useState(true);
   const [editing, setEditing] = useState<{ categoryId: string; site: NavigationSite } | null>(null);
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -65,12 +64,8 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string, newTa
         showMessage("云端同步已完成。同步期间你编辑了导航，已保留这些编辑并与同步结果合并。", "导航同步完成");
       } else setData(syncedNavigation);
     }).catch(error => console.error("导航云同步初始化失败:", error));
-    const theme = localStorage.getItem("theme-preference");
-    setDark(theme ? theme === "dark" : true);
-    const updatePreferences = (event: Event) => {
-      const preferences = (event as CustomEvent<{ theme?: string; proxyMode?: boolean }>).detail;
-      if (preferences.theme === "dark" || preferences.theme === "light") setDark(preferences.theme === "dark");
-      if (typeof preferences.proxyMode === "boolean") setProxyMode(preferences.proxyMode);
+    const updatePreferences = () => {
+      setProxyMode(localStorage.getItem("proxy-mode-preference") === "true");
     };
     window.addEventListener("nexusdesk-navigation-preferences-changed", updatePreferences);
     return () => {
@@ -135,7 +130,7 @@ export function NavigationHome({ onNavigate }: { onNavigate: (url: string, newTa
     matchesCategory: !normalizedQuery || searchName.includes(normalizedQuery),
   })).filter(item => item.matchesCategory || item.sites.length > 0);
 
-  return <div data-theme={dark ? "dark" : "light"} className="nav-home h-full min-h-0 overflow-hidden">
+  return <div className="nav-home h-full min-h-0 overflow-hidden">
     <div className="nav-layout flex h-full min-h-0">
       <aside className="nav-sidebar flex w-[210px] shrink-0 flex-col border-r">
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">

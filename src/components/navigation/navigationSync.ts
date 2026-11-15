@@ -118,15 +118,13 @@ async function readRemote(applyPreferences = true): Promise<NavigationData | nul
   const { value: parsed } = await readRepositoryFile(DATA_FILE);
   if (!parsed) return null;
   const data = parsed.navigationData as NavigationData | undefined;
-  const preferences = parsed.preferences as { theme?: string; proxyMode?: boolean } | undefined;
+  const preferences = parsed.preferences as { proxyMode?: boolean } | undefined;
   if (preferences && applyPreferences) {
-    const changed = (preferences.theme === "dark" || preferences.theme === "light") && preferences.theme !== (localStorage.getItem("theme-preference") || "dark")
-      || typeof preferences.proxyMode === "boolean" && preferences.proxyMode !== (localStorage.getItem("proxy-mode-preference") === "true");
-    if (preferences.theme === "dark" || preferences.theme === "light") localStorage.setItem("theme-preference", preferences.theme);
+    const changed = typeof preferences.proxyMode === "boolean" && preferences.proxyMode !== (localStorage.getItem("proxy-mode-preference") === "true");
     if (typeof preferences.proxyMode === "boolean") localStorage.setItem("proxy-mode-preference", String(preferences.proxyMode));
     const previous = suppressSave;
     suppressSave = true;
-    if (changed) window.dispatchEvent(new CustomEvent("nexusdesk-navigation-preferences-changed", { detail: preferences }));
+    if (changed) window.dispatchEvent(new CustomEvent("nexusdesk-navigation-preferences-changed", { detail: { proxyMode: preferences.proxyMode } }));
     suppressSave = previous;
   }
   if (data && Array.isArray(data.categories)) return data;
@@ -212,7 +210,6 @@ function navigationSnapshot(data: NavigationData) {
   return {
     navigationData: { categories: data.categories.filter(category => category.categoryId === "custom-user-sites") },
     preferences: {
-      theme: localStorage.getItem("theme-preference") || "dark",
       proxyMode: localStorage.getItem("proxy-mode-preference") === "true",
     },
   };

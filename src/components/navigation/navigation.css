@@ -1,16 +1,4 @@
 .nav-home {
-  --nav-bg: #f6f7f9;
-  --nav-sidebar: #fff;
-  --nav-card: #fff;
-  --nav-border: #e3e5e8;
-  --nav-fg: #282a2e;
-  --nav-muted: #73777e;
-  --nav-accent: #3574f0;
-  color: var(--nav-fg);
-  background: var(--nav-bg);
-}
-
-.nav-home[data-theme="dark"] {
   --nav-bg: #25262a;
   --nav-sidebar: #2b2d30;
   --nav-card: #292b2f;
@@ -18,6 +6,8 @@
   --nav-fg: #e5e7eb;
   --nav-muted: #a1a5ad;
   --nav-accent: #8bb1ff;
+  color: var(--nav-fg);
+  background: var(--nav-bg);
 }
 
 .nav-sidebar { background: var(--nav-sidebar); border-color: var(--nav-border); }
@@ -40,12 +30,6 @@
 .nav-card-action { display: inline-flex; min-width: 28px; height: 24px; align-items: center; justify-content: center; border-radius: 3px; background: var(--nav-sidebar); padding: 0 6px; color: var(--nav-muted); font-size: 11px; }
 .nav-card-action:hover { color: var(--nav-accent); }
 .nav-card-action.danger:hover { color: #ef5350; }
-.nav-dialog { border-color: var(--nav-border); background: var(--nav-sidebar); }
-.nav-field { border-color: var(--nav-border); background: var(--nav-bg); color: var(--nav-fg); }
-.nav-secondary { color: var(--nav-muted); }
-.nav-secondary:hover { background: color-mix(in srgb, var(--nav-fg) 7%, transparent); }
-.nav-primary { background: #3574f0; color: #fff; }
-.nav-primary:hover { background: #2866df; }
 
 @media (hover: none) {
   .nav-card-action { display: inline-flex; }

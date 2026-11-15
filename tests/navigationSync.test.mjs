@@ -210,7 +210,7 @@ for (const provider of ['github', 'gitlab', 'gitee']) {
     assert.deepEqual(repo.disk.get('logical-partitions.json').workspaces.other, { folders: ['other'], entries: [] });
     assert.deepEqual(repo.disk.get('logical-partitions.json').workspaces['folder:project'].folders, ['empty', 'notes']);
     repo.writes.length = 0;
-    sync.values.set('theme-preference', 'light');
+    sync.values.set('proxy-mode-preference', 'true');
     await sync.save();
     assert.deepEqual(repo.writes.map(write => write.name), ['navhub.json']);
     repo.writes.length = 0;
@@ -224,7 +224,7 @@ for (const provider of ['github', 'gitlab', 'gitee']) {
 
 test('legacy migration preserves data until the new file is saved and retries cleanup', async () => {
   const legacy = logicalSnapshot('folder:old');
-  const original = { navigationData: { categories: [] }, preferences: { theme: 'dark' }, logicalPartitions: legacy };
+  const original = { navigationData: { categories: [] }, preferences: { proxyMode: false }, logicalPartitions: legacy };
   const repo = repository({ 'navhub.json': original });
   repo.fail = 'logical-partitions.json';
   const sync = createSync(repo.fetch.bind(repo), { categories: [] }, logicalSnapshot());
@@ -308,13 +308,27 @@ test('one file failure does not prevent the other file from syncing or erase its
   assert.equal(sync.api.getNavigationSyncState().error, '');
 });
 
-test('automatic navigation upload preserves newly edited preferences', async () => {
-  const repo = repository({ 'navhub.json': { navigationData: { categories: [] }, preferences: { theme: 'dark' } } });
+test('legacy cloud theme is ignored and removed while proxy preferences still sync', async () => {
+  const repo = repository({ 'navhub.json': { navigationData: { categories: [] }, preferences: { theme: 'light', proxyMode: true } } });
   const sync = createSync(repo.fetch.bind(repo));
   await sync.api.connectNavigationSync('token', 'owner/repo', 'github');
+
+  assert.equal(sync.values.has('theme-preference'), false);
+  assert.equal(sync.values.get('proxy-mode-preference'), 'true');
+  assert.deepEqual(repo.disk.get('navhub.json').preferences, { proxyMode: true });
+  const writeCount = repo.writes.length;
   sync.values.set('theme-preference', 'light');
   await sync.save('nexusdesk-navigation-preferences-changed');
-  assert.equal(repo.disk.get('navhub.json').preferences.theme, 'light');
+  assert.equal(repo.writes.length, writeCount);
+});
+
+test('automatic navigation upload preserves newly edited preferences', async () => {
+  const repo = repository({ 'navhub.json': { navigationData: { categories: [] }, preferences: { proxyMode: false } } });
+  const sync = createSync(repo.fetch.bind(repo));
+  await sync.api.connectNavigationSync('token', 'owner/repo', 'github');
+  sync.values.set('proxy-mode-preference', 'true');
+  await sync.save('nexusdesk-navigation-preferences-changed');
+  assert.equal(repo.disk.get('navhub.json').preferences.proxyMode, true);
 });
 
 test('malformed legacy data is preserved without writing or removing fields', async () => {
@@ -342,7 +356,7 @@ test('GitLab creates once and updates on the next automatic sync', async () => {
   });
 
   await sync.api.connectNavigationSync('token', 'owner/repo', 'gitlab');
-  sync.values.set('theme-preference', 'light');
+  sync.values.set('proxy-mode-preference', 'true');
   await sync.save();
 
   assert.deepEqual(writes.map(write => write.method), ['POST', 'PUT']);
@@ -366,7 +380,7 @@ test('Gitee writes formatted JSON and describes navigation additions', async () 
   }, { categories: [{ categoryId: 'custom-user-sites', categoryName: '我的导航', sites: [{ id: 'one', title: 'Example', url: 'https://example.com' }] }] });
 
   await sync.api.connectNavigationSync('token', 'owner/repo', 'gitee');
-  sync.values.set('theme-preference', 'light');
+  sync.values.set('proxy-mode-preference', 'true');
   await sync.save();
 
   assert.deepEqual(writes.map(write => write.method), ['POST', 'PUT']);
