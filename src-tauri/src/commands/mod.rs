@@ -11,6 +11,7 @@ pub mod browser_downloads;
 pub mod browser_extensions;
 pub mod browser_passwords;
 pub mod chat;
+pub mod chat_images;
 pub mod clipboard_cmds;
 pub mod codex_network;
 pub mod codex_proxy;

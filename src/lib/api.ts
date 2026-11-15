@@ -226,6 +226,7 @@ export const codexSettingsApi = {
     save: (input: { model: string; proxyUrl: string; apiKey?: string; trustMode: boolean; showTooltips: boolean; checkForUpdateOnStartup: boolean }): Promise<void> => invoke("codex_settings_save", { input }),
 };
 export const chatApi = {
+    images: (prompt: string, images: ChatImage[], overrides: ChatOverrides, size: string): Promise<ChatImage[]> => invoke("chat_images", { prompt, images, overrides, size }),
     complete: (requestId: string, messages: { role: "user" | "assistant"; content: string }[], overrides?: ChatOverrides): Promise<void> => invoke("chat_completion", { requestId, messages, overrides }),
 };
 
@@ -234,4 +235,9 @@ export interface ChatOverrides {
     key?: string;
     model?: string;
     format?: "responses" | "chat";
+}
+
+export interface ChatImage {
+    name: string;
+    url: string;
 }

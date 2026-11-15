@@ -297,6 +297,7 @@ pub fn run() {
             commands::codex_settings::codex_settings_read,
             commands::codex_settings::codex_settings_save,
             commands::chat::chat_completion,
+            commands::chat_images::chat_images,
             logging::write_console_logs,
             commands::remote_cmds::connect_remote,
             commands::remote_cmds::reconnect_remote,
