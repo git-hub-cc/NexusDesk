@@ -12,7 +12,7 @@ const SYNC_NAVIGATION_KEY = "nexusdesk.cloudSync.myNavigation";
 const SYNC_LOGICAL_KEY = "nexusdesk.cloudSync.logicalPartitions";
 const LEGACY_TOKEN_KEY = "navhub-github-token";
 const LEGACY_REPO_KEY = "navhub-github-repo";
-const DATA_FILE = "navhub-data.json";
+const DATA_FILE = "navhub.json";
 const LOGICAL_FILE = "logical-partitions.json";
 const SYNC_TIMEOUT_MS = 15000;
 type SyncStatus = "disconnected" | "connecting" | "connected" | "syncing" | "error" | "conflict";
@@ -20,11 +20,15 @@ export type NavigationSyncState = { status: SyncStatus; provider: NavigationSync
 
 let current: NavigationSyncState = { status: "disconnected", provider: "github", user: "", repo: "", lastSync: null, error: "" };
 let token = "";
+let githubBranch = "main";
+let repositoryWrites: Promise<void> = Promise.resolve();
 type SyncChannel = "navigation" | "logical";
 type RepositoryFile = { value: Record<string, unknown> | null; sha: string | null; exists: boolean };
 type LogicalWorkspace = Omit<LogicalSyncData, "workspace"> & { deletedEntries?: string[] };
 type LogicalFile = { version: 1; updatedAt: number; workspaces: Record<string, LogicalWorkspace> };
 let remoteData: NavigationData | null = null;
+let lastNavigationSnapshot: string | null = null;
+let lastLogicalSnapshot: string | null = null;
 let ready = false;
 let suppressSave = false;
 const files = new Map<string, RepositoryFile>();
@@ -58,7 +62,7 @@ async function request<T>(url: string, method = "GET", body?: unknown): Promise<
   });
   if (!response.ok) {
     const details = await response.json().catch(() => ({})) as { message?: string };
-    if (response.status === 409 || response.status === 422) throw new Error("云端版本已变化，请重新同步后重试。");
+    if (response.status === 409 || response.status === 422 && /sha/i.test(details.message || "")) throw new Error("云端版本已变化，请重新同步后重试。");
     throw new Error(details.message || `${current.provider} 请求失败 (${response.status})`);
   }
   return response.json() as Promise<T>;
@@ -83,7 +87,7 @@ function legacyRemoteData(value: Record<string, unknown>): NavigationData | null
 
 async function readRepositoryFile(name: string): Promise<RepositoryFile> {
   const path = encodeURIComponent(name);
-  const url = current.provider === "github" ? `https://api.github.com/repos/${current.repo}/contents/${path}?t=${Date.now()}` : current.provider === "gitlab" ? `https://gitlab.com/api/v4/projects/${encodeURIComponent(current.repo)}/repository/files/${path}?ref=main&t=${Date.now()}` : `https://gitee.com/api/v5/repos/${current.repo}/contents/${path}?ref=master&t=${Date.now()}`;
+  const url = current.provider === "github" ? `https://api.github.com/repos/${current.repo}/contents/${path}?ref=${encodeURIComponent(githubBranch)}&t=${Date.now()}` : current.provider === "gitlab" ? `https://gitlab.com/api/v4/projects/${encodeURIComponent(current.repo)}/repository/files/${path}?ref=main&t=${Date.now()}` : `https://gitee.com/api/v5/repos/${current.repo}/contents/${path}?ref=master&t=${Date.now()}`;
   const headers: Record<string, string> = current.provider === "github" ? { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } : current.provider === "gitlab" ? { "PRIVATE-TOKEN": token } : { Authorization: `token ${token}` };
   const result = await fetch(url, { headers, signal: AbortSignal.timeout(SYNC_TIMEOUT_MS) });
   if (result.status === 404) {
@@ -112,11 +116,13 @@ async function readRemote(applyPreferences = true): Promise<NavigationData | nul
   const data = parsed.navigationData as NavigationData | undefined;
   const preferences = parsed.preferences as { theme?: string; proxyMode?: boolean } | undefined;
   if (preferences && applyPreferences) {
+    const changed = (preferences.theme === "dark" || preferences.theme === "light") && preferences.theme !== (localStorage.getItem("theme-preference") || "dark")
+      || typeof preferences.proxyMode === "boolean" && preferences.proxyMode !== (localStorage.getItem("proxy-mode-preference") === "true");
     if (preferences.theme === "dark" || preferences.theme === "light") localStorage.setItem("theme-preference", preferences.theme);
     if (typeof preferences.proxyMode === "boolean") localStorage.setItem("proxy-mode-preference", String(preferences.proxyMode));
     const previous = suppressSave;
     suppressSave = true;
-    window.dispatchEvent(new CustomEvent("nexusdesk-navigation-preferences-changed", { detail: preferences }));
+    if (changed) window.dispatchEvent(new CustomEvent("nexusdesk-navigation-preferences-changed", { detail: preferences }));
     suppressSave = previous;
   }
   if (data && Array.isArray(data.categories)) return data;
@@ -170,6 +176,13 @@ async function verifyPrivateRepository() {
 }
 
 async function writeRepositoryFile(name: string, content: unknown, message: string) {
+  // 同一仓库的不同文件也会更新分支，必须依次提交。
+  const task = repositoryWrites.then(() => commitRepositoryFile(name, content, message));
+  repositoryWrites = task.catch(() => {});
+  return task;
+}
+
+async function commitRepositoryFile(name: string, content: unknown, message: string) {
   await verifyPrivateRepository();
   const snapshot = files.get(name) ?? { value: null, sha: null, exists: false };
   const serialized = JSON.stringify(content, null, 2);
@@ -180,7 +193,7 @@ async function writeRepositoryFile(name: string, content: unknown, message: stri
   const path = encodeURIComponent(name);
   let sha = snapshot.sha;
   if (current.provider === "github") {
-    const result = await request<{ content: { sha: string } }>(`https://api.github.com/repos/${current.repo}/contents/${path}`, "PUT", { message, content: encoded, branch: "main", ...(sha ? { sha } : {}) });
+    const result = await request<{ content: { sha: string } }>(`https://api.github.com/repos/${current.repo}/contents/${path}`, "PUT", { message, content: encoded, branch: githubBranch, ...(sha ? { sha } : {}) });
     sha = result.content.sha;
   } else if (current.provider === "gitlab") {
     await request(`https://gitlab.com/api/v4/projects/${encodeURIComponent(current.repo)}/repository/files/${path}`, snapshot.exists ? "PUT" : "POST", { branch: "main", commit_message: message, content: serialized, ...(sha ? { last_commit_id: sha } : {}) });
@@ -191,23 +204,31 @@ async function writeRepositoryFile(name: string, content: unknown, message: stri
   files.set(name, { value: content as Record<string, unknown>, sha, exists: true });
 }
 
+function navigationSnapshot(data: NavigationData) {
+  return {
+    navigationData: { categories: data.categories.filter(category => category.categoryId === "custom-user-sites") },
+    preferences: {
+      theme: localStorage.getItem("theme-preference") || "dark",
+      proxyMode: localStorage.getItem("proxy-mode-preference") === "true",
+    },
+  };
+}
+
 async function syncNavigation(mergeRemote = true) {
   if (!getCloudSyncSelection().myNavigation) return false;
   const local = await loadNavigationData();
   const remote = await readRemote(mergeRemote);
   const merged = remote && mergeRemote ? mergeNavigationData(local, remote) : local;
   suppressSave = true;
-  try { if (remote) saveNavigationData(merged); }
+  try { if (JSON.stringify(local) !== JSON.stringify(merged)) saveNavigationData(merged); }
   finally { suppressSave = false; }
-  await writeRepositoryFile(DATA_FILE, {
-    ...files.get(DATA_FILE)?.value,
-    updatedAt: Date.now(),
-    navigationData: { categories: merged.categories.filter(category => category.categoryId === "custom-user-sites") },
-    preferences: {
-      theme: localStorage.getItem("theme-preference") || "dark",
-      proxyMode: localStorage.getItem("proxy-mode-preference") === "true",
-    },
-  }, commitMessage(remoteData ?? remote, merged));
+  const snapshot = navigationSnapshot(merged);
+  const previous = files.get(DATA_FILE)?.value;
+  if (JSON.stringify(previous?.navigationData) !== JSON.stringify(snapshot.navigationData)
+    || JSON.stringify(previous?.preferences) !== JSON.stringify(snapshot.preferences)) {
+    await writeRepositoryFile(DATA_FILE, { ...previous, updatedAt: Date.now(), ...snapshot }, commitMessage(remoteData ?? remote, merged));
+  }
+  lastNavigationSnapshot = JSON.stringify(snapshot);
   remoteData = merged;
 }
 
@@ -218,6 +239,10 @@ function entryKey(entry: LogicalSyncData["entries"][number]) {
 function logicalEqual(a: Pick<LogicalSyncData, "folders" | "entries">, b: Pick<LogicalSyncData, "folders" | "entries">) {
   return JSON.stringify([...a.folders].sort()) === JSON.stringify([...b.folders].sort())
     && JSON.stringify(a.entries.map(entryKey).sort()) === JSON.stringify(b.entries.map(entryKey).sort());
+}
+
+function logicalSnapshot(root: string, data: LogicalSyncData) {
+  return JSON.stringify([root, data.workspace, [...data.folders].sort(), data.entries.map(entryKey).sort()]);
 }
 
 function validLogicalWorkspace(value: unknown): value is LogicalWorkspace {
@@ -292,7 +317,7 @@ async function syncLogical() {
     workspaces: { ...document.workspaces, [local.workspace]: merged },
   };
   if (!snapshot.value || JSON.stringify(snapshot.value.workspaces) !== JSON.stringify(nextDocument.workspaces)) {
-    await writeRepositoryFile(LOGICAL_FILE, nextDocument, `同步逻辑分区：${local.workspace}，分区 ${merged.folders.length} 个，记录 ${merged.entries.length} 条`);
+    await writeRepositoryFile(LOGICAL_FILE, nextDocument, `同步逻辑分区：分区 ${merged.folders.length} 个，记录 ${merged.entries.length} 条`);
   }
   if (useWorkspaceStore.getState().rootPath !== root) return;
   const latestLocal = await fsApi.getLogicalSyncData(root);
@@ -311,6 +336,7 @@ async function syncLogical() {
       await writeRepositoryFile(DATA_FILE, remaining, "迁移逻辑分区至独立文件");
     });
   }
+  lastLogicalSnapshot = logicalSnapshot(root, applied);
 }
 
 function publishError(channel: SyncChannel, error: unknown) {
@@ -318,8 +344,10 @@ function publishError(channel: SyncChannel, error: unknown) {
   update({ fileErrors, status: Object.values(fileErrors).some(value => value?.includes("版本已变化")) ? "conflict" : "error", error: Object.values(fileErrors).filter(Boolean).join("；") });
 }
 
-function enqueue(channel: SyncChannel, action: () => Promise<void | boolean>): Promise<void> {
+function enqueue(channel: SyncChannel, action: () => Promise<void | boolean>, shouldSync?: () => Promise<boolean>): Promise<void> {
   const task = queues[channel].then(async () => {
+    try { if (shouldSync && !await shouldSync()) return; }
+    catch (error) { publishError(channel, error); throw error; }
     active.add(channel);
     update({ status: "syncing" });
     try {
@@ -344,7 +372,13 @@ function queuePush(channel: SyncChannel, mergeRemote = false) {
   if (!(channel === "navigation" ? selection.myNavigation : selection.logicalPartitions)) return;
   window.clearTimeout(timers[channel]);
   timers[channel] = window.setTimeout(() => {
-    void enqueue(channel, channel === "navigation" ? () => syncNavigation(mergeRemote) : syncLogical).catch(() => {});
+    void enqueue(channel, channel === "navigation" ? () => syncNavigation(mergeRemote) : syncLogical, async () => {
+      if (current.fileErrors?.[channel]) return true;
+      if (channel === "navigation") return mergeRemote || JSON.stringify(navigationSnapshot(await loadNavigationData())) !== lastNavigationSnapshot;
+      const root = useWorkspaceStore.getState().rootPath;
+      if (!root || root.startsWith("sftp:")) return true;
+      return logicalSnapshot(root, await fsApi.getLogicalSyncData(root)) !== lastLogicalSnapshot;
+    }).catch(() => {});
   }, 1800);
 }
 
@@ -375,6 +409,20 @@ export function setCloudSyncSelection(selection: { myNavigation: boolean; logica
   window.dispatchEvent(new Event("nexusdesk-cloud-sync-selection-changed"));
 }
 
+async function waitForGithubBranch(repo: string) {
+  // 新建仓库的初始提交可能晚于创建接口完成。
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const response = await fetch(`https://api.github.com/repos/${repo}/git/ref/heads/${encodeURIComponent(githubBranch)}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+      signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
+    });
+    if (response.ok) return;
+    if (response.status !== 404 && response.status !== 409) throw new Error(`检查 GitHub 仓库初始化失败 (${response.status})`);
+    if (attempt < 5) await new Promise<void>(resolve => window.setTimeout(resolve, 500 * (attempt + 1)));
+  }
+  throw new Error("GitHub 仓库仍在初始化，请稍后重新连接。");
+}
+
 async function connect(tokenValue: string, repoValue: string, createIfMissing: boolean, provider = current.provider): Promise<NavigationData> {
   ready = false;
   for (const timer of Object.values(timers)) window.clearTimeout(timer);
@@ -386,7 +434,7 @@ async function connect(tokenValue: string, repoValue: string, createIfMissing: b
   try {
     const user = provider === "github" ? await request<{ login: string }>("https://api.github.com/user") : provider === "gitlab" ? await request<{ username: string }>("https://gitlab.com/api/v4/user") : await request<{ login: string }>("https://gitee.com/api/v5/user");
     const username = "login" in user ? user.login : user.username;
-    let repo = repoValue.trim() || `${username}/navhub-data`;
+    let repo = repoValue.trim() || `${username}/nexus-data`;
     if (!repo.includes("/")) repo = `${username}/${repo}`;
     const repoParts = repo.split("/");
     if (repoParts.length !== 2 || repoParts.some(part => !/^[A-Za-z0-9_.-]+$/.test(part) || part === "." || part === "..")) {
@@ -397,12 +445,15 @@ async function connect(tokenValue: string, repoValue: string, createIfMissing: b
     const repoResponse = provider === "github" ? await fetch(`https://api.github.com/repos/${repoPath}`, { ...options, headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } }) : provider === "gitlab" ? await fetch(`https://gitlab.com/api/v4/projects/${encodeURIComponent(repo)}`, { ...options, headers: { "PRIVATE-TOKEN": token } }) : await fetch(`https://gitee.com/api/v5/repos/${repoPath}`, { ...options, headers: { Authorization: `token ${token}` } });
     if (repoResponse.status === 404 && createIfMissing && provider === "github") {
       const repoName = repo.slice(repo.lastIndexOf("/") + 1);
-      await request("https://api.github.com/user/repos", "POST", { name: repoName, description: "NexusDesk 导航数据", private: true, auto_init: true });
+      const repository = await request<{ default_branch?: string }>("https://api.github.com/user/repos", "POST", { name: repoName, description: "NexusDesk 导航数据", private: true, auto_init: true });
+      githubBranch = repository.default_branch || "main";
+      await waitForGithubBranch(repoPath);
     } else if (!repoResponse.ok) throw new Error(`无法访问仓库 ${repo} (${repoResponse.status})`);
     else {
-      const repository = await repoResponse.json() as { private?: boolean; visibility?: string };
+      const repository = await repoResponse.json() as { private?: boolean; visibility?: string; default_branch?: string };
       const isPrivate = provider === "gitlab" ? repository.visibility === "private" : repository.private === true;
       if (!isPrivate) throw new Error("导航云同步仅允许连接私有仓库，请将仓库设为私有后重试。");
+      if (provider === "github") githubBranch = repository.default_branch || "main";
     }
     repo = repoPath;
     settingsStorage.setItem(TOKEN_KEYS[provider], token);
@@ -411,6 +462,8 @@ async function connect(tokenValue: string, repoValue: string, createIfMissing: b
     current = { ...current, provider, user: username, repo, status: "connected", lastSync: null, error: "" };
     files.clear();
     remoteData = null;
+    lastNavigationSnapshot = null;
+    lastLogicalSnapshot = null;
     update({ fileErrors: {}, error: "", logicalNotice: "" });
     ready = true;
     settingsStorage.setItem(SYNC_ENABLED_KEY, "true");
@@ -418,7 +471,7 @@ async function connect(tokenValue: string, repoValue: string, createIfMissing: b
     update({ status: "connected", error: "" });
     return loadNavigationData();
   } catch (error) {
-    update({ status: "error", error: String(error) });
+    update({ status: Object.values(current.fileErrors ?? {}).some(value => value?.includes("版本已变化")) ? "conflict" : "error", error: String(error) });
     throw error;
   }
 }
@@ -456,9 +509,10 @@ export function initializeNavigationSync(): Promise<NavigationData | null> {
 }
 
 export async function connectNavigationSync(tokenValue: string, repoValue: string, provider: NavigationSyncProvider) {
-  initialized = undefined;
   const savedToken = settingsStorage.getItem(TOKEN_KEYS[provider]) || "";
-  return connect(tokenValue.trim() || savedToken, repoValue, true, provider);
+  const connection = connect(tokenValue.trim() || savedToken, repoValue, true, provider);
+  initialized = connection.catch(() => null);
+  return connection;
 }
 
 async function syncSelected() {

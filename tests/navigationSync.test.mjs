@@ -11,7 +11,7 @@ function response(status, body = {}) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }
 
-function createSync(fetch, data = { categories: [] }, logicalData = null, values = new Map()) {
+function createSync(fetch, data = { categories: [] }, logicalData = null, values = new Map(), fastInitialization = false) {
   let rootPath = logicalData ? "C:/project" : null;
   const applied = [];
   const listeners = new Map();
@@ -21,7 +21,11 @@ function createSync(fetch, data = { categories: [] }, logicalData = null, values
     addEventListener(type, listener) { listeners.set(type, listener); },
     dispatchEvent(event) { listeners.get(event.type)?.(event); },
     clearTimeout(id) { timers.delete(id); },
-    setTimeout(callback) { timers.set(++nextTimer, callback); return nextTimer; },
+    setTimeout(callback, delay) {
+      if (fastInitialization && delay !== 1800) return setTimeout(callback, 0);
+      timers.set(++nextTimer, callback);
+      return nextTimer;
+    },
   };
   const storage = {
     getItem(key) { return values.get(key) ?? null; },
@@ -45,6 +49,7 @@ function createSync(fetch, data = { categories: [] }, logicalData = null, values
   vm.runInNewContext(compiled, context);
   return {
     api: exports, values, applied,
+    setNavigation(next) { data = next; },
     setLogical(next, root = rootPath) { logicalData = next; rootPath = root; },
     async save(type = "nexusdesk-navigation-data-changed") {
       window.dispatchEvent({ type });
@@ -88,19 +93,126 @@ function repository(initial = {}) {
 
 const logicalSnapshot = (workspace = 'folder:project') => ({ workspace, folders: ['notes', 'empty'], entries: [{ path: 'a.md', category: 'notes', kind: 'reference' }] });
 
+test('new GitHub repository waits for its default branch and serializes initial commits', async () => {
+  const repo = repository();
+  let created = false;
+  let branchChecks = 0;
+  let writing = false;
+  const sync = createSync(async (url, options = {}) => {
+    const method = options.method ?? 'GET';
+    if (url.endsWith('/repos/owner/repo') && !created) return response(404);
+    if (url.endsWith('/user/repos')) {
+      created = true;
+      return response(201, { default_branch: 'master' });
+    }
+    if (url.endsWith('/git/ref/heads/master')) {
+      branchChecks++;
+      return response(branchChecks < 3 ? 404 : 200);
+    }
+    if (url.includes('/contents/')) {
+      assert.equal(branchChecks, 3, 'file access must wait for initialization');
+      if (method !== 'GET') {
+        assert.equal(writing, false, 'repository commits must not overlap');
+        assert.equal(JSON.parse(options.body).branch, 'master');
+        writing = true;
+        await new Promise(resolve => setImmediate(resolve));
+        try { return await repo.fetch(url, options); }
+        finally { writing = false; }
+      }
+      assert.equal(new URL(url).searchParams.get('ref'), 'master');
+    }
+    return repo.fetch(url, options);
+  }, { categories: [] }, logicalSnapshot(), new Map(), true);
+  sync.api.setCloudSyncSelection({ myNavigation: true, logicalPartitions: true });
+  const states = [];
+  sync.api.subscribeNavigationSync(state => states.push(state.status));
+
+  await sync.api.connectNavigationSync('token', 'owner/repo', 'github');
+
+  assert.equal(repo.writes.length, 2);
+  assert.equal(sync.api.getNavigationSyncState().status, 'connected');
+  assert.equal(states.includes('error'), false);
+  assert.equal(states.includes('conflict'), false);
+});
+
+test('new GitHub repository reports initialization timeout without uploading files', async () => {
+  let branchChecks = 0;
+  const sync = createSync(async (url) => {
+    if (url.endsWith('/user')) return response(200, { login: 'owner' });
+    if (url.endsWith('/repos/owner/repo')) return response(404);
+    if (url.endsWith('/user/repos')) return response(201, { default_branch: 'main' });
+    if (url.endsWith('/git/ref/heads/main')) {
+      branchChecks++;
+      return response(409);
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  }, { categories: [] }, null, new Map(), true);
+
+  await assert.rejects(sync.api.connectNavigationSync('token', 'owner/repo', 'github'), /仓库仍在初始化/);
+  assert.equal(branchChecks, 6);
+  assert.equal(sync.api.getNavigationSyncState().status, 'error');
+});
+
+test('repository creation validation errors retain the API message', async () => {
+  const sync = createSync(async (url) => {
+    if (url.endsWith('/user')) return response(200, { login: 'owner' });
+    if (url.endsWith('/repos/owner/repo')) return response(404);
+    if (url.endsWith('/user/repos')) return response(422, { message: 'Repository creation failed: name already exists' });
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  await assert.rejects(sync.api.connectNavigationSync('token', 'owner/repo', 'github'), /name already exists/);
+});
+
 for (const provider of ['github', 'gitlab', 'gitee']) {
+  test(`${provider}: unchanged events stay idle and real edits upload only once`, async () => {
+    const repo = repository();
+    let requests = 0;
+    const sync = createSync((...args) => { requests++; return repo.fetch(...args); }, { categories: [] }, logicalSnapshot());
+    sync.api.setCloudSyncSelection({ myNavigation: true, logicalPartitions: true });
+    await sync.api.connectNavigationSync('token', 'owner/repo', provider);
+    const initialRequests = requests;
+    const initialDocument = JSON.stringify(repo.disk.get('navhub.json'));
+    const states = [];
+    sync.api.subscribeNavigationSync(state => states.push(state.status));
+
+    for (let repeat = 0; repeat < 3; repeat++) {
+      await sync.save();
+      await sync.save('nexusdesk-navigation-preferences-changed');
+      sync.setLogical({ ...logicalSnapshot(), folders: ['empty', 'notes'] });
+      await sync.save('nexusdesk-logical-data-changed');
+      await sync.api.initializeNavigationSync();
+    }
+    assert.equal(requests, initialRequests, 'unchanged events and reopening settings must not access the repository');
+    assert.equal(states.includes('syncing'), false);
+    assert.equal(repo.writes.length, 2);
+
+    await sync.api.syncNavigationNow();
+    assert.equal(repo.writes.length, 2, 'manual sync must not commit unchanged content');
+    assert.equal(JSON.stringify(repo.disk.get('navhub.json')), initialDocument);
+
+    sync.setNavigation({ categories: [{ categoryId: 'custom-user-sites', categoryName: '我的导航', sites: [{ id: 'one', title: 'Example', url: 'https://example.com' }] }] });
+    await sync.save();
+    assert.equal(repo.writes.length, 3);
+    assert.equal(repo.disk.get('navhub.json').navigationData.categories[0].sites[0].title, 'Example');
+    const afterEditRequests = requests;
+    await sync.save();
+    assert.equal(requests, afterEditRequests);
+    assert.equal(sync.api.getNavigationSyncState().status, 'connected');
+  });
+
   test(`${provider}: files sync independently and preserve other workspaces`, async () => {
     const repo = repository({ 'logical-partitions.json': { version: 1, workspaces: { other: { folders: ['other'], entries: [] } } } });
     const sync = createSync(repo.fetch.bind(repo), { categories: [] }, logicalSnapshot());
     sync.api.setCloudSyncSelection({ myNavigation: true, logicalPartitions: true });
     await sync.api.connectNavigationSync('token', 'owner/repo', provider);
-    assert.deepEqual(new Set(repo.writes.map(write => write.name)), new Set(['navhub-data.json', 'logical-partitions.json']));
-    assert.equal(repo.disk.get('navhub-data.json').logicalPartitions, undefined);
+    assert.deepEqual(new Set(repo.writes.map(write => write.name)), new Set(['navhub.json', 'logical-partitions.json']));
+    assert.equal(repo.disk.get('navhub.json').logicalPartitions, undefined);
     assert.deepEqual(repo.disk.get('logical-partitions.json').workspaces.other, { folders: ['other'], entries: [] });
     assert.deepEqual(repo.disk.get('logical-partitions.json').workspaces['folder:project'].folders, ['empty', 'notes']);
     repo.writes.length = 0;
+    sync.values.set('theme-preference', 'light');
     await sync.save();
-    assert.deepEqual(repo.writes.map(write => write.name), ['navhub-data.json']);
+    assert.deepEqual(repo.writes.map(write => write.name), ['navhub.json']);
     repo.writes.length = 0;
     sync.setLogical({ ...logicalSnapshot(), folders: ['notes', 'empty', 'new'] });
     await sync.save('nexusdesk-logical-data-changed');
@@ -113,20 +225,20 @@ for (const provider of ['github', 'gitlab', 'gitee']) {
 test('legacy migration preserves data until the new file is saved and retries cleanup', async () => {
   const legacy = logicalSnapshot('folder:old');
   const original = { navigationData: { categories: [] }, preferences: { theme: 'dark' }, logicalPartitions: legacy };
-  const repo = repository({ 'navhub-data.json': original });
+  const repo = repository({ 'navhub.json': original });
   repo.fail = 'logical-partitions.json';
   const sync = createSync(repo.fetch.bind(repo), { categories: [] }, logicalSnapshot());
   sync.api.setCloudSyncSelection({ myNavigation: false, logicalPartitions: true });
   await assert.rejects(sync.api.connectNavigationSync('token', 'owner/repo', 'github'));
-  assert.deepEqual(repo.disk.get('navhub-data.json'), original);
-  repo.fail = 'navhub-data.json';
+  assert.deepEqual(repo.disk.get('navhub.json'), original);
+  repo.fail = 'navhub.json';
   await assert.rejects(sync.api.connectNavigationSync('token', 'owner/repo', 'github'));
   assert.deepEqual(repo.disk.get('logical-partitions.json').workspaces['folder:old'].entries, legacy.entries);
-  assert.deepEqual(repo.disk.get('navhub-data.json'), original);
+  assert.deepEqual(repo.disk.get('navhub.json'), original);
   repo.fail = '';
   await sync.api.connectNavigationSync('token', 'owner/repo', 'github');
-  assert.equal(repo.disk.get('navhub-data.json').logicalPartitions, undefined);
-  assert.deepEqual(repo.disk.get('navhub-data.json').preferences, original.preferences);
+  assert.equal(repo.disk.get('navhub.json').logicalPartitions, undefined);
+  assert.deepEqual(repo.disk.get('navhub.json').preferences, original.preferences);
 });
 
 test('logical sync waits for a local project and resumes when it opens', async () => {
@@ -172,10 +284,10 @@ test('deletions survive reconnect and propagate to another device without resurr
 });
 
 test('disabled logical sync preserves legacy data and does not create a partition file', async () => {
-  const repo = repository({ 'navhub-data.json': { logicalPartitions: logicalSnapshot() } });
+  const repo = repository({ 'navhub.json': { logicalPartitions: logicalSnapshot() } });
   const sync = createSync(repo.fetch.bind(repo), { categories: [] }, logicalSnapshot());
   await sync.api.connectNavigationSync('token', 'owner/repo', 'github');
-  assert.ok(repo.disk.get('navhub-data.json').logicalPartitions);
+  assert.ok(repo.disk.get('navhub.json').logicalPartitions);
   assert.equal(repo.disk.has('logical-partitions.json'), false);
 });
 
@@ -185,7 +297,7 @@ test('one file failure does not prevent the other file from syncing or erase its
   sync.api.setCloudSyncSelection({ myNavigation: true, logicalPartitions: true });
   repo.fail = 'logical-partitions.json';
   await assert.rejects(sync.api.connectNavigationSync('token', 'owner/repo', 'github'));
-  assert.ok(repo.disk.has('navhub-data.json'));
+  assert.ok(repo.disk.has('navhub.json'));
   assert.ok(sync.api.getNavigationSyncState().fileErrors.logical);
   await sync.save();
   assert.equal(sync.api.getNavigationSyncState().status, 'conflict');
@@ -197,22 +309,22 @@ test('one file failure does not prevent the other file from syncing or erase its
 });
 
 test('automatic navigation upload preserves newly edited preferences', async () => {
-  const repo = repository({ 'navhub-data.json': { navigationData: { categories: [] }, preferences: { theme: 'dark' } } });
+  const repo = repository({ 'navhub.json': { navigationData: { categories: [] }, preferences: { theme: 'dark' } } });
   const sync = createSync(repo.fetch.bind(repo));
   await sync.api.connectNavigationSync('token', 'owner/repo', 'github');
   sync.values.set('theme-preference', 'light');
   await sync.save('nexusdesk-navigation-preferences-changed');
-  assert.equal(repo.disk.get('navhub-data.json').preferences.theme, 'light');
+  assert.equal(repo.disk.get('navhub.json').preferences.theme, 'light');
 });
 
 test('malformed legacy data is preserved without writing or removing fields', async () => {
   const original = { logicalPartitions: { workspace: 'folder:old', folders: [] } };
-  const repo = repository({ 'navhub-data.json': original });
+  const repo = repository({ 'navhub.json': original });
   const sync = createSync(repo.fetch.bind(repo), { categories: [] }, logicalSnapshot());
   sync.api.setCloudSyncSelection({ myNavigation: false, logicalPartitions: true });
   await assert.rejects(sync.api.connectNavigationSync('token', 'owner/repo', 'github'), /格式无效/);
   assert.equal(repo.writes.length, 0);
-  assert.deepEqual(repo.disk.get('navhub-data.json'), original);
+  assert.deepEqual(repo.disk.get('navhub.json'), original);
 });
 
 test('GitLab creates once and updates on the next automatic sync', async () => {
@@ -224,12 +336,13 @@ test('GitLab creates once and updates on the next automatic sync', async () => {
     if (method === 'GET' && url.includes('/repository/files/')) return writes.length ? response(200, { content: writes.at(-1).body.content, encoding: 'text' }) : response(404);
     if (url.includes('/repository/files/')) {
       writes.push({ method, body: JSON.parse(options.body) });
-      return response(method === 'POST' ? 201 : 200, { file_path: 'navhub-data.json', branch: 'main' });
+      return response(method === 'POST' ? 201 : 200, { file_path: 'navhub.json', branch: 'main' });
     }
     throw new Error(`Unexpected request: ${method} ${url}`);
   });
 
   await sync.api.connectNavigationSync('token', 'owner/repo', 'gitlab');
+  sync.values.set('theme-preference', 'light');
   await sync.save();
 
   assert.deepEqual(writes.map(write => write.method), ['POST', 'PUT']);
@@ -253,6 +366,7 @@ test('Gitee writes formatted JSON and describes navigation additions', async () 
   }, { categories: [{ categoryId: 'custom-user-sites', categoryName: '我的导航', sites: [{ id: 'one', title: 'Example', url: 'https://example.com' }] }] });
 
   await sync.api.connectNavigationSync('token', 'owner/repo', 'gitee');
+  sync.values.set('theme-preference', 'light');
   await sync.save();
 
   assert.deepEqual(writes.map(write => write.method), ['POST', 'PUT']);
