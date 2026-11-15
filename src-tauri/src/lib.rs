@@ -274,6 +274,7 @@ pub fn run() {
             commands::video_cmds::video_tool_status,
             commands::video_cmds::convert_mkv_to_mp4,
             commands::video_cmds::cancel_mkv_to_mp4,
+            commands::video_cmds::cancel_video_download,
             commands::software_manager::managed_software_list,
             commands::software_manager::managed_software_status,
             commands::software_manager::managed_software_install,

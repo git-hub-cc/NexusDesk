@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { homeDir, join } from "@tauri-apps/api/path";
+import { listen } from "@tauri-apps/api/event";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { Download, FolderOpen, Import, LoaderCircle, Maximize, Minimize, Search, Trash2, Video } from "lucide-react";
+import { Download, FolderOpen, Import, LoaderCircle, Maximize, Minimize, Search, Trash2, Video, X } from "lucide-react";
 import { importMedia, importSummary } from "@/lib/mediaImport";
 import { videoApi, type LocalVideo, type VideoToolStatus } from "@/lib/api";
 import { AssetVideo } from "@/components/editor/MarkdownEditor";
 import { useVirtualList } from "@/hooks/useVirtualList";
 
 const size = (value: number) => value > 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GB` : `${(value / 1024 ** 2).toFixed(0)} MB`;
+type DownloadProgress = { percent: number | null; detail: string };
 
 export function VideoEditor({ active }: { active: boolean }) {
   const [videos, setVideos] = useState<LocalVideo[]>([]);
@@ -21,6 +23,9 @@ export function VideoEditor({ active }: { active: boolean }) {
   const [destination, setDestination] = useState("");
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cancelingDownload, setCancelingDownload] = useState(false);
+  const activeDownloadId = useRef<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [importing, setImporting] = useState(false);
   const importInFlight = useRef(false);
   const [message, setMessage] = useState("");
@@ -107,13 +112,32 @@ export function VideoEditor({ active }: { active: boolean }) {
   }, [active, filtered, selectedVideo, current, videoWindow.scrollToIndex]);
   const download = async (event: React.FormEvent) => {
     event.preventDefault();
-    setBusy(true); setMessage(""); setError(false);
+    if (busy || importing) return;
+    setBusy(true); setMessage(""); setError(false); setDownloadProgress(null);
+    const requestId = crypto.randomUUID();
+    activeDownloadId.current = requestId;
+    setCancelingDownload(false);
+    let unlisten: (() => void) | undefined;
     try {
-      const result = await videoApi.download(url, destination);
+      unlisten = await listen<DownloadProgress>(`video-download-progress-${requestId}`, event => setDownloadProgress(event.payload));
+      const result = await videoApi.download(url, destination, requestId);
       setMessage(result); setUrl(""); await refresh();
     } catch (reason) {
-      setMessage(String(reason).replace(/^Error: /, "")); setError(true);
-    } finally { setBusy(false); }
+      const detail = String(reason).replace(/^Error: /, "");
+      const cancelled = detail.includes("下载已取消");
+      setMessage(cancelled ? "下载已取消" : detail); setError(!cancelled);
+    } finally {
+      unlisten?.();
+      activeDownloadId.current = null;
+      setBusy(false); setCancelingDownload(false); setDownloadProgress(null);
+    }
+  };
+  const cancelDownload = async () => {
+    const requestId = activeDownloadId.current;
+    if (!requestId || cancelingDownload) return;
+    setCancelingDownload(true);
+    try { await videoApi.cancelDownload(requestId); }
+    catch { setCancelingDownload(false); }
   };
   const deleteVideo = async (video: LocalVideo) => {
     try {
@@ -172,9 +196,11 @@ export function VideoEditor({ active }: { active: boolean }) {
         <footer className="video-library-footer">
           <form onSubmit={download} className="music-search-form ide-control-shell video-url-form">
             <input type="text" required value={url} onChange={event => setUrl(event.target.value)} placeholder={toolStatus?.ytDlpAvailable ? "粘贴 YouTube、m3u8 或其他视频链接" : "粘贴视频链接或抖音分享文案"} aria-label="视频链接" aria-describedby="video-download-support" />
-            <button className="ide-button ide-button-secondary" type="submit" disabled={busy || importing || !destination}>
-              {busy ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />}下载
-            </button>
+            {busy
+              ? <button className="ide-button ide-button-secondary" type="button" onClick={() => void cancelDownload()} disabled={cancelingDownload} title="取消当前下载">
+                {cancelingDownload ? <LoaderCircle size={14} className="animate-spin" /> : <X size={14} />}{cancelingDownload ? "正在取消" : "取消"}
+              </button>
+              : <button className="ide-button ide-button-secondary" type="submit" disabled={importing || !destination}><Download size={14} />下载</button>}
           </form>
           <p id="video-download-support" className="video-download-support" role="status">
             {toolStatus?.ytDlpAvailable
@@ -186,6 +212,11 @@ export function VideoEditor({ active }: { active: boolean }) {
                 : "可通过 yt-dlp 支持 YouTube、m3u8 等更多视频链接"}
           </p>
           {message && <p role={error ? "alert" : "status"} className={`music-message ${error ? "is-error" : ""}`}>{message}</p>}
+          {busy && <div className="video-download-progress" role="status" aria-live="polite">
+            <div className="video-download-progress-heading"><span>{downloadProgress?.percent == null ? "正在获取视频…" : `下载 ${downloadProgress.percent.toFixed(1)}%`}</span><span>{downloadProgress?.percent == null ? "" : `${downloadProgress.percent.toFixed(1)}%`}</span></div>
+            <progress max={100} value={downloadProgress?.percent ?? undefined} />
+            {downloadProgress?.detail && <small>{downloadProgress.detail}</small>}
+          </div>}
           <div className="music-storage" title={destination || undefined}>
             <span className="music-storage-dot" />保存位置<p>~/.nexus/video</p>
           </div>

@@ -100,6 +100,10 @@
 .video-library-footer .video-url-form { width: 100%; max-width: none; gap: 6px; }
 .video-library-footer .video-url-form input { font-size: 11px; }
 .video-download-support { margin-top: 8px; color: #858a94; font-size: 10px; line-height: 1.6; }
+.video-download-progress { display: grid; gap: 5px; margin-top: 8px; color: #aeb5bd; font-size: 10px; }
+.video-download-progress-heading { display: flex; justify-content: space-between; gap: 8px; }
+.video-download-progress progress { width: 100%; height: 5px; accent-color: #70a98a; }
+.video-download-progress small { overflow: hidden; color: #858a94; text-overflow: ellipsis; white-space: nowrap; }
 .video-library-footer .music-storage { position: static; margin-top: 12px; }
 .video-library-footer .music-message { max-height: 72px; overflow-y: auto; margin: 8px 0 0; overflow-wrap: anywhere; }
 .video-list-empty { display: flex; align-items: center; flex-direction: column; gap: 8px; padding: 48px 16px; color: #666b76; text-align: center; }

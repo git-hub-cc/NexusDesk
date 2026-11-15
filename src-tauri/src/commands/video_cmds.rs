@@ -5,10 +5,10 @@ use std::{
     process::Stdio,
     sync::OnceLock,
 };
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::oneshot;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     process::Command,
 };
 
@@ -16,9 +16,15 @@ type ConversionTasks = tokio::sync::Mutex<
     HashMap<String, std::sync::Arc<tokio::sync::Mutex<Option<oneshot::Sender<()>>>>>,
 >;
 static CONVERSION_TASKS: OnceLock<ConversionTasks> = OnceLock::new();
+type VideoDownloadTasks = tokio::sync::Mutex<HashMap<String, oneshot::Sender<()>>>;
+static VIDEO_DOWNLOAD_TASKS: OnceLock<VideoDownloadTasks> = OnceLock::new();
 
 fn conversion_tasks() -> &'static ConversionTasks {
     CONVERSION_TASKS.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
+}
+
+fn video_download_tasks() -> &'static VideoDownloadTasks {
+    VIDEO_DOWNLOAD_TASKS.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
 }
 
 async fn run_ffmpeg(
@@ -401,7 +407,7 @@ fn ytdlp_download_command_with_format(
     cookie_file: Option<&Path>,
 ) -> Command {
     let mut command = video_tool_command(program);
-    command.args(["--ignore-config", "--no-playlist", "--no-progress", "--write-info-json", "--windows-filenames", "--hls-prefer-native"])
+    command.args(["--ignore-config", "--no-playlist", "--newline", "--write-info-json", "--windows-filenames", "--hls-prefer-native"])
         // 与内置 WebView2 的浏览器标识保持一致，避免 Cookie 与客户端不匹配。
         .args(["--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"])
         .arg("-P").arg(destination).arg("-o").arg("%(id)s.%(ext)s");
@@ -431,6 +437,78 @@ fn ytdlp_download_command_with_format(
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
     command
+}
+
+async fn run_ytdlp_with_progress(
+    app: &tauri::AppHandle,
+    mut command: Command,
+    request_id: &str,
+    cancel: &mut oneshot::Receiver<()>,
+) -> Result<std::process::Output, String> {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("无法启动 yt-dlp：{error}"))?;
+    let stdout = child.stdout.take().ok_or("无法读取 yt-dlp 输出")?;
+    let stderr = child.stderr.take().ok_or("无法读取 yt-dlp 错误输出")?;
+    let event = format!("video-download-progress-{request_id}");
+    let mut stdout_reader = BufReader::new(stdout).lines();
+    let mut stderr_reader = BufReader::new(stderr).lines();
+    let mut stdout_done = false;
+    let mut stderr_done = false;
+    let mut stdout_output = Vec::new();
+    let mut stderr_output = Vec::new();
+    while !stdout_done || !stderr_done {
+        tokio::select! {
+            _ = &mut *cancel => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                return Err("下载已取消".into());
+            }
+            result = stdout_reader.next_line(), if !stdout_done => match result {
+                Ok(Some(line)) => {
+                    emit_ytdlp_progress(app, &event, &line);
+                    stdout_output.extend_from_slice(line.as_bytes());
+                    stdout_output.push(b'\n');
+                }
+                Ok(None) => stdout_done = true,
+                Err(error) => return Err(format!("无法读取 yt-dlp 输出：{error}")),
+            },
+            result = stderr_reader.next_line(), if !stderr_done => match result {
+                Ok(Some(line)) => {
+                    emit_ytdlp_progress(app, &event, &line);
+                    stderr_output.extend_from_slice(line.as_bytes());
+                    stderr_output.push(b'\n');
+                }
+                Ok(None) => stderr_done = true,
+                Err(error) => return Err(format!("无法读取 yt-dlp 错误输出：{error}")),
+            },
+        }
+    }
+    let status = child
+        .wait()
+        .await
+        .map_err(|error| format!("等待 yt-dlp 结束失败：{error}"))?;
+    Ok(std::process::Output {
+        status,
+        stdout: stdout_output,
+        stderr: stderr_output,
+    })
+}
+
+fn emit_ytdlp_progress(app: &tauri::AppHandle, event: &str, line: &str) {
+    if !line.contains("[download]") || !line.contains('%') {
+        return;
+    }
+    let percent = line
+        .split_once('%')
+        .and_then(|(before, _)| before.split_whitespace().last())
+        .and_then(|value| value.parse::<f64>().ok());
+    let _ = app.emit(
+        event,
+        serde_json::json!({ "percent": percent, "detail": line.trim() }),
+    );
 }
 
 fn is_hls(url: &reqwest::Url, mime: &str) -> bool {
@@ -816,6 +894,45 @@ pub async fn download_video(
     app: tauri::AppHandle,
     url: String,
     destination: String,
+    request_id: String,
+) -> Result<String, String> {
+    if request_id.is_empty()
+        || request_id.len() > 80
+        || !request_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        return Err("下载请求标识无效".into());
+    }
+    let (cancel_tx, mut cancel_rx) = oneshot::channel();
+    {
+        let mut tasks = video_download_tasks().lock().await;
+        if tasks.contains_key(&request_id) {
+            return Err("该下载任务已存在".into());
+        }
+        tasks.insert(request_id.clone(), cancel_tx);
+    }
+    let result = download_video_inner(app, url, destination, &request_id, &mut cancel_rx).await;
+    video_download_tasks().lock().await.remove(&request_id);
+    result
+}
+
+#[tauri::command]
+pub async fn cancel_video_download(request_id: String) -> Result<(), String> {
+    let cancel = video_download_tasks()
+        .lock()
+        .await
+        .remove(&request_id)
+        .ok_or("当前没有正在进行的下载")?;
+    cancel.send(()).map_err(|_| "下载任务已结束".into())
+}
+
+async fn download_video_inner(
+    app: tauri::AppHandle,
+    url: String,
+    destination: String,
+    request_id: &str,
+    cancel: &mut oneshot::Receiver<()>,
 ) -> Result<String, String> {
     let parsed = parse_video_input(&url)?;
     let dest = Path::new(&destination);
@@ -856,37 +973,42 @@ pub async fn download_video(
                 .then(crate::commands::browser_downloads::youtube_cookie_file)
                 .flatten()
                 .filter(|path| path.is_file());
-            let output = ytdlp_download_command_with_format(
-                &program,
-                dest,
-                &parsed,
-                ffmpeg.as_deref(),
-                cookies.as_deref(),
-                None,
-                cookie_file.as_deref(),
+            let direct_hls = is_hls(&parsed, "");
+            let output = run_ytdlp_with_progress(
+                &app,
+                ytdlp_download_command_with_format(
+                    &program,
+                    dest,
+                    &parsed,
+                    ffmpeg.as_deref(),
+                    cookies.as_deref(),
+                    direct_hls.then_some("0"),
+                    cookie_file.as_deref(),
+                ),
+                request_id,
+                cancel,
             )
-            .output()
-            .await
-            .map_err(|e| format!("无法启动 yt-dlp：{e}"))?;
+            .await?;
             if output.status.success() {
                 return Ok("下载完成".into());
             }
             let stderr = String::from_utf8_lossy(&output.stderr);
             if stderr.contains("HTTP Error 403") {
                 // 部分视频拒绝分离音视频地址，退回带音频的单文件格式继续下载。
-                let mut retry = ytdlp_download_command_with_format(
+                let retry = ytdlp_download_command_with_format(
                     &program,
                     dest,
                     &parsed,
                     ffmpeg.as_deref(),
                     cookies.as_deref(),
-                    Some("best[vcodec!=none][acodec!=none]"),
+                    Some(if direct_hls {
+                        "0"
+                    } else {
+                        "best[vcodec!=none][acodec!=none]"
+                    }),
                     cookie_file.as_deref(),
                 );
-                let retry_output = retry
-                    .output()
-                    .await
-                    .map_err(|e| format!("无法启动 yt-dlp：{e}"))?;
+                let retry_output = run_ytdlp_with_progress(&app, retry, request_id, cancel).await?;
                 if retry_output.status.success() {
                     return Ok("下载完成".into());
                 }
@@ -928,12 +1050,13 @@ pub async fn download_video(
     if is_douyin {
         request = request.header(reqwest::header::REFERER, "https://www.douyin.com/");
     }
-    let mut response = request
-        .send()
-        .await
-        .map_err(|e| format!("无法获取视频：{e}"))?
-        .error_for_status()
-        .map_err(|e| format!("视频请求失败：{e}"))?;
+    let mut response = tokio::select! {
+        _ = &mut *cancel => return Err("下载已取消".into()),
+        result = request.send() => result,
+    }
+    .map_err(|e| format!("无法获取视频：{e}"))?
+    .error_for_status()
+    .map_err(|e| format!("视频请求失败：{e}"))?;
     let mime = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -991,11 +1114,16 @@ pub async fn download_video(
     let mut file = tokio::fs::File::create(&path)
         .await
         .map_err(|e| format!("无法创建文件：{e}"))?;
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|e| format!("读取视频失败：{e}"))?
-    {
+    loop {
+        let chunk = tokio::select! {
+            _ = &mut *cancel => {
+                drop(file);
+                let _ = tokio::fs::remove_file(&path).await;
+                return Err("下载已取消".into());
+            }
+            result = response.chunk() => result.map_err(|e| format!("读取视频失败：{e}"))?,
+        };
+        let Some(chunk) = chunk else { break };
         file.write_all(&chunk)
             .await
             .map_err(|e| format!("保存失败：{e}"))?;

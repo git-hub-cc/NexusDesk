@@ -65,7 +65,8 @@ export const videoApi = {
     status: (): Promise<VideoToolStatus> => invoke("video_tool_status"),
     local: (): Promise<LocalVideo[]> => invoke("list_local_videos"),
     delete: (path: string): Promise<void> => invoke("delete_local_video", { path }),
-    download: (url: string, destination: string): Promise<string> => invoke("download_video", { url, destination }),
+    download: (url: string, destination: string, requestId: string): Promise<string> => invoke("download_video", { url, destination, requestId }),
+    cancelDownload: (requestId: string): Promise<void> => invoke("cancel_video_download", { requestId }),
     convertMkvToMp4: (path: string): Promise<string> => invoke("convert_mkv_to_mp4", { path }),
     cancelMkvToMp4: (path: string): Promise<void> => invoke("cancel_mkv_to_mp4", { path }),
 };
