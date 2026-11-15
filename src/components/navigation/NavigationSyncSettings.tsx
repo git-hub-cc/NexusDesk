@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Cloud, LoaderCircle, RefreshCw, Unplug } from "lucide-react";
+import { Cloud, LoaderCircle, Unplug } from "lucide-react";
 import { settingsStorage } from "@/lib/globalSettings";
 import {
   connectNavigationSync,
@@ -7,7 +7,6 @@ import {
   getNavigationSyncState,
   initializeNavigationSync,
   subscribeNavigationSync,
-  syncNavigationNow,
   type NavigationSyncProvider,
   type NavigationSyncState,
 } from "./navigationSync";
@@ -39,13 +38,6 @@ export function NavigationSyncSettings() {
     finally { setBusy(false); }
   };
 
-  const sync = async () => {
-    setBusy(true);
-    try { await syncNavigationNow(); }
-    catch { /* The sync service publishes the error state. */ }
-    finally { setBusy(false); }
-  };
-
   const disconnect = () => {
     disconnectNavigationSync();
     setRepo("");
@@ -62,6 +54,7 @@ export function NavigationSyncSettings() {
     <header className="mb-6 border-b border-ide-panel-border pb-4">
       <h2 className="text-xl font-semibold">导航云同步</h2>
       <p className="mt-1 text-sm text-gray-400">选择 GitHub、GitLab 或 Gitee，将导航数据和显示偏好同步到你自己的代码仓库。</p>
+      <p className="mt-1 text-sm text-gray-400">不允许多用户使用同一个仓库。</p>
     </header>
     <div className="flex flex-col gap-4 text-sm">
       <div className="flex items-center gap-2 text-gray-300"><Cloud size={16} /><span>{statusLabel}</span>{(state.status === "connecting" || state.status === "syncing") && <LoaderCircle size={14} className="animate-spin" />}</div>
@@ -72,7 +65,6 @@ export function NavigationSyncSettings() {
           {state.lastSync && <div className="mt-1 text-xs text-gray-500">最近同步：{new Date(state.lastSync).toLocaleString()}</div>}
         </div>
         <div className="flex gap-2">
-          <button type="button" disabled={busy || state.status === "syncing"} onClick={() => void sync()} className="flex items-center gap-2 rounded bg-ide-accent px-3 py-2 text-white disabled:opacity-50"><RefreshCw size={14} />立即同步</button>
           <button type="button" disabled={busy} onClick={disconnect} className="flex items-center gap-2 rounded border border-ide-panel-border px-3 py-2 hover:bg-white/5 disabled:opacity-50"><Unplug size={14} />断开连接</button>
         </div>
       </> : <form onSubmit={event => void connect(event)} className="flex flex-col gap-4">
