@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { NodeApi, TreeApi } from "react-arborist";
 import { Filter } from "lucide-react";
 
@@ -52,9 +52,10 @@ export function useNameSpeedSearch(options: NameSearchOptions, workspace: string
   const [filterEnabled, setFilterEnabled] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const matches = () => options.entries().filter(node => matchTreeName(node.name, query));
-  const close = () => { setSearchOpen(false); setQuery(""); setFilterEnabled(false); options.focus(); };
+  const reset = useCallback(() => { setSearchOpen(false); setQuery(""); setFilterEnabled(false); }, []);
+  const close = () => { reset(); options.focus(); };
 
-  useEffect(() => { setSearchOpen(false); setQuery(""); setFilterEnabled(false); }, [workspace]);
+  useEffect(reset, [workspace, reset]);
   useEffect(() => {
     if (!searchOpen) return;
     inputRef.current?.focus();
@@ -118,6 +119,7 @@ export function useNameSpeedSearch(options: NameSearchOptions, workspace: string
       : <React.Fragment key={index}>{letter}</React.Fragment>);
   };
   return {
+    reset,
     search: (text: string) => { setSearchOpen(true); setQuery(text); },
     onKeyDownCapture, searchBox, highlight,
     filterTerm: filterEnabled ? query : "",

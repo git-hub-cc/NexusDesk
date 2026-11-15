@@ -24,6 +24,11 @@ function harness() {
       const index = cursor++;
       return slots[index] ??= { current: initial };
     },
+    useCallback(callback, deps) {
+      const index = cursor++;
+      if (!slots[index] || deps.some((dep, i) => dep !== slots[index].deps[i])) slots[index] = { callback, deps };
+      return slots[index].callback;
+    },
     useEffect(effect, deps) {
       const index = cursor++;
       if (!slots[index] || deps.some((dep, i) => dep !== slots[index][i])) effects.push(effect);
@@ -87,6 +92,16 @@ test('directory search uses shared matching, cycles matches, filters, activates 
   search.search('missing');
   search = api.render(options);
   assert.equal(search.searchBox.children[1].children[0], '无匹配');
+  search.searchBox.children[2].props.onClick();
+  search = api.render(options);
+  assert.equal(search.filterTerm, 'missing');
+  search.reset();
+  search = api.render(options);
+  assert.equal(search.searchBox, null);
+  assert.equal(search.filterTerm, '');
+  assert.equal(focused, 1);
+  search.search('project');
+  search = api.render(options);
   api.render(options, 'other-root');
   assert.equal(api.render(options, 'other-root').searchBox, null);
 });

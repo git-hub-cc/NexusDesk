@@ -56,9 +56,9 @@ function connect() {
   return () => { if (--consumers === 0) { disconnect?.(); disconnect = undefined; } };
 }
 
-export function useGraphData(enabled = true) {
+export function useGraphData(enabled = true, retainWhenDisabled = false) {
   const root = useWorkspaceStore(state => state.rootPath);
   const data = useSyncExternalStore(resource.subscribe, resource.getSnapshot);
   useEffect(() => { if (enabled) return connect(); }, [enabled]);
-  return { ...(enabled && data.root === root ? data : empty), refresh };
+  return { ...((enabled || retainWhenDisabled) && data.root === root ? data : empty), refresh };
 }

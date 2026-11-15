@@ -104,7 +104,9 @@ export const Sidebar: React.FC = () => {
                 <div className={`absolute inset-0 ${sidebarMode === "logical" ? "block" : "hidden"}`}>
                     {!remote && <LogicalTree />}
                 </div>
-                {!remote && sidebarMode === "graph" && <GraphView />}
+                <div className={`absolute inset-0 ${sidebarMode === "graph" ? "block" : "hidden"}`}>
+                    {!remote && <GraphView key={rootPath} active={sidebarMode === "graph"} />}
+                </div>
             </div>
         </div>
     );

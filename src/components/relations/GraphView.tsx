@@ -94,20 +94,21 @@ function TreeFile({ path, root, missing, counts, onContextNode, selected, label,
   </div>;
 }
 
-export function GraphView() {
+export function GraphView({ active = true }: { active?: boolean }) {
   const root = useWorkspaceStore(state => state.rootPath);
   const graphLocation = useWorkspaceStore(state => state.graphLocation);
   const locateSignal = useWorkspaceStore(state => state.locateSignal);
   const focusedPane = useWorkspaceStore(state => state.focusedPane);
   const leftTabs = useWorkspaceStore(state => state.leftTabs);
   const rightTabs = useWorkspaceStore(state => state.rightTabs);
-  const { categories, trees, counts: nodeCounts, error: loadError, refresh } = useGraphData();
+  const { categories, trees, counts: nodeCounts, error: loadError, refresh } = useGraphData(active, true);
   const treeContents = useMemo(() => new Map(trees.map(tree => [pathKey(tree.path), tree.content])), [trees]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [hovered, setHovered] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const initializedFolders = useRef(false);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const handledGraphLocation = useRef<typeof graphLocation>(null);
+  const handledLocateSignal = useRef(locateSignal);
   const [contextCategory, setContextCategory] = useState<string | null>(null);
   const [contextFile, setContextFile] = useState<string | null>(null);
   const [contextNode, setContextNode] = useState<string | null>(null);
@@ -132,9 +133,9 @@ export function GraphView() {
     select: id => {
       setSearchSelected(id);
       const entry = searchEntries.find(item => item.id === id);
-      if (entry?.file) setCollapsed(previous => {
-        if (!previous.has(entry.category)) return previous;
-        const next = new Set(previous); next.delete(entry.category); return next;
+      if (entry?.file) setExpandedCategories(previous => {
+        if (previous.has(entry.category)) return previous;
+        const next = new Set(previous); next.add(entry.category); return next;
       });
     },
     activate: id => {
@@ -144,7 +145,8 @@ export function GraphView() {
     },
     focus: () => containerRef.current?.focus(),
   }, root);
-  useEffect(() => { searchTargets.current.get(searchSelected ?? "")?.scrollIntoView({ block: "nearest" }); }, [searchSelected, collapsed]);
+  const resetSpeedSearch = speedSearch.reset;
+  useEffect(() => { searchTargets.current.get(searchSelected ?? "")?.scrollIntoView({ block: "nearest" }); }, [searchSelected, expandedCategories]);
   useEffect(() => { setSearchSelected(null); }, [root]);
   const registerSearchTarget = (id: string, element: HTMLButtonElement | null) => {
     if (element) searchTargets.current.set(id, element);
@@ -153,46 +155,48 @@ export function GraphView() {
   const filteredCategories = speedSearch.filterTerm ? categories.filter(category =>
     matchTreeName(category.name, speedSearch.filterTerm) || category.files.some(path => matchTreeName(filename(path), speedSearch.filterTerm))) : categories;
   useEffect(() => {
-    if (!graphLocation) return;
-    setCollapsed(previous => {
+    if (!active || !graphLocation || handledGraphLocation.current === graphLocation) return;
+    const matching = categories.filter(category => category.files.some(file => samePath(file, graphLocation.path)));
+    if (!matching.length) return;
+    handledGraphLocation.current = graphLocation;
+    resetSpeedSearch();
+    setSearchSelected(null);
+    setExpandedCategories(previous => {
       const next = new Set(previous);
-      categories.filter(category => category.files.some(file => samePath(file, graphLocation.path))).forEach(category => next.delete(category.name));
+      matching.forEach(category => next.add(category.name));
       return next;
     });
-  }, [graphLocation, categories]);
+  }, [active, graphLocation, categories, resetSpeedSearch]);
   useEffect(() => {
-    if (!locateSignal || !categories.length) return;
+    if (!active) {
+      handledLocateSignal.current = locateSignal;
+      return;
+    }
+    if (handledLocateSignal.current === locateSignal || !categories.length) return;
+    handledLocateSignal.current = locateSignal;
     const tabs = focusedPane === "left" ? leftTabs : rightTabs;
     const activeId = focusedPane === "left" ? useWorkspaceStore.getState().activeLeftTabId : useWorkspaceStore.getState().activeRightTabId;
     const path = tabs.find(tab => tab.id === activeId)?.path;
     if (!path) return;
     const category = categories.find(item => item.files.some(file => samePath(file, path)));
-    // A locate signal is shared by the explorers. Ignore files outside graph
-    // categories so opening a regular file does not force the sidebar away
-    // from the graph partition.
     if (!category) return;
+    resetSpeedSearch();
+    setSearchSelected(null);
     setLocatedPath(path);
-    setCollapsed(previous => { const next = new Set(previous); next.delete(category.name); return next; });
-  }, [locateSignal, categories, focusedPane, leftTabs, rightTabs]);
+    setExpandedCategories(previous => { const next = new Set(previous); next.add(category.name); return next; });
+  }, [active, locateSignal, categories, focusedPane, leftTabs, rightTabs, resetSpeedSearch]);
   const selectedCategory = categories.find(category => category.name === contextCategory);
   const dialogFromMenu = useRef(false);
   useEffect(() => {
-    setCreating(false); setRename(null); setContextFile(null); setContextCategory(null); setContextNode(null); setError(""); setHovered(null); setCollapsed(new Set()); initializedFolders.current = false;
+    setCreating(false); setRename(null); setContextFile(null); setContextCategory(null); setContextNode(null); setError(""); setHovered(null);
   }, [root]);
-  useEffect(() => {
-    if (!initializedFolders.current && categories.length) {
-      setCollapsed(new Set(categories.map(category => category.name)));
-      initializedFolders.current = true;
-    }
-  }, [categories]);
-
   const link = async (name: string, paths: string[]) => {
     setError("");
     try {
       if (!paths.length || paths.some(path => !/\.tree$/i.test(path))) throw new Error("图谱分类仅接受 .tree 文件");
       await fsApi.linkGraphFiles(name, paths);
       if (useWorkspaceStore.getState().rootPath !== root) return;
-      setCollapsed(previous => { const next = new Set(previous); next.delete(name); return next; });
+      setExpandedCategories(previous => { const next = new Set(previous); next.add(name); return next; });
       await refresh();
     } catch (cause) { if (useWorkspaceStore.getState().rootPath === root) setError(String(cause)); }
   };
@@ -312,11 +316,11 @@ export function GraphView() {
           onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHovered(null); }}
           onDrop={event => drop(event, category.name)}
           >
-          <div className="flex items-center"><button ref={element => registerSearchTarget(categoryId(category.name), element)} type="button" className={`flex items-center gap-1 flex-1 min-w-0 text-left px-1 py-1 rounded-sm ${!!speedSearch.searchBox && searchSelected === categoryId(category.name) ? "bg-ide-selection text-white" : ""} ${hovered === category.name ? "bg-sky-500/30 ring-1 ring-inset ring-sky-400/70" : "hover:bg-ide-tree-hover"}`} aria-expanded={!!speedSearch.filterTerm || !collapsed.has(category.name)} onClick={() => { useWorkspaceStore.getState().setPartitionSearchPaths(category.files.filter(path => !category.missingFiles.some(file => samePath(file, path)))); setCollapsed(previous => { const next = new Set(previous); if (next.has(category.name)) next.delete(category.name); else next.add(category.name); return next; }); }}>
-            <ChevronRight size={14} className={`shrink-0 ${!speedSearch.filterTerm && collapsed.has(category.name) ? "" : "rotate-90"}`} /><Folder size={14} className="shrink-0" style={{ color: category.color ?? undefined }} /><span className="truncate">{speedSearch.highlight(category.name)}</span>
+          <div className="flex items-center"><button ref={element => registerSearchTarget(categoryId(category.name), element)} type="button" className={`flex items-center gap-1 flex-1 min-w-0 text-left px-1 py-1 rounded-sm ${!!speedSearch.searchBox && searchSelected === categoryId(category.name) ? "bg-ide-selection text-white" : ""} ${hovered === category.name ? "bg-sky-500/30 ring-1 ring-inset ring-sky-400/70" : "hover:bg-ide-tree-hover"}`} aria-expanded={!!speedSearch.filterTerm || expandedCategories.has(category.name)} onClick={() => { useWorkspaceStore.getState().setPartitionSearchPaths(category.files.filter(path => !category.missingFiles.some(file => samePath(file, path)))); setExpandedCategories(previous => { const next = new Set(previous); if (next.has(category.name)) next.delete(category.name); else next.add(category.name); return next; }); }}>
+            <ChevronRight size={14} className={`shrink-0 ${!speedSearch.filterTerm && !expandedCategories.has(category.name) ? "" : "rotate-90"}`} /><Folder size={14} className="shrink-0" style={{ color: category.color ?? undefined }} /><span className="truncate">{speedSearch.highlight(category.name)}</span>
           </button>
           </div>
-          {(!!speedSearch.filterTerm || !collapsed.has(category.name)) && category.files.filter(path => !speedSearch.filterTerm || matchTreeName(category.name, speedSearch.filterTerm) || matchTreeName(filename(path), speedSearch.filterTerm)).map(path => <TreeFile key={path} path={path} root={root} missing={category.missingFiles.some(file => samePath(file, path))} counts={nodeCounts} onContextNode={setContextNode} label={speedSearch.highlight(filename(path))} searchRef={element => registerSearchTarget(fileId(category.name, path), element)} selected={(!!speedSearch.searchBox && searchSelected === fileId(category.name, path)) || !!locatedPath && samePath(locatedPath, path)} />)}
+          {(!!speedSearch.filterTerm || expandedCategories.has(category.name)) && category.files.filter(path => !speedSearch.filterTerm || matchTreeName(category.name, speedSearch.filterTerm) || matchTreeName(filename(path), speedSearch.filterTerm)).map(path => <TreeFile key={path} path={path} root={root} missing={category.missingFiles.some(file => samePath(file, path))} counts={nodeCounts} onContextNode={setContextNode} label={speedSearch.highlight(filename(path))} searchRef={element => registerSearchTarget(fileId(category.name, path), element)} selected={(!!speedSearch.searchBox && searchSelected === fileId(category.name, path)) || !!locatedPath && samePath(locatedPath, path)} />)}
         </div>)}
         {!!categories.length && !filteredCategories.length && <p className="p-4 text-gray-500 text-center">无匹配目录或文件。</p>}
         </div>
@@ -352,7 +356,7 @@ export function GraphView() {
         if (name === rename.name) return;
         if (rename.color) await fsApi.setGraphCategoryColor(name, rename.color);
         await fsApi.editGraphCategory(rename.name, name);
-        setCollapsed(previous => { const next = new Set(previous); if (next.delete(rename.name)) next.add(name); return next; });
+        setExpandedCategories(previous => { const next = new Set(previous); if (next.delete(rename.name)) next.add(name); return next; });
         await refresh();
       }} onClose={() => setRename(null)} />}
     {creating && root && <CreateNameDialog key={root} title="新建图谱分类" description="在当前项目中创建图谱分类，拖入 .tree 文件建立关联。" label="分类名称" validate={name => categories.some(category => category.name.toLocaleLowerCase() === name.toLocaleLowerCase()) ? "该分类已存在。" : undefined} onCreate={async name => { await fsApi.createGraphCategory(name); await refresh(); }} onClose={() => setCreating(false)} />}
