@@ -141,14 +141,14 @@ export function VideoEditor({ active }: { active: boolean }) {
     <div className={`video-library-layout ${expanded ? "is-expanded" : ""}`}>
       <aside className="video-list-panel">
         <div className="video-search-row">
-          <form className="music-search-form" onSubmit={event => event.preventDefault()}>
+          <form className="music-search-form ide-control-shell" onSubmit={event => event.preventDefault()}>
             <Search size={15} className="shrink-0 text-gray-500" />
             <input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索视频文件名" aria-label="搜索视频" />
           </form>
         </div>
         <div className="music-list-heading flex shrink-0 items-center justify-between gap-2 border-b border-ide-panel-border px-5">
           <div><h2>视频</h2><p>{query ? `找到 ${filtered.length} 个视频` : `${videos.length} 个视频`}</p></div>
-          <button type="button" className="media-import-button" disabled={importing || busy} onClick={() => void importFiles()} title="复制视频到 ~/.nexus/video">{importing ? <LoaderCircle size={14} className="animate-spin" /> : <Import size={14} />}<span>{importing ? "正在导入…" : "导入视频"}</span></button>
+          <button type="button" className="media-import-button ide-button ide-button-primary" disabled={importing || busy} onClick={() => void importFiles()} title="复制视频到 ~/.nexus/video">{importing ? <LoaderCircle size={14} className="animate-spin" /> : <Import size={14} />}<span>{importing ? "正在导入…" : "导入视频"}</span></button>
         </div>
         <div className="video-list" ref={listRef} tabIndex={0} aria-label="视频列表">
           <div className="media-virtual-list" style={{ height: videoWindow.totalHeight }}>
@@ -170,9 +170,9 @@ export function VideoEditor({ active }: { active: boolean }) {
           </div>}
         </div>
         <footer className="video-library-footer">
-          <form onSubmit={download} className="music-search-form video-url-form">
+          <form onSubmit={download} className="music-search-form ide-control-shell video-url-form">
             <input type="text" required value={url} onChange={event => setUrl(event.target.value)} placeholder={toolStatus?.ytDlpAvailable ? "粘贴 YouTube、m3u8 或其他视频链接" : "粘贴视频链接或抖音分享文案"} aria-label="视频链接" aria-describedby="video-download-support" />
-            <button type="submit" disabled={busy || importing || !destination}>
+            <button className="ide-button ide-button-secondary" type="submit" disabled={busy || importing || !destination}>
               {busy ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />}下载
             </button>
           </form>

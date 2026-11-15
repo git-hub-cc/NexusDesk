@@ -214,9 +214,9 @@ export const TitleBar: React.FC<{ expanded?: boolean }> = ({ expanded = false } 
                 {windowError && <p role="alert" className="mt-2 text-sm text-red-400 break-all">新窗口打开失败：{windowError}</p>}
               </div>
               <footer className="flex justify-end gap-2 border-t border-ide-panel-border px-4 py-3">
-                <Dialog.Close className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10 text-sm">取消</Dialog.Close>
-                <button onClick={openInThisWindow} className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10 text-sm">当前窗口</button>
-                <button onClick={openInNewWindow} className="rounded bg-ide-accent px-4 py-1.5 text-white text-sm">新窗口</button>
+                <Dialog.Close className="ide-button ide-button-secondary rounded px-4 py-1.5 text-sm">取消</Dialog.Close>
+                <button onClick={openInThisWindow} className="ide-button ide-button-secondary rounded px-4 py-1.5 text-sm">当前窗口</button>
+                <button onClick={openInNewWindow} className="rounded ide-button ide-button-primary px-4 py-1.5 text-sm">新窗口</button>
               </footer>
             </Dialog.Content>
           </Dialog.Portal>

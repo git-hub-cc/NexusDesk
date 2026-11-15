@@ -83,7 +83,7 @@ export function SftpConnectDialog({ onClose }: { onClose: () => void }) {
         </header>
         <Dialog.Description className="sr-only">连接后，在工作区文件树中浏览服务器目录，在底部终端中使用远程 Shell。</Dialog.Description>
         <form className="flex flex-col gap-3 p-4 text-sm" onSubmit={event => { event.preventDefault(); void connect(); }}>
-          {connections.length > 0 && <label className="flex flex-col gap-1">已保存的连接<select disabled={busy} defaultValue="" className="rounded border border-ide-panel-border bg-ide-bg px-3 py-2" onChange={event => {
+          {connections.length > 0 && <label className="flex flex-col gap-1">已保存的连接<select disabled={busy} defaultValue="" className="ide-control rounded px-3 py-2" onChange={event => {
             const connection = connections.find(item => item.id === event.target.value);
             if (!connection) return;
             const next = { host: connection.host, port: String(connection.port), username: connection.username, password: connection.password };
@@ -99,10 +99,10 @@ export function SftpConnectDialog({ onClose }: { onClose: () => void }) {
                 const field = label === "链接 / 主机" ? "host" : label === "端口" ? "port" : label === "用户名" ? "username" : "password";
                 settingsStorage.setItem(FORM_KEY, JSON.stringify({ host, port, username, password, [field]: event.target.value }));
               }}
-              className="rounded border border-ide-panel-border bg-ide-bg px-3 py-2 outline-none focus:border-ide-accent disabled:opacity-60" /></label>)}
+              className="ide-control rounded px-3 py-2" /></label>)}
           {trust && <div className="break-all rounded border border-ide-panel-border p-3 text-xs">请与服务器管理员核对 SSH 主机指纹（SHA-256 十六进制）：<p className="my-2 font-mono select-text">{trust}</p>确认后将发送密码进行认证。</div>}
           {error && <p role="alert" className="text-red-400">{error}</p>}
-          <button disabled={busy} type="submit" className="self-end rounded bg-ide-accent px-4 py-2 text-white disabled:opacity-50">{busy ? "正在连接..." : trust ? "信任指纹并连接" : "连接"}</button>
+          <button disabled={busy} type="submit" className="self-end rounded ide-button ide-button-primary px-4 py-2">{busy ? "正在连接..." : trust ? "信任指纹并连接" : "连接"}</button>
         </form>
       </Dialog.Content>
     </Dialog.Portal>

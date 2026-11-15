@@ -377,12 +377,12 @@ export function MusicEditor({ active }: { active: boolean }) {
   return <div className={`music-page absolute inset-0 flex flex-col bg-ide-bg text-gray-200 ${active ? "" : "hidden"}`}>
     <audio ref={audio} loop={playbackMode.id === "single"} onLoadedMetadata={handleLoadedMetadata} onTimeUpdate={event => setPosition(event.currentTarget.currentTime)} onDurationChange={event => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => playNext(1)} onError={() => { if (current && audio.current?.src) { setPlaying(false); setError(`歌曲“${current.title}”加载失败，播放地址可能已失效或当前浏览器无法访问该音源`); } }} />
     <div className="music-search-row flex shrink-0 items-center gap-3 px-5 py-4">
-      <form onSubmit={search} className="music-search-form min-w-0 flex-1">
+      <form onSubmit={search} className="music-search-form ide-control-shell min-w-0 flex-1">
         <Search size={16} className="shrink-0 text-gray-500" />
         <input value={query} onChange={event => { setQuery(event.target.value); if (tab === "local" && !event.target.value.trim()) setLocalSearchTerm(""); }} placeholder={tab === "local" ? "搜索本地歌曲、歌手或专辑" : "搜索歌曲、歌手或专辑"} aria-label={tab === "local" ? "搜索本地歌曲" : "搜索在线歌曲"} />
-        <button type="submit" disabled={searching || (tab === "online" && !query.trim())}>{searching ? <LoaderCircle size={15} className="animate-spin" /> : <Search size={15} />}<span>搜索</span></button>
+        <button className="ide-button ide-button-secondary" type="submit" disabled={searching || (tab === "online" && !query.trim())}>{searching ? <LoaderCircle size={15} className="animate-spin" /> : <Search size={15} />}<span>搜索</span></button>
       </form>
-      <button type="button" className="media-import-button" disabled={importing} onClick={() => void importFiles()} title="复制音乐到本地曲库，并自动导入源目录内的同名专辑封面">{importing ? <LoaderCircle size={15} className="animate-spin" /> : <Import size={15} />}<span>{importing ? "正在导入…" : "导入音乐"}</span></button>
+      <button type="button" className="media-import-button ide-button ide-button-primary" disabled={importing} onClick={() => void importFiles()} title="复制音乐到本地曲库，并自动导入源目录内的同名专辑封面">{importing ? <LoaderCircle size={15} className="animate-spin" /> : <Import size={15} />}<span>{importing ? "正在导入…" : "导入音乐"}</span></button>
     </div>
 
     <div className="music-body flex min-h-0 flex-1">
@@ -433,7 +433,7 @@ export function MusicEditor({ active }: { active: boolean }) {
             </ContextMenu.Root></div>;
           })}</div>}
           {tab === "online" && hasMore && <div ref={loadMoreRef} className="music-load-more" style={{ minHeight: 1 }} />}
-          {tab === "online" && pageError && <div role="alert" className="music-message is-error">{pageError} <button type="button" className="music-text-button" onClick={() => void loadMore()}>重试加载</button></div>}
+          {tab === "online" && pageError && <div role="alert" className="music-message is-error">{pageError} <button type="button" className="music-text-button ide-button ide-button-secondary" onClick={() => void loadMore()}>重试加载</button></div>}
           {tab === "online" && !busy && results.length > 0 && !hasMore && <div className="music-load-more">已加载全部歌曲</div>}
           {tab === "online" && loadingMore && <div className="music-load-more"><LoaderCircle size={15} className="animate-spin" />正在加载更多歌曲</div>}
           {!searching && !visibleTracks.length && <div className="music-empty"><Music2 size={25} /><strong>{tab === "online" ? "搜索你想听的歌曲" : localSearchTerm ? "没有找到匹配的本地歌曲" : "本地曲库还是空的"}</strong><span>{tab === "online" ? "在线找到歌曲后，可以下载并保存到本机" : localSearchTerm ? "尝试其他关键词，或清空搜索查看全部本地歌曲" : "点击「导入音乐」添加文件，自动匹配源目录中的同名图片作为专辑封面"}</span></div>}
@@ -444,14 +444,14 @@ export function MusicEditor({ active }: { active: boolean }) {
     <Dialog.Root open={playlistDialogOpen} onOpenChange={setPlaylistDialogOpen}>
       <Dialog.Portal><Dialog.Overlay className="search-overlay" /><Dialog.Content className="create-name-dialog music-form-dialog" onKeyDown={event => event.stopPropagation()} onOpenAutoFocus={event => { event.preventDefault(); document.getElementById("music-playlist-name")?.focus(); }}>
         <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3"><Dialog.Title className="font-medium">新建歌单</Dialog.Title><Dialog.Close aria-label="关闭" className="rounded p-1 hover:bg-white/10"><X size={16} /></Dialog.Close></header>
-        <form className="flex flex-col gap-3 p-4" onSubmit={event => { event.preventDefault(); void createPlaylist(); }}><Dialog.Description className="text-xs text-gray-400">创建一个歌单来整理本地歌曲。</Dialog.Description><label htmlFor="music-playlist-name" className="text-xs">歌单名称</label><input id="music-playlist-name" value={playlistName} onChange={event => setPlaylistName(event.target.value)} maxLength={60} autoComplete="off" className="w-full rounded border border-ide-panel-border bg-ide-bg px-3 py-2 outline-none focus:border-ide-accent" /><footer className="mt-2 flex justify-end gap-2"><Dialog.Close className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10">取消</Dialog.Close><button type="submit" disabled={!playlistName.trim()} className="rounded bg-ide-accent px-4 py-1.5 text-white disabled:opacity-40">创建</button></footer></form>
+        <form className="flex flex-col gap-3 p-4" onSubmit={event => { event.preventDefault(); void createPlaylist(); }}><Dialog.Description className="text-xs text-gray-400">创建一个歌单来整理本地歌曲。</Dialog.Description><label htmlFor="music-playlist-name" className="text-xs">歌单名称</label><input id="music-playlist-name" value={playlistName} onChange={event => setPlaylistName(event.target.value)} maxLength={60} autoComplete="off" className="w-full ide-control rounded px-3 py-2" /><footer className="mt-2 flex justify-end gap-2"><Dialog.Close className="ide-button ide-button-secondary rounded px-4 py-1.5">取消</Dialog.Close><button type="submit" disabled={!playlistName.trim()} className="rounded ide-button ide-button-primary px-4 py-1.5">创建</button></footer></form>
       </Dialog.Content></Dialog.Portal>
     </Dialog.Root>
     <Dialog.Root open={!!confirmDialog} onOpenChange={open => { if (!open) setConfirmDialog(null); }}>
       <Dialog.Portal><Dialog.Overlay className="search-overlay" /><Dialog.Content className="create-name-dialog delete-confirm-dialog" onKeyDown={event => event.stopPropagation()}>
         <header className="flex items-center gap-3 px-5 pt-5"><span className="delete-confirm-icon"><AlertTriangle size={20} /></span><Dialog.Title className="flex-1 font-medium text-base">{confirmDialog?.kind === "track" ? "删除本地歌曲" : "删除歌单"}</Dialog.Title><Dialog.Close aria-label="取消" className="rounded p-1 text-gray-400 hover:bg-white/10"><X size={16} /></Dialog.Close></header>
         <div className="px-5 py-4"><Dialog.Description className="text-xs leading-6 text-gray-400">{confirmDialog?.kind === "track" ? <>将从本地曲库删除“{confirmDialog.track.title}”。歌单中对应条目会保留为失效状态。</> : <>确定删除歌单“{confirmDialog?.kind === "playlist" ? confirmDialog.playlist.name : ""}”？其中的歌曲文件不会被删除。</>}</Dialog.Description></div>
-        <footer className="flex justify-end gap-2 border-t border-ide-panel-border px-5 py-3"><Dialog.Close className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10">取消</Dialog.Close><button type="button" className="delete-confirm-action" onClick={() => { const request = confirmDialog; setConfirmDialog(null); if (request?.kind === "track") void removeTrack(request.track); else if (request?.kind === "playlist") void removePlaylist(request.playlist); }}>删除</button></footer>
+        <footer className="flex justify-end gap-2 border-t border-ide-panel-border px-5 py-3"><Dialog.Close className="ide-button ide-button-secondary rounded px-4 py-1.5">取消</Dialog.Close><button type="button" className="delete-confirm-action" onClick={() => { const request = confirmDialog; setConfirmDialog(null); if (request?.kind === "track") void removeTrack(request.track); else if (request?.kind === "playlist") void removePlaylist(request.playlist); }}>删除</button></footer>
       </Dialog.Content></Dialog.Portal>
     </Dialog.Root>
 

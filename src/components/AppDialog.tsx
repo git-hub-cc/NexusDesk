@@ -25,8 +25,8 @@ export function AppDialog() {
         </header>
         <Dialog.Description className="max-h-64 overflow-auto whitespace-pre-wrap break-words p-4 text-gray-300">{request.description}</Dialog.Description>
         <footer className="flex justify-end gap-2 border-t border-ide-panel-border px-4 py-3">
-          {request.cancelLabel && <button className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10" onClick={() => finish(false)}>{request.cancelLabel}</button>}
-          <button className={request.cancelLabel ? "delete-confirm-action" : "rounded bg-ide-accent px-4 py-1.5 text-white"} onClick={() => finish(true)}>{request.confirmLabel ?? "知道了"}</button>
+          {request.cancelLabel && <button className="ide-button ide-button-secondary rounded px-4 py-1.5" onClick={() => finish(false)}>{request.cancelLabel}</button>}
+          <button className={request.cancelLabel ? "delete-confirm-action" : "rounded ide-button ide-button-primary px-4 py-1.5"} onClick={() => finish(true)}>{request.confirmLabel ?? "知道了"}</button>
         </footer>
       </Dialog.Content>
     </Dialog.Portal>

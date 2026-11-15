@@ -143,7 +143,7 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
                 setProvider(next); setToken(settingsStorage.getItem(`nexusdesk.git.${next}Token`) || ""); setFilter("");
                 settingsStorage.setItem("nexusdesk.git.provider", next);
               }}
-              className="rounded border border-ide-panel-border bg-ide-bg px-3 py-2">
+              className="ide-control rounded px-3 py-2">
               <option value="github">GitHub</option><option value="gitlab">GitLab</option><option value="gitee">Gitee</option>
             </select>
             <label htmlFor={`${id}-token`} className="text-xs">访问 Token</label>
@@ -155,9 +155,9 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
                   settingsStorage.setItem(`nexusdesk.git.${provider}Token`, event.target.value);
                   settingsStorage.setItem("nexusdesk.git.provider", provider);
                 }}
-                className="min-w-0 flex-1 rounded border border-ide-panel-border bg-ide-bg px-3 py-2 outline-none focus:border-ide-accent" />
+                className="min-w-0 flex-1 ide-control rounded px-3 py-2" />
               <button type="button" disabled={busy || loading || !token.trim()} onClick={() => setRefresh(value => value + 1)}
-                className="rounded border border-ide-panel-border px-3 py-2 hover:bg-white/10 disabled:opacity-40">刷新</button>
+                className="ide-button ide-button-secondary rounded px-3 py-2">刷新</button>
             </div>
             <p className="text-xs text-gray-400">Token 按平台保存在本机，需有读取仓库的权限。留空可直接通过链接克隆；克隆成功后也会保存到该项目的 Git 设置。</p>
             {loading && <p role="status" className="text-xs text-gray-400">正在获取我的项目...</p>}
@@ -165,7 +165,7 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
             {loaded && <section className="flex flex-col gap-2" aria-label="我的项目">
               <label htmlFor={`${id}-filter`} className="text-xs">我的项目（{repositories.length}）</label>
               <input id={`${id}-filter`} value={filter} disabled={busy} placeholder="搜索项目" onChange={event => setFilter(event.target.value)}
-                className="rounded border border-ide-panel-border bg-ide-bg px-3 py-2 outline-none focus:border-ide-accent" />
+                className="ide-control rounded px-3 py-2" />
               <div className="max-h-40 overflow-y-auto rounded border border-ide-panel-border">
                 {visibleRepositories.map(repository => <button key={repository.cloneUrl} type="button" disabled={busy}
                   aria-pressed={url === repository.cloneUrl}
@@ -180,25 +180,25 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
             <input ref={urlInput} id={`${id}-url`} value={url} disabled={busy} autoComplete="url" spellCheck={false}
               placeholder="https:// 或 git@..."
               onChange={event => updateUrl(event.target.value)}
-              className="w-full rounded border border-ide-panel-border bg-ide-bg px-3 py-2 outline-none focus:border-ide-accent disabled:opacity-60" />
+              className="w-full ide-control rounded px-3 py-2" />
             <label htmlFor={`${id}-name`} className="text-xs">项目名称</label>
             <input id={`${id}-name`} value={name} disabled={busy} autoComplete="off" spellCheck={false}
               onChange={event => { setName(event.target.value); setError(""); }}
-              className="w-full rounded border border-ide-panel-border bg-ide-bg px-3 py-2 outline-none focus:border-ide-accent disabled:opacity-60" />
+              className="w-full ide-control rounded px-3 py-2" />
             <label htmlFor={`${id}-location`} className="text-xs">保存位置</label>
             <div className="flex gap-2">
               <input id={`${id}-location`} value={location} disabled={busy} autoComplete="off" spellCheck={false}
                 placeholder="选择或输入父目录路径"
                 onChange={event => { setLocation(event.target.value); rememberProjectSaveLocation(event.target.value); setError(""); }}
-                className="min-w-0 flex-1 rounded border border-ide-panel-border bg-ide-bg px-3 py-2 outline-none focus:border-ide-accent disabled:opacity-60" />
-              <button type="button" disabled={busy} onClick={() => void browse()} className="shrink-0 rounded border border-ide-panel-border px-3 py-2 hover:bg-white/10 disabled:opacity-40">浏览...</button>
+                className="min-w-0 flex-1 ide-control rounded px-3 py-2" />
+              <button type="button" disabled={busy} onClick={() => void browse()} className="shrink-0 ide-button ide-button-secondary rounded px-3 py-2">浏览...</button>
             </div>
             {targetPath && <p className="break-all text-xs text-gray-400">克隆到：{targetPath}</p>}
             {busy && <p role="status" className="text-xs text-gray-400">正在克隆仓库...</p>}
             {error && <p role="alert" className="break-words text-xs text-red-400">{error}</p>}
             <footer className="mt-2 flex justify-end gap-2">
-              <Dialog.Close disabled={busy} className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10 disabled:opacity-40">取消</Dialog.Close>
-              <button type="submit" disabled={busy || !url.trim() || !targetPath} className="rounded bg-ide-accent px-4 py-1.5 text-white disabled:opacity-40">{busy ? "正在克隆..." : "克隆"}</button>
+              <Dialog.Close disabled={busy} className="ide-button ide-button-secondary rounded px-4 py-1.5">取消</Dialog.Close>
+              <button type="submit" disabled={busy || !url.trim() || !targetPath} className="rounded ide-button ide-button-primary px-4 py-1.5">{busy ? "正在克隆..." : "克隆"}</button>
             </footer>
           </form>
         </Dialog.Content>

@@ -72,11 +72,11 @@ export function CreateNameDialog({ title, description, label, onClose, onCreate,
               aria-invalid={!!error} aria-describedby={error ? `${id}-error` : undefined}
               onChange={event => { setName(event.target.value); setError(""); }}
               onKeyDown={event => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }}
-              className="w-full rounded border border-ide-panel-border bg-ide-bg px-3 py-2 outline-none focus:border-ide-accent disabled:opacity-60" />
+              className="w-full ide-control rounded px-3 py-2" />
             {error && <p id={`${id}-error`} role="alert" className="break-words text-xs text-red-400">{error}</p>}
             <footer className="mt-2 flex justify-end gap-2">
-              <Dialog.Close disabled={busy} className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10 disabled:opacity-40">取消</Dialog.Close>
-              <button type="submit" disabled={busy || !name.trim()} className="rounded bg-ide-accent px-4 py-1.5 text-white disabled:opacity-40">{busy ? "正在处理…" : "确定"}</button>
+              <Dialog.Close disabled={busy} className="ide-button ide-button-secondary rounded px-4 py-1.5">取消</Dialog.Close>
+              <button type="submit" disabled={busy || !name.trim()} className="rounded ide-button ide-button-primary px-4 py-1.5">{busy ? "正在处理…" : "确定"}</button>
             </footer>
           </form>
         </Dialog.Content>
