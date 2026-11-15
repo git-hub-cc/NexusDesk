@@ -909,7 +909,9 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
     const view = viewRef.current;
     if (!navigationEnabled || !view || !editorJump || editorJump.path !== activeTab?.path || editorJump.pane !== pane) return;
     const line = view.state.doc.line(Math.max(1, Math.min(editorJump.line, view.state.doc.lines)));
-    view.dispatch({ selection: { anchor: line.from, head: line.to }, effects: EditorView.scrollIntoView(line.from, { y: "center" }) });
+    const from = Math.max(0, Math.min(editorJump.from ?? line.from, view.state.doc.length));
+    const to = Math.max(from, Math.min(editorJump.to ?? line.to, view.state.doc.length));
+    view.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: "center" }) });
     view.focus();
     if (useWorkspaceStore.getState().editorJump === editorJump) useWorkspaceStore.setState({ editorJump: null });
   }, [editorJump, activeTabId, activeTab?.path, activeTab?.content, pane, navigationEnabled]);

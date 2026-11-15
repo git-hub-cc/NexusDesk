@@ -354,7 +354,7 @@ interface WorkspaceState {
 
   locateSignal: number;
   locatePath: string | null;
-  editorJump: { path: string; line: number; pane: PaneType } | null;
+  editorJump: { path: string; line: number; pane: PaneType; from?: number; to?: number } | null;
   graphLocation: { path: string; line: number; pane: PaneType } | null;
   locateGraph: (path: string, line: number, pane: PaneType) => void;
   triggerLocate: (path?: string) => void;

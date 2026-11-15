@@ -509,7 +509,7 @@
 .search-result-heading { display: flex; align-items: baseline; gap: 16px; }
 .search-result-heading strong { flex-shrink: 0; font-weight: 500; }
 .search-result-heading span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #92969e; font-size: 11px; }
-.search-result p { margin-top: 4px; color: #b3b6bd; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.6; }
+.search-result p { margin-top: 4px; color: #b3b6bd; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; white-space: normal; line-height: 1.6; }
 .search-empty { padding: 60px 20px; text-align: center; color: #92969e; }
 .search-dialog footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; padding: 10px 16px; border-top: 1px solid #43454a; color: #92969e; font-size: 11px; }
 .search-error { color: #ff9b9b; padding: 10px 16px; overflow-wrap: anywhere; }

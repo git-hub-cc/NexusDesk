@@ -87,6 +87,10 @@ export function SearchEverywhere({ onClose, recent = false }: { onClose: () => v
             useWorkspaceStore.getState().openTab(existing ?? {
                 id: result.path, path: result.path, title: result.title, content, isDirty: false,
             });
+            if (result.matchStart != null && result.matchEnd != null) {
+                const current = useWorkspaceStore.getState();
+                useWorkspaceStore.setState({ editorJump: { path: result.path, line: 1, from: result.matchStart, to: result.matchEnd, pane: current.focusedPane } });
+            }
             onClose();
         } catch (cause) { if (alive.current) setError(String(cause)); }
         finally { if (alive.current) setOpening(false); }

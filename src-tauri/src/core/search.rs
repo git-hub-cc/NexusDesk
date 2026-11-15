@@ -18,6 +18,8 @@ pub struct SearchResult {
     relative_path: String,
     snippet: String,
     score: f32,
+    match_start: Option<usize>,
+    match_end: Option<usize>,
 }
 
 #[derive(Default, Deserialize)]
@@ -55,22 +57,32 @@ fn matching_snippet(content: &str, pattern: &Regex) -> String {
     let Some(found) = pattern.find(content) else {
         return String::new();
     };
-    let start = content[..found.start()]
+    let line_start = content[..found.start()]
+        .rfind(['\r', '\n'])
+        .map_or(0, |index| index + 1);
+    let start = content[line_start..found.start()]
         .char_indices()
         .rev()
-        .nth(40)
-        .map_or(0, |(i, _)| i);
-    let text: String = content[start..].chars().take(200).collect();
+        .nth(23)
+        .map_or(line_start, |(index, _)| line_start + index);
+    // 优先保留完整命中，剩余字符预算用于展示后文。
+    let remaining = 200usize.saturating_sub(content[start..found.end()].chars().count());
+    let end = content[found.end()..]
+        .char_indices()
+        .nth(remaining)
+        .map_or(content.len(), |(index, _)| found.end() + index);
+    let text = &content[start..end];
     format!(
         "{}{}{}",
         if start > 0 { "…" } else { "" },
         text,
-        if start + text.len() < content.len() {
-            "…"
-        } else {
-            ""
-        }
+        if end < content.len() { "…" } else { "" }
     )
+}
+
+fn editor_offset(content: &str, byte_offset: usize) -> usize {
+    let prefix = &content[..byte_offset];
+    prefix.encode_utf16().count() - prefix.matches("\r\n").count()
 }
 
 fn search(
@@ -156,6 +168,7 @@ fn search(
             let content = std::str::from_utf8(&bytes).unwrap_or_default();
             if title_match || pattern.is_match(content) {
                 let raw_path = path.to_string_lossy();
+                let found = pattern.find(content);
                 let result = SearchResult {
                     path: raw_path
                         .strip_prefix(r"\\?\")
@@ -169,6 +182,8 @@ fn search(
                         .to_string(),
                     snippet: matching_snippet(content, &pattern),
                     score: if title_match { 20.0 } else { 1.0 },
+                    match_start: found.map(|matched| editor_offset(content, matched.start())),
+                    match_end: found.map(|matched| editor_offset(content, matched.end())),
                 };
                 // Only merging a match takes the lock; file reads and matching run in parallel.
                 let mut results = results.lock().unwrap();
@@ -265,6 +280,54 @@ pub async fn search_everywhere(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snippets_prioritize_the_matching_line_and_limit_leading_context() {
+        let pattern = matcher("needle", &SearchOptions::default()).unwrap();
+        assert_eq!(
+            matching_snippet("heading\r\n\r\n    needle follows\r\nnext", &pattern),
+            "…    needle follows\r\nnext"
+        );
+        assert_eq!(
+            matching_snippet(&format!("{}needle tail", "中".repeat(100)), &pattern),
+            format!("…{}needle tail", "中".repeat(24))
+        );
+        assert_eq!(matching_snippet("no match", &pattern), "");
+    }
+
+    #[test]
+    fn snippets_keep_complete_matches_and_indicate_truncated_context() {
+        let query = "中".repeat(256);
+        let pattern = matcher(&query, &SearchOptions::default()).unwrap();
+        assert_eq!(
+            matching_snippet(&format!("before {query} after"), &pattern),
+            format!("before {query}…")
+        );
+        let pattern = matcher("needle", &SearchOptions::default()).unwrap();
+        let snippet = matching_snippet(&format!("needle{}", "😀".repeat(220)), &pattern);
+        assert!(snippet.starts_with("needle"));
+        assert!(snippet.ends_with('…'));
+        assert_eq!(snippet.chars().count(), 201);
+        assert_eq!(matching_snippet("needle", &pattern), "needle");
+    }
+
+    #[test]
+    fn match_offsets_follow_editor_line_endings_and_utf16() {
+        let content = "first\r\n😀 needle";
+        let matched = matcher("needle", &SearchOptions::default())
+            .unwrap()
+            .find(content)
+            .unwrap();
+        assert_eq!(
+            editor_offset(content, matched.start()),
+            "first\n😀 ".encode_utf16().count()
+        );
+        assert_eq!(
+            editor_offset(content, matched.end()),
+            "first\n😀 needle".encode_utf16().count()
+        );
+    }
+
     #[test]
     fn matching_options() {
         let mut options = SearchOptions::default();

@@ -12,6 +12,8 @@ export interface SearchResult {
     relativePath: string;
     snippet: string;
     score: number;
+    matchStart?: number | null;
+    matchEnd?: number | null;
 }
 
 export interface SearchOptions { extensions: string; caseSensitive: boolean; regex: boolean; wholeWord: boolean; includeIgnored: boolean }
