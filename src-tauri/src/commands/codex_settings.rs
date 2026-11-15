@@ -15,7 +15,7 @@ pub struct CodexSettings {
     check_for_update_on_startup: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexSettingsInput {
     model: String,
@@ -315,6 +315,16 @@ pub fn codex_settings_save(input: CodexSettingsInput) -> Result<(), String> {
     if let Some(auth_bytes) = auth_bytes {
         write_atomic(&dir.join("auth.json"), &auth_bytes)?;
     }
+    let mut saved = serde_json::to_value(&input).map_err(|error| error.to_string())?;
+    let auth = read_json(&dir.join("auth.json"))?;
+    saved["apiKey"] = auth
+        .get("OPENAI_API_KEY")
+        .cloned()
+        .unwrap_or(JsonValue::Null);
+    crate::core::db::write_global_value(
+        "nexusdesk.codex.saved",
+        &serde_json::to_string(&saved).map_err(|error| error.to_string())?,
+    )?;
     Ok(())
 }
 

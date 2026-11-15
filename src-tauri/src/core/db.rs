@@ -177,6 +177,27 @@ mod tests {
     }
 }
 
+pub fn read_global_value(key: &str) -> Result<Option<String>, String> {
+    use rusqlite::OptionalExtension;
+    let conn = init_db(None).map_err(|error| error.to_string())?;
+    conn.query_row(
+        "SELECT value FROM global_settings WHERE key = ?1",
+        [key],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|error| error.to_string())
+}
+
+pub fn write_global_value(key: &str, value: &str) -> Result<(), String> {
+    let conn = init_db(None).map_err(|error| error.to_string())?;
+    conn.execute(
+        "INSERT INTO global_settings(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        params![key, value],
+    ).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub fn init_db(
     custom_path: Option<&str>,
 ) -> std::result::Result<Connection, Box<dyn std::error::Error>> {

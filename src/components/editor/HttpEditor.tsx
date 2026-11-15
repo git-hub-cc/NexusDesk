@@ -121,10 +121,14 @@ function parseHttpFile(content: string): HttpRequest[] {
 
 const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: string }) => {
   const requests = useMemo(() => parseHttpFile(content), [content]);
-  const [timeoutSeconds, setTimeoutSeconds] = useState(300);
-  const [maxSizeMb, setMaxSizeMb] = useState(20);
-  const [maxImageSizeMb, setMaxImageSizeMb] = useState(20);
-  const [maxImageCount, setMaxImageCount] = useState(10);
+  const readLimit = (name: string, fallback: number) => {
+    const value = Number(settingsStorage.getItem(`nexusdesk.http.limits.${name}`));
+    return Number.isSafeInteger(value) && value > 0 && Number.isSafeInteger(value * 1024 * 1024) ? value : fallback;
+  };
+  const [timeoutSeconds, setTimeoutSeconds] = useState(() => readLimit("timeoutSeconds", 300));
+  const [maxSizeMb, setMaxSizeMb] = useState(() => readLimit("maxSizeMb", 20));
+  const [maxImageSizeMb, setMaxImageSizeMb] = useState(() => readLimit("maxImageSizeMb", 20));
+  const [maxImageCount, setMaxImageCount] = useState(() => readLimit("maxImageCount", 10));
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
   const [responseTab, setResponseTab] = useState<"body" | "extract" | "urls" | "base64">("body");
@@ -306,10 +310,10 @@ const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: s
   return (
     <div className="flex flex-col h-full bg-ide-bg text-sm">
       <div className="flex flex-wrap items-center gap-3 px-3 py-2 border-b border-ide-panel-border text-xs">
-        <label className="flex items-center gap-1">超时（秒）<input aria-label="请求超时（秒）" type="number" min={1} step={1} value={timeoutSeconds} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value > 0) setTimeoutSeconds(value); }} className="w-20 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" /></label>
-        <label className="flex items-center gap-1">截断大小（MB）<input aria-label="响应截断大小（MB）" type="number" min={1} step={1} value={maxSizeMb} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value > 0 && Number.isSafeInteger(value * 1024 * 1024)) setMaxSizeMb(value); }} className="w-20 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" /></label>
-        <label className="flex items-center gap-1">单张图片（MB）<input aria-label="单张图片大小上限（MB）" type="number" min={1} step={1} value={maxImageSizeMb} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value > 0 && Number.isSafeInteger(value * 1024 * 1024)) setMaxImageSizeMb(value); }} className="w-20 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" /></label>
-        <label className="flex items-center gap-1">图片数量<input aria-label="图片数量上限" type="number" min={1} step={1} value={maxImageCount} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value > 0) setMaxImageCount(value); }} className="w-20 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" /></label>
+        <label className="flex items-center gap-1">超时（秒）<input aria-label="请求超时（秒）" type="number" min={1} step={1} value={timeoutSeconds} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value > 0) { setTimeoutSeconds(value); settingsStorage.setItem("nexusdesk.http.limits.timeoutSeconds", String(value)); } }} className="w-20 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" /></label>
+        <label className="flex items-center gap-1">截断大小（MB）<input aria-label="响应截断大小（MB）" type="number" min={1} step={1} value={maxSizeMb} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value > 0 && Number.isSafeInteger(value * 1024 * 1024)) { setMaxSizeMb(value); settingsStorage.setItem("nexusdesk.http.limits.maxSizeMb", String(value)); } }} className="w-20 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" /></label>
+        <label className="flex items-center gap-1">单张图片（MB）<input aria-label="单张图片大小上限（MB）" type="number" min={1} step={1} value={maxImageSizeMb} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value > 0 && Number.isSafeInteger(value * 1024 * 1024)) { setMaxImageSizeMb(value); settingsStorage.setItem("nexusdesk.http.limits.maxImageSizeMb", String(value)); } }} className="w-20 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" /></label>
+        <label className="flex items-center gap-1">图片数量<input aria-label="图片数量上限" type="number" min={1} step={1} value={maxImageCount} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value > 0) { setMaxImageCount(value); settingsStorage.setItem("nexusdesk.http.limits.maxImageCount", String(value)); } }} className="w-20 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" /></label>
       </div>
       <div className="flex-1 flex min-h-0">
         <div className="w-1/3 border-r border-ide-panel-border flex flex-col min-w-[200px]">

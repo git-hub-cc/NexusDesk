@@ -16,6 +16,10 @@ export function isGlobalSetting(key: string): boolean {
 function changed() { window.dispatchEvent(new Event("global-settings-changed")); }
 
 export const settingsStorage = {
+  entries(prefix: string): [string, string][] {
+    if (isTauri()) return Object.entries(cache).filter(([key]) => key.startsWith(prefix));
+    return Object.keys(localStorage).filter(key => key.startsWith(prefix)).map(key => [key, localStorage.getItem(key) || ""]);
+  },
   getItem(key: string): string | null {
     return isTauri() ? cache[key] ?? null : localStorage.getItem(key);
   },

@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { codexSettingsApi } from "@/lib/api";
 import { settingsStorage } from "@/lib/globalSettings";
 import { AUTO_REVIEW_PROMPT_KEY, DEFAULT_AUTO_REVIEW_PROMPT } from "@/lib/codexReview";
+import { readSettingsDraft, useSettingsAutosave, waitForSettingsSave } from "@/lib/useSettingsAutosave";
+
+const DRAFT_KEY = "nexusdesk.settingsDraft:codex";
+type SettingsInput = Parameters<typeof codexSettingsApi.save>[0];
 
 export function CodexSettings() {
   const [model, setModel] = useState("");
@@ -13,46 +17,28 @@ export function CodexSettings() {
   const [checkForUpdateOnStartup, setCheckForUpdateOnStartup] = useState(true);
   const [autoReview, setAutoReview] = useState(settingsStorage.getItem("nexusdesk.codex.autoReview") === "true");
   const [autoReviewPrompt, setAutoReviewPrompt] = useState(settingsStorage.getItem(AUTO_REVIEW_PROMPT_KEY) ?? DEFAULT_AUTO_REVIEW_PROMPT);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const loaded = useRef(false);
-  const saveQueue = useRef<Promise<void>>(Promise.resolve());
-  const saveVersion = useRef(0);
+  const [loaded, setLoaded] = useState(false);
   const inputClass = "w-full min-w-0 rounded border border-ide-panel-border bg-ide-bg px-2 py-1.5 outline-none focus:border-ide-accent";
 
   useEffect(() => {
-    loaded.current = false;
-    void codexSettingsApi.read().then(settings => {
-      setModel(settings.model);
-      setProxyUrl(settings.proxyUrl);
+    let active = true;
+    void waitForSettingsSave(DRAFT_KEY).then(() => codexSettingsApi.read()).then(settings => {
+      if (!active) return;
+      const restored = { ...settings, ...readSettingsDraft<SettingsInput>(DRAFT_KEY) };
+      setModel(restored.model);
+      setProxyUrl(restored.proxyUrl);
+      setApiKey(restored.apiKey || "");
       setApiKeyConfigured(settings.apiKeyConfigured);
-      setTrustMode(settings.trustMode);
-      setShowTooltips(settings.showTooltips);
-      setCheckForUpdateOnStartup(settings.checkForUpdateOnStartup);
-      loaded.current = true;
-    }).catch(reason => setError(String(reason)));
+      setTrustMode(restored.trustMode);
+      setShowTooltips(restored.showTooltips);
+      setCheckForUpdateOnStartup(restored.checkForUpdateOnStartup);
+      setLoaded(true);
+    }).catch(reason => { if (active) setError(String(reason)); });
+    return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    if (!loaded.current) return;
-    const timer = window.setTimeout(async () => {
-      const version = ++saveVersion.current;
-      setBusy(true);
-      setError("");
-      const save = () => codexSettingsApi.save({ model, proxyUrl, apiKey: apiKey || undefined, trustMode, showTooltips, checkForUpdateOnStartup });
-      const currentSave = saveQueue.current.catch(() => {}).then(save);
-      saveQueue.current = currentSave;
-      void currentSave.then(() => {
-        if (version !== saveVersion.current) return;
-        if (apiKey.trim()) setApiKeyConfigured(true);
-      }).catch(reason => {
-        if (version === saveVersion.current) setError(String(reason));
-      }).finally(() => {
-        if (version === saveVersion.current) setBusy(false);
-      });
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [model, proxyUrl, apiKey, trustMode, showTooltips, checkForUpdateOnStartup]);
+  const { busy, error: saveError } = useSettingsAutosave(DRAFT_KEY, { model, proxyUrl, apiKey: apiKey || undefined, trustMode, showTooltips, checkForUpdateOnStartup }, loaded, codexSettingsApi.save);
 
   useEffect(() => {
     settingsStorage.setItem("nexusdesk.codex.autoReview", String(autoReview));
@@ -65,10 +51,10 @@ export function CodexSettings() {
       <h2 className="text-xl font-semibold">Codex</h2>
       <p className="mt-1 text-sm text-gray-400">配置 Codex CLI 使用的模型、兼容 API 地址和 API Key。</p>
     </header>
-    <div className="flex flex-col gap-4 text-sm">
+    <fieldset disabled={!loaded} className="flex flex-col gap-4 text-sm">
       <label className="grid gap-1">模型<input className={inputClass} value={model} onChange={event => setModel(event.target.value)} placeholder="例如 gpt-5-codex" spellCheck={false} /></label>
       <label className="grid gap-1">代理 / API 基础地址<input className={inputClass} value={proxyUrl} onChange={event => setProxyUrl(event.target.value)} placeholder="https://api.openai.com/v1（留空使用默认提供方）" spellCheck={false} /></label>
-      <label className="grid gap-1">OPENAI_API_KEY<input className={inputClass} type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={apiKeyConfigured ? "已配置；留空保留当前密钥" : "输入 API Key"} autoComplete="new-password" /></label>
+      <label className="grid gap-1">OPENAI_API_KEY<input className={inputClass} type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={apiKeyConfigured || apiKey.trim() ? "已配置；留空保留当前密钥" : "输入 API Key"} autoComplete="new-password" /></label>
       <label className="flex items-start gap-2">
         <input type="checkbox" className="mt-0.5 accent-ide-accent" checked={trustMode} onChange={event => setTrustMode(event.target.checked)} />
         <span><span className="block">信任模式</span><span className="mt-0.5 block text-xs text-gray-400">允许 Codex 不受沙箱限制地访问系统。</span></span>
@@ -88,8 +74,8 @@ export function CodexSettings() {
         <input type="checkbox" className="mt-0.5 accent-ide-accent" checked={checkForUpdateOnStartup} onChange={event => setCheckForUpdateOnStartup(event.target.checked)} />
         <span><span className="block">启动时检查新版本</span><span className="mt-0.5 block text-xs text-gray-400">控制 Codex 启动时是否显示版本更新提示。</span></span>
       </label>
-      {error && <p role="alert" className="break-all text-red-400">{error}</p>}
+      {(error || saveError) && <p role="alert" className="break-all text-red-400">{error || saveError}</p>}
       {busy && <p className="text-xs text-gray-400" role="status">正在保存…</p>}
-    </div>
+    </fieldset>
   </div>;
 }

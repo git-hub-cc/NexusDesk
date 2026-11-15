@@ -5,6 +5,12 @@ import { fsApi, gitApi, type GitCloneAuth, type GitProvider, type GitRepository 
 import { getProjectSaveLocation, rememberProjectSaveLocation } from "@/lib/projectLocation";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { validateEntryName } from "@/components/explorer/CreateNameDialog";
+import { settingsStorage } from "@/lib/globalSettings";
+
+function savedProvider(): GitProvider {
+  const value = settingsStorage.getItem("nexusdesk.git.provider");
+  return value === "gitlab" || value === "gitee" ? value : "github";
+}
 
 interface CloneProjectDialogProps {
   onClone: (url: string, targetPath: string, auth?: GitCloneAuth) => Promise<void>;
@@ -27,8 +33,8 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
   const [error, setError] = useState("");
   const root = useWorkspaceStore(state => state.rootPath);
   const credentialsEdited = useRef(false);
-  const [provider, setProvider] = useState<GitProvider>("github");
-  const [token, setToken] = useState("");
+  const [provider, setProvider] = useState<GitProvider>(savedProvider);
+  const [token, setToken] = useState(() => settingsStorage.getItem(`nexusdesk.git.${savedProvider()}Token`) || "");
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState("");
@@ -40,12 +46,17 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
 
   useEffect(() => {
     let active = true;
-    if (root && !root.startsWith("sftp://")) {
+    if (root && !root.startsWith("sftp://") && !settingsStorage.getItem(`nexusdesk.git.${savedProvider()}Token`)) {
       void gitApi.settings(root).then(settings => {
         if (!active || credentialsEdited.current || !settings.token) return;
         const host = /^https:\/\/([^/]+)/i.exec(settings.remote)?.[1]?.toLowerCase();
         const savedProvider = host === "github.com" ? "github" : host === "gitlab.com" ? "gitlab" : host === "gitee.com" ? "gitee" : null;
-        if (savedProvider) { setProvider(savedProvider); setToken(settings.token); }
+        if (savedProvider) {
+          const savedToken = settingsStorage.getItem(`nexusdesk.git.${savedProvider}Token`) ?? settings.token;
+          setProvider(savedProvider); setToken(savedToken);
+          settingsStorage.setItem("nexusdesk.git.provider", savedProvider);
+          settingsStorage.setItem(`nexusdesk.git.${savedProvider}Token`, savedToken);
+        }
       }).catch(() => { /* A project without Git settings can still clone repositories. */ });
     }
     return () => { active = false; };
@@ -126,7 +137,12 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
           <form onSubmit={event => void submit(event)} className="flex flex-col gap-3 p-4" aria-busy={busy}>
             <label htmlFor={`${id}-provider`} className="text-xs">代码托管平台</label>
             <select id={`${id}-provider`} value={provider} disabled={busy}
-              onChange={event => { credentialsEdited.current = true; setProvider(event.target.value as GitProvider); setToken(""); setFilter(""); }}
+              onChange={event => {
+                credentialsEdited.current = true;
+                const next = event.target.value as GitProvider;
+                setProvider(next); setToken(settingsStorage.getItem(`nexusdesk.git.${next}Token`) || ""); setFilter("");
+                settingsStorage.setItem("nexusdesk.git.provider", next);
+              }}
               className="rounded border border-ide-panel-border bg-ide-bg px-3 py-2">
               <option value="github">GitHub</option><option value="gitlab">GitLab</option><option value="gitee">Gitee</option>
             </select>
@@ -134,12 +150,16 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
             <div className="flex gap-2">
               <input id={`${id}-token`} type="password" value={token} disabled={busy} autoComplete="off" spellCheck={false}
                 placeholder="输入 Token，自动列出我的项目"
-                onChange={event => { credentialsEdited.current = true; setToken(event.target.value); }}
+                onChange={event => {
+                  credentialsEdited.current = true; setToken(event.target.value);
+                  settingsStorage.setItem(`nexusdesk.git.${provider}Token`, event.target.value);
+                  settingsStorage.setItem("nexusdesk.git.provider", provider);
+                }}
                 className="min-w-0 flex-1 rounded border border-ide-panel-border bg-ide-bg px-3 py-2 outline-none focus:border-ide-accent" />
               <button type="button" disabled={busy || loading || !token.trim()} onClick={() => setRefresh(value => value + 1)}
                 className="rounded border border-ide-panel-border px-3 py-2 hover:bg-white/10 disabled:opacity-40">刷新</button>
             </div>
-            <p className="text-xs text-gray-400">Token 需有读取仓库的权限。留空可直接通过链接克隆；克隆成功后保存到该项目的 Git 设置。</p>
+            <p className="text-xs text-gray-400">Token 按平台保存在本机，需有读取仓库的权限。留空可直接通过链接克隆；克隆成功后也会保存到该项目的 Git 设置。</p>
             {loading && <p role="status" className="text-xs text-gray-400">正在获取我的项目...</p>}
             {listError && <p role="alert" className="text-xs text-red-400">{listError}</p>}
             {loaded && <section className="flex flex-col gap-2" aria-label="我的项目">

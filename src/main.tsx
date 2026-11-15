@@ -2,6 +2,7 @@ import "./lib/logging";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { flushGlobalSettings, initializeGlobalSettings } from "./lib/globalSettings";
+import { flushSettingsAutosaves } from "./lib/useSettingsAutosave";
 import { flushUIState } from "./lib/uiPersistence";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
@@ -78,6 +79,7 @@ async function boot() {
         snapshotUI();
         const { flushPendingWrites } = await import("./store/workspaceStore");
         await flushPendingWrites();
+        await flushSettingsAutosaves();
         snapshotUI();
         await flushGlobalSettings();
         closeReady = true;

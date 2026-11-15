@@ -7,12 +7,29 @@ import { remoteUri } from "@/lib/remote";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { useTerminalStore } from "@/store/terminalStore";
 import { useLayoutStore } from "@/store/layoutStore";
+import { readSettingsDraft } from "@/lib/useSettingsAutosave";
+
+const FORM_KEY = "nexusdesk.sftp.form";
+type ConnectionForm = { host: string; port: string; username: string; password: string };
+type SavedConnection = { id: string; host: string; port: number; username: string; password: string };
+
+function savedConnections(): SavedConnection[] {
+  return settingsStorage.entries("sftp-connection:").flatMap(([key, raw]) => {
+    try {
+      const value = JSON.parse(raw);
+      if (typeof value.host !== "string" || typeof value.username !== "string" || typeof value.password !== "string" || !Number.isInteger(value.port)) return [];
+      return [{ ...value, id: key.slice("sftp-connection:".length) }];
+    } catch { return []; }
+  });
+}
 
 export function SftpConnectDialog({ onClose }: { onClose: () => void }) {
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState("22");
-  const [username, setUsername] = useState("root");
-  const [password, setPassword] = useState("");
+  const [connections] = useState(savedConnections);
+  const [saved] = useState(() => readSettingsDraft<ConnectionForm>(FORM_KEY));
+  const [host, setHost] = useState(saved.host || "");
+  const [port, setPort] = useState(saved.port || "22");
+  const [username, setUsername] = useState(saved.username || "root");
+  const [password, setPassword] = useState(saved.password || "");
   const [trust, setTrust] = useState<string>();
   const [busy, setBusy] = useState(false);
   const working = useRef(false);
@@ -45,6 +62,7 @@ export function SftpConnectDialog({ onClose }: { onClose: () => void }) {
       if (!await useWorkspaceStore.getState().setProject(root)) throw new Error("无法打开远程目录，请检查目录权限或未保存的文件");
       settingsStorage.setItem(historyKey, id);
       settingsStorage.setItem(`sftp-label:${id}`, `${username.trim()}@${hostname}:${serverPort}`);
+      settingsStorage.setItem(`sftp-connection:${id}`, JSON.stringify({ host: hostname, port: serverPort, username: username.trim(), password, fingerprint: result.fingerprint }));
       useWorkspaceStore.setState({ remoteLabel: `${username.trim()}@${hostname}:${serverPort}` });
       await useTerminalStore.getState().createSession({ id: "ssh", name: "终端", command: "" }, root);
       useLayoutStore.setState({ leftSidebarVisible: true, bottomPanelVisible: true, bottomPanelTab: "terminal" });
@@ -65,11 +83,22 @@ export function SftpConnectDialog({ onClose }: { onClose: () => void }) {
         </header>
         <Dialog.Description className="sr-only">连接后，在工作区文件树中浏览服务器目录，在底部终端中使用远程 Shell。</Dialog.Description>
         <form className="flex flex-col gap-3 p-4 text-sm" onSubmit={event => { event.preventDefault(); void connect(); }}>
+          {connections.length > 0 && <label className="flex flex-col gap-1">已保存的连接<select disabled={busy} defaultValue="" className="rounded border border-ide-panel-border bg-ide-bg px-3 py-2" onChange={event => {
+            const connection = connections.find(item => item.id === event.target.value);
+            if (!connection) return;
+            const next = { host: connection.host, port: String(connection.port), username: connection.username, password: connection.password };
+            setHost(next.host); setPort(next.port); setUsername(next.username); setPassword(next.password); setTrust(undefined);
+            settingsStorage.setItem(FORM_KEY, JSON.stringify(next));
+          }}><option value="" disabled>选择已保存的服务器</option>{connections.map(connection => <option key={connection.id} value={connection.id}>{connection.username}@{connection.host}:{connection.port}</option>)}</select></label>}
           {([ ["链接 / 主机", host, setHost, "text"], ["端口", port, setPort, "number"], ["用户名", username, setUsername, "text"], ["密码", password, setPassword, "password"] ] as const).map(([label, value, setter, type]) =>
             <label key={label} className="flex flex-col gap-1">{label}<input required disabled={busy} type={type} value={value} autoComplete="off"
               min={type === "number" ? 1 : undefined} max={type === "number" ? 65535 : undefined} step={type === "number" ? 1 : undefined}
               placeholder={label === "链接 / 主机" ? "192.168.1.10 或 sftp://server:22" : undefined}
-              onChange={event => { setter(event.target.value); setTrust(undefined); }}
+              onChange={event => {
+                setter(event.target.value); setTrust(undefined);
+                const field = label === "链接 / 主机" ? "host" : label === "端口" ? "port" : label === "用户名" ? "username" : "password";
+                settingsStorage.setItem(FORM_KEY, JSON.stringify({ host, port, username, password, [field]: event.target.value }));
+              }}
               className="rounded border border-ide-panel-border bg-ide-bg px-3 py-2 outline-none focus:border-ide-accent disabled:opacity-60" /></label>)}
           {trust && <div className="break-all rounded border border-ide-panel-border p-3 text-xs">请与服务器管理员核对 SSH 主机指纹（SHA-256 十六进制）：<p className="my-2 font-mono select-text">{trust}</p>确认后将发送密码进行认证。</div>}
           {error && <p role="alert" className="text-red-400">{error}</p>}

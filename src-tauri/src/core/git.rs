@@ -94,12 +94,23 @@ fn token_path(repo: &Repository) -> Result<std::path::PathBuf, String> {
 }
 fn load_credentials(repo: &Repository) -> Result<(String, String), String> {
     let path = token_path(repo)?;
-    let raw = match std::fs::read_to_string(path) {
+    let key = format!(
+        "git-credentials:{}",
+        path.file_name().unwrap().to_string_lossy()
+    );
+    if let Some(raw) = super::db::read_global_value(&key)? {
+        return serde_json::from_str(&raw)
+            .map_err(|_| "已保存的 Git 凭据格式无效，请重新保存 Token".into());
+    }
+    let raw = match std::fs::read_to_string(&path) {
         Ok(raw) => raw,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Default::default()),
         Err(_) => return Err("无法读取已保存的 Git Token，请在版本控制设置中重新保存".into()),
     };
-    serde_json::from_str(&raw).map_err(|_| "已保存的 Git 凭据格式无效，请重新保存 Token".into())
+    let credentials = serde_json::from_str(&raw)
+        .map_err(|_| "已保存的 Git 凭据格式无效，请重新保存 Token".to_string())?;
+    super::db::write_global_value(&key, &raw)?;
+    Ok(credentials)
 }
 pub fn get_settings(repo_path: &str) -> Result<GitSettings, String> {
     let repo = open(repo_path)?;
@@ -154,11 +165,12 @@ pub fn save_settings(
     }
     let path = token_path(&repo)?;
     if !token.is_empty() {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        let data = serde_json::to_vec(&(username, token)).map_err(|e| e.to_string())?;
-        std::fs::write(path, data).map_err(|e| e.to_string())?;
+        let data = serde_json::to_string(&(username, token)).map_err(|e| e.to_string())?;
+        let key = format!(
+            "git-credentials:{}",
+            path.file_name().unwrap().to_string_lossy()
+        );
+        super::db::write_global_value(&key, &data)?;
     }
     Ok(())
 }

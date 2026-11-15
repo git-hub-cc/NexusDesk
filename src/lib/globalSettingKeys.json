@@ -7,6 +7,7 @@
     "nexusdesk.http.extraction.v1",
     "nexusdesk.codex.autoReview",
     "nexusdesk.codex.autoReviewPrompt",
+    "nexusdesk.codex.saved",
     "nexusdesk.navigation.githubToken",
     "nexusdesk.navigation.githubRepo",
     "nexusdesk.navigation.gitlabToken",
@@ -16,5 +17,5 @@
     "nexusdesk.navigation.provider",
     "nexusdesk.navigation.syncEnabled"
   ],
-  "prefixes": ["sftp-profile:", "sftp-label:", "nexusdesk-ui:"]
+  "prefixes": ["sftp-profile:", "sftp-label:", "nexusdesk-ui:", "nexusdesk.git.", "nexusdesk.sftp.", "nexusdesk.http.limits.", "nexusdesk.settingsDraft:", "git-credentials:", "sftp-connection:"]
 }

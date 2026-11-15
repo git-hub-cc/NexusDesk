@@ -11,8 +11,46 @@ fn settings_path() -> Result<PathBuf, String> {
         .join(".nexus/global_settings.json"))
 }
 
+fn import_sftp_connections(
+    conn: &rusqlite::Connection,
+    directory: &std::path::Path,
+) -> Result<(), String> {
+    if let Ok(entries) = std::fs::read_dir(directory) {
+        for entry in entries.flatten() {
+            let id = entry.file_name().to_string_lossy().into_owned();
+            if id.len() != 36 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+                continue;
+            }
+            let key = format!("sftp-connection:{id}");
+            let exists: bool = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM global_settings WHERE key = ?1)",
+                    [&key],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            if exists {
+                continue;
+            }
+            if let Ok(raw) = std::fs::read_to_string(entry.path()) {
+                if serde_json::from_str::<super::remote_cmds::Connection>(&raw).is_ok() {
+                    conn.execute(
+                        "INSERT OR IGNORE INTO global_settings(key,value) VALUES (?1,?2)",
+                        rusqlite::params![key, raw],
+                    )
+                    .map_err(|error| error.to_string())?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn database_settings() -> Result<Settings, String> {
     let conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
+    if let Some(base) = dirs::config_dir() {
+        import_sftp_connections(&conn, &base.join("NexusDesk").join("sftp-connections"))?;
+    }
     let mut statement = conn
         .prepare("SELECT key,value FROM global_settings")
         .map_err(|error| error.to_string())?;
@@ -285,6 +323,62 @@ pub async fn write_global_setting(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn sftp_migration_preserves_newer_database_credentials_and_skips_invalid_files() {
+        let root = std::env::temp_dir().join(format!(
+            "nexusdesk-sftp-migration-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let id = "00000000-0000-0000-0000-000000000001";
+        let raw = json!({ "host": "server", "port": 22, "username": "alice", "password": "old-password", "fingerprint": null }).to_string();
+        std::fs::write(root.join(id), &raw).unwrap();
+        std::fs::write(root.join("00000000-0000-0000-0000-000000000002"), "invalid").unwrap();
+        std::fs::write(root.join("unrelated"), &raw).unwrap();
+        let database = root.join("settings.db");
+        let conn = rusqlite::Connection::open(&database).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE global_settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+        )
+        .unwrap();
+        import_sftp_connections(&conn, &root).unwrap();
+        let key = format!("sftp-connection:{id}");
+        let imported: String = conn
+            .query_row(
+                "SELECT value FROM global_settings WHERE key=?1",
+                [&key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(imported, raw);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM global_settings", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+        conn.execute(
+            "UPDATE global_settings SET value='new-password' WHERE key=?1",
+            [&key],
+        )
+        .unwrap();
+        drop(conn);
+        let conn = rusqlite::Connection::open(database).unwrap();
+        import_sftp_connections(&conn, &root).unwrap();
+        let preserved: String = conn
+            .query_row(
+                "SELECT value FROM global_settings WHERE key=?1",
+                [&key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(preserved, "new-password");
+        drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn legacy_migration_preserves_existing_settings_and_only_imports_global_keys() {

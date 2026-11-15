@@ -63,7 +63,7 @@ pub async fn connect_remote(
     if id.len() != 36 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
         return Err("Invalid connection ID".into());
     }
-    let saved_config = serde_json::to_vec(&config).map_err(|e| e.to_string())?;
+    let saved_config = serde_json::to_string(&config).map_err(|e| e.to_string())?;
     let (tx, rx) = mpsc::channel();
     let result = tauri::async_runtime::spawn_blocking(move || -> Result<_, String> {
         if config.host.trim().is_empty() || config.username.trim().is_empty() || config.port == 0 {
@@ -115,12 +115,7 @@ pub async fn connect_remote(
     .await
     .map_err(|e| e.to_string())??;
     if let Some((ssh, sftp)) = result.1 {
-        let dir = dirs::config_dir()
-            .ok_or("SFTP operation failed; check connection, path and permissions")?
-            .join("NexusDesk")
-            .join("sftp-connections");
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        std::fs::write(dir.join(&id), saved_config).map_err(|e| e.to_string())?;
+        crate::core::db::write_global_value(&format!("sftp-connection:{id}"), &saved_config)?;
         state.0.lock().map_err(|e| e.to_string())?.insert(id, tx);
         std::thread::spawn(move || worker(ssh, sftp, rx));
     }
@@ -616,8 +611,17 @@ pub async fn reconnect_remote(
         .join("NexusDesk")
         .join("sftp-connections")
         .join(&id);
-    let config = serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
+    let key = format!("sftp-connection:{id}");
+    let raw = match crate::core::db::read_global_value(&key)? {
+        Some(raw) => raw,
+        None => {
+            let raw = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+            let _: Connection = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+            crate::core::db::write_global_value(&key, &raw)?;
+            raw
+        }
+    };
+    let config = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     connect_remote(config, id, state).await
 }
 
