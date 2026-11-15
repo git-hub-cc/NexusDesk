@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { settingsStorage } from "@/lib/globalSettings";
 import { readSpeechPreferences, speechPreferencesKey, speechModels as models, speechLanguages as languages, type SpeechPreferences } from "@/lib/speechPreferences";
+import { SettingsPage } from "./SettingsPage";
 
 export function SpeechRecognitionSettings() {
   const [preferences, setPreferences] = useState(readSpeechPreferences);
@@ -20,11 +21,7 @@ export function SpeechRecognitionSettings() {
     update({ ...preferences, [key]: key === "minTextLength" ? Math.round(bounded) : bounded });
   };
 
-  return <div className="mx-auto w-full max-w-3xl p-8" onKeyDown={event => event.stopPropagation()}>
-    <header className="mb-6 border-b border-ide-panel-border pb-4">
-      <h2 className="text-xl font-semibold">语音识别</h2>
-      <p className="mt-1 text-sm text-gray-400">使用 SenseVoice 在本地识别语音，支持中文、粤语、英语、日语和韩语。</p>
-    </header>
+  return <SettingsPage title="语音识别" description="使用 SenseVoice 在本地识别语音，支持中文、粤语、英语、日语和韩语。" onKeyDown={event => event.stopPropagation()}>
     <div className="flex flex-col gap-5 text-sm">
       <label className="grid gap-1">识别语言<select className={selectClass} value={preferences.language} onChange={event => update({ ...preferences, language: event.target.value })}>
         {languages.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
@@ -47,5 +44,5 @@ export function SpeechRecognitionSettings() {
       <label className="flex items-start gap-2"><input className="mt-1 accent-ide-accent" type="checkbox" checked={preferences.filterNoise} onChange={event => update({ ...preferences, filterNoise: event.target.checked })} /><span>过滤杂音标记<span className="mt-1 block text-xs text-gray-400">忽略音乐、掌声、静音等非语音标记。</span></span></label>
       <p className="text-xs text-gray-500">设置会立即保存，并在下次开启语音转文字时生效。</p>
     </div>
-  </div>;
+  </SettingsPage>;
 }

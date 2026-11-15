@@ -1,6 +1,7 @@
 import { Check, Download, LoaderCircle, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { softwareApi, type ManagedSoftware } from "@/lib/api";
+import { SettingsPage } from "./SettingsPage";
 
 export function SoftwareSettings() {
   const [software, setSoftware] = useState<ManagedSoftware[]>([]);
@@ -58,12 +59,11 @@ export function SoftwareSettings() {
     }
   };
 
-  return <section className="space-y-4 p-5 text-sm">
-    <div className="flex items-center justify-between gap-3">
-      <h2 className="font-medium">外部软件</h2>
+  return <SettingsPage title="外部软件" description="通过 winget 管理外部软件。">
+    <section className="space-y-4 text-sm">
+    <div className="flex justify-end">
       <button type="button" aria-label="刷新软件状态" title="刷新软件状态" disabled={busy !== null || loading} onClick={() => void refresh().catch(() => {})} className="flex h-8 w-8 items-center justify-center rounded border border-ide-panel-border text-gray-400 hover:bg-white/5 hover:text-ide-fg disabled:opacity-50"><RefreshCw size={15} /></button>
     </div>
-    <p className="text-xs text-gray-400">通过 winget 管理外部软件。</p>
     <div className="divide-y divide-ide-panel-border border-y border-ide-panel-border">
       {software.map(item => <div key={item.id} className="flex min-w-0 items-center gap-3 py-3">
         <div className="min-w-0 flex-1">
@@ -82,5 +82,6 @@ export function SoftwareSettings() {
     </div>
     {message && <p role="status" className="text-xs text-green-400">{message}</p>}
     {error && <p role="alert" className="break-words text-xs text-red-400">{error}</p>}
-  </section>;
+    </section>
+  </SettingsPage>;
 }

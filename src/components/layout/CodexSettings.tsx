@@ -3,6 +3,7 @@ import { codexSettingsApi } from "@/lib/api";
 import { settingsStorage } from "@/lib/globalSettings";
 import { AUTO_REVIEW_PROMPT_KEY, DEFAULT_AUTO_REVIEW_PROMPT } from "@/lib/codexReview";
 import { readSettingsDraft, useSettingsAutosave, waitForSettingsSave } from "@/lib/useSettingsAutosave";
+import { SettingsPage } from "./SettingsPage";
 
 const DRAFT_KEY = "nexusdesk.settingsDraft:codex";
 type SettingsInput = Parameters<typeof codexSettingsApi.save>[0];
@@ -46,11 +47,7 @@ export function CodexSettings() {
     window.dispatchEvent(new Event("global-settings-changed"));
   }, [autoReview, autoReviewPrompt]);
 
-  return <div className="mx-auto w-full max-w-3xl p-8" onKeyDown={event => event.stopPropagation()}>
-    <header className="mb-6 border-b border-ide-panel-border pb-4">
-      <h2 className="text-xl font-semibold">Codex</h2>
-      <p className="mt-1 text-sm text-gray-400">配置 Codex CLI 使用的模型、兼容 API 地址和 API Key。</p>
-    </header>
+  return <SettingsPage title="Codex" description="配置 Codex CLI 使用的模型、兼容 API 地址和 API Key。" onKeyDown={event => event.stopPropagation()}>
     <fieldset disabled={!loaded} className="flex flex-col gap-4 text-sm">
       <label className="grid gap-1">模型<input className={inputClass} value={model} onChange={event => setModel(event.target.value)} placeholder="例如 gpt-5-codex" spellCheck={false} /></label>
       <label className="grid gap-1">代理 / API 基础地址<input className={inputClass} value={proxyUrl} onChange={event => setProxyUrl(event.target.value)} placeholder="https://api.openai.com/v1（留空使用默认提供方）" spellCheck={false} /></label>
@@ -77,5 +74,5 @@ export function CodexSettings() {
       {(error || saveError) && <p role="alert" className="break-all text-red-400">{error || saveError}</p>}
       {busy && <p className="text-xs text-gray-400" role="status">正在保存…</p>}
     </fieldset>
-  </div>;
+  </SettingsPage>;
 }

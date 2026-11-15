@@ -1,17 +1,15 @@
 import { Plus, Trash2 } from "lucide-react";
 import { DEFAULT_HISTORY_TRANSPARENCY, useTerminalStore } from "@/store/terminalStore";
+import { SettingsPage } from "./SettingsPage";
 
 export function TerminalSettings() {
   const store = useTerminalStore();
   const profiles = store.profiles;
   const inputClass = "min-w-0 w-full rounded border border-ide-panel-border bg-ide-bg px-2 py-1.5 outline-none focus:border-ide-accent";
 
-  return <section className="mx-auto w-full max-w-3xl space-y-6 p-5 text-sm">
-    <header className="border-b border-ide-panel-border pb-4">
-      <h2 className="text-xl font-semibold">终端</h2>
-      <p className="mt-1 text-sm text-gray-400">配置提示历史的显示效果和命令行工具。</p>
-    </header>
-    <section className="space-y-3" aria-labelledby="terminal-history-heading">
+  return <SettingsPage title="终端" description="配置提示历史的显示效果和命令行工具。">
+    <div className="flex flex-col gap-6 text-sm">
+    <section className="space-y-4" aria-labelledby="terminal-history-heading">
       <h3 id="terminal-history-heading" className="font-medium">提示历史</h3>
       <div className="flex items-center justify-between gap-3">
         <label htmlFor="terminal-history-transparency">提示历史透明度</label>
@@ -38,7 +36,7 @@ export function TerminalSettings() {
       </div>
       <button type="button" className="rounded border border-ide-panel-border px-3 py-1.5 hover:bg-white/5" onClick={() => store.setHistoryTransparency(DEFAULT_HISTORY_TRANSPARENCY)}>恢复默认透明度</button>
     </section>
-    <section className="space-y-3 border-t border-ide-panel-border pt-5" aria-labelledby="terminal-tools-heading">
+    <section className="space-y-4 border-t border-ide-panel-border pt-5" aria-labelledby="terminal-tools-heading">
       <h3 id="terminal-tools-heading" className="font-medium">命令行工具设置</h3>
         <div className="flex flex-col gap-4">
           <p className="text-xs text-gray-400">配置终端启动命令，例如 codex、claude。留空使用系统默认 Shell。工具需已在本机安装。修改会自动保存，对新会话生效。</p>
@@ -62,5 +60,6 @@ export function TerminalSettings() {
           {profiles.some(profile => !profile.name.trim()) && <p role="alert" className="text-red-400">请填写工具名称。</p>}
         </div>
     </section>
-  </section>;
+    </div>
+  </SettingsPage>;
 }

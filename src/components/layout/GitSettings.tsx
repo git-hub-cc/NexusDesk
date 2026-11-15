@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { gitApi, type GitSettings as GitSettingsValue } from "@/lib/api";
 import { readSettingsDraft, useSettingsAutosave, waitForSettingsSave } from "@/lib/useSettingsAutosave";
 import { useWorkspaceStore } from "@/store/workspaceStore";
+import { SettingsPage } from "./SettingsPage";
 
 export function GitSettings() {
   const root = useWorkspaceStore(state => state.rootPath);
@@ -29,11 +30,7 @@ export function GitSettings() {
     window.dispatchEvent(new Event("git-settings-changed"));
   });
 
-  return <div className="mx-auto w-full max-w-3xl p-8" onKeyDown={event => event.stopPropagation()}>
-        <header className="mb-6 border-b border-ide-panel-border pb-4">
-          <h2 className="text-xl font-semibold">版本控制</h2>
-          <p className="mt-1 text-sm text-gray-400">配置当前项目的 Git 远程地址、代理和访问凭据。</p>
-        </header>
+  return <SettingsPage title="版本控制" description="配置当前项目的 Git 远程地址、代理和访问凭据。" onKeyDown={event => event.stopPropagation()}>
         <fieldset disabled={!root || loadedRoot !== root} className="flex flex-col gap-4 text-sm">
           {!root && <p className="text-amber-400">请先打开一个项目。</p>}
           <label className="grid gap-1">当前项目远程地址<input className={inputClass} value={remote} onChange={event => setRemote(event.target.value)} placeholder="https://... 或 git@..." spellCheck={false} /></label>
@@ -43,5 +40,5 @@ export function GitSettings() {
           {(error || saveError) && <p role="alert" className="text-red-400 break-all">{error || saveError}</p>}
           {root && <p className="text-xs text-gray-400" role="status">{busy ? "正在保存…" : "修改会自动保存并生效"}</p>}
         </fieldset>
-      </div>;
+      </SettingsPage>;
 }
