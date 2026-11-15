@@ -1,4 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
+import { DialogShell } from "@/components/DialogShell";
 import { useEffect, useRef, useState } from "react";
 import { FileText, Search, X } from "lucide-react";
 import { fsApi, searchApi, type SearchResult, type SearchOptions } from "@/lib/api";
@@ -98,63 +99,60 @@ export function SearchEverywhere({ onClose, recent = false }: { onClose: () => v
 
     return (
         <Dialog.Root open onOpenChange={open => { if (!open) onClose(); }}>
-            <Dialog.Portal>
-                <Dialog.Overlay className="search-overlay" />
-                <Dialog.Content className="search-dialog" aria-describedby={undefined}
-                                onOpenAutoFocus={event => {
+            <DialogShell purpose="search" className="search-dialog" aria-describedby={undefined}
+                            onOpenAutoFocus={event => {
+                                event.preventDefault();
+                                previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                                input.current?.focus();
+                            }}
+                            onCloseAutoFocus={event => {
+                                event.preventDefault();
+                                if (previousFocus.current?.isConnected) previousFocus.current.focus();
+                            }}
+                            onKeyDown={event => {
+                                if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+                                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                                     event.preventDefault();
-                                    previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-                                    input.current?.focus();
-                                }}
-                                onCloseAutoFocus={event => {
-                                    event.preventDefault();
-                                    if (previousFocus.current?.isConnected) previousFocus.current.focus();
-                                }}
-                                onKeyDown={event => {
-                                    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-                                    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                                        event.preventDefault();
-                                        setSelected(index => results.length ? (index + (event.key === "ArrowDown" ? 1 : -1) + results.length) % results.length : 0);
-                                    }
-                                    if (event.key === "Enter" && document.activeElement === input.current && results[selected]) {
-                                        event.preventDefault(); void open(results[selected]);
-                                    }
-                                }}>
-                    <header><Dialog.Title asChild><span>{recent ? "最近打开的文件" : "Search Everywhere"}</span></Dialog.Title><span className="search-scope">{recent ? "最近文件" : `搜索范围：${mode !== "physical" ? `${mode === "logical" ? "\u903b\u8f91\u5206\u533a" : "\u56fe\u8c31\u5206\u533a"}${partitionSelection ? "\u6240\u9009\u76ee\u5f55" : "\u5168\u90e8\u5185\u5bb9"}` : scope ? scope.slice(root!.length).replace(/^[\\/]+/, "") || scope : "当前项目"} · ${options.includeIgnored ? "包含 .gitignore 文件与目录" : "忽略 .gitignore 文件与目录"}`}</span><Dialog.Close asChild><button aria-label="关闭搜索"><X size={16} /></button></Dialog.Close></header>
-                    <div className="search-input"><Search size={20} /><input ref={input} value={query} maxLength={256}
-                                                                             placeholder="搜索文件名或正文…" aria-label="搜索文件名或正文"
-                                                                             role="combobox" aria-expanded={results.length > 0} aria-controls="search-results"
-                                                                             aria-autocomplete="list" aria-activedescendant={results[selected] ? `search-result-${selected}` : undefined}
-                                                                             onChange={event => setQuery(event.target.value)} />{recent && <kbd>Ctrl / Cmd + E</kbd>}</div>
-                    {!recent && <div className="search-options">
-                        <input aria-label="限制文件后缀" placeholder="文件后缀：.md, .ts, .tsx" value={options.extensions}
-                               onChange={event => setOptions(value => ({ ...value, extensions: event.target.value }))} />
-                        {([['caseSensitive', 'Aa', '区分大小写'], ['regex', '.*', '正则表达式'], ['wholeWord', 'Ab', '全词匹配']] as const).map(([key, label, title]) =>
-                            <button key={key} type="button" title={title} aria-label={title} aria-pressed={options[key]}
-                                    onClick={() => setOptions(value => ({ ...value, [key]: !value[key] }))}>{label}</button>)}
-                        <button type="button" title="包含 .gitignore 忽略的文件" aria-label="包含 .gitignore 忽略的文件" aria-pressed={options.includeIgnored}
-                                onClick={() => setOptions(value => ({ ...value, includeIgnored: !value.includeIgnored }))}>含忽略项</button>
-                        {loading && <button type="button" onClick={() => cancelCurrent.current?.()}>取消搜索</button>}
-                        {stopped && <span role="status">已取消</span>}
-                    </div>}
-                    <div className="search-results" ref={list} id="search-results" role="listbox" aria-label="搜索结果" aria-busy={loading}>
-                        {results.map((result, index) => <div key={result.path} id={`search-result-${index}`} role="option"
-                                                             aria-selected={selected === index} className="search-result" onMouseMove={() => setSelected(index)}
-                                                             onClick={() => void open(result)}>
-                            <FileText size={18} /><div className="search-result-text">
-                            <div className="search-result-heading">
-                                <strong><HighlightedText text={result.title} query={query} options={recent ? undefined : options} /></strong>
-                                <span title={result.relativePath}><HighlightedText text={result.relativePath} query={query} options={recent ? undefined : options} /></span>
-                            </div>
-                            <p title={result.snippet}><HighlightedText text={result.snippet} query={query} options={recent ? undefined : options} /></p>
+                                    setSelected(index => results.length ? (index + (event.key === "ArrowDown" ? 1 : -1) + results.length) % results.length : 0);
+                                }
+                                if (event.key === "Enter" && document.activeElement === input.current && results[selected]) {
+                                    event.preventDefault(); void open(results[selected]);
+                                }
+                            }}>
+                <header><Dialog.Title asChild><span>{recent ? "最近打开的文件" : "Search Everywhere"}</span></Dialog.Title><span className="search-scope">{recent ? "最近文件" : `搜索范围：${mode !== "physical" ? `${mode === "logical" ? "\u903b\u8f91\u5206\u533a" : "\u56fe\u8c31\u5206\u533a"}${partitionSelection ? "\u6240\u9009\u76ee\u5f55" : "\u5168\u90e8\u5185\u5bb9"}` : scope ? scope.slice(root!.length).replace(/^[\\/]+/, "") || scope : "当前项目"} · ${options.includeIgnored ? "包含 .gitignore 文件与目录" : "忽略 .gitignore 文件与目录"}`}</span><Dialog.Close asChild><button aria-label="关闭搜索"><X size={16} /></button></Dialog.Close></header>
+                <div className="search-input"><Search size={20} /><input ref={input} value={query} maxLength={256}
+                                                                         placeholder="搜索文件名或正文…" aria-label="搜索文件名或正文"
+                                                                         role="combobox" aria-expanded={results.length > 0} aria-controls="search-results"
+                                                                         aria-autocomplete="list" aria-activedescendant={results[selected] ? `search-result-${selected}` : undefined}
+                                                                         onChange={event => setQuery(event.target.value)} />{recent && <kbd>Ctrl / Cmd + E</kbd>}</div>
+                {!recent && <div className="search-options">
+                    <input aria-label="限制文件后缀" placeholder="文件后缀：.md, .ts, .tsx" value={options.extensions}
+                           onChange={event => setOptions(value => ({ ...value, extensions: event.target.value }))} />
+                    {([['caseSensitive', 'Aa', '区分大小写'], ['regex', '.*', '正则表达式'], ['wholeWord', 'Ab', '全词匹配']] as const).map(([key, label, title]) =>
+                        <button key={key} type="button" title={title} aria-label={title} aria-pressed={options[key]}
+                                onClick={() => setOptions(value => ({ ...value, [key]: !value[key] }))}>{label}</button>)}
+                    <button type="button" title="包含 .gitignore 忽略的文件" aria-label="包含 .gitignore 忽略的文件" aria-pressed={options.includeIgnored}
+                            onClick={() => setOptions(value => ({ ...value, includeIgnored: !value.includeIgnored }))}>含忽略项</button>
+                    {loading && <button type="button" onClick={() => cancelCurrent.current?.()}>取消搜索</button>}
+                    {stopped && <span role="status">已取消</span>}
+                </div>}
+                <div className="search-results" ref={list} id="search-results" role="listbox" aria-label="搜索结果" aria-busy={loading}>
+                    {results.map((result, index) => <div key={result.path} id={`search-result-${index}`} role="option"
+                                                         aria-selected={selected === index} className="search-result" onMouseMove={() => setSelected(index)}
+                                                         onClick={() => void open(result)}>
+                        <FileText size={18} /><div className="search-result-text">
+                        <div className="search-result-heading">
+                            <strong><HighlightedText text={result.title} query={query} options={recent ? undefined : options} /></strong>
+                            <span title={result.relativePath}><HighlightedText text={result.relativePath} query={query} options={recent ? undefined : options} /></span>
                         </div>
-                        </div>)}
-                        {!results.length && <div className="search-empty" role="status">{!root ? "请先打开项目目录" : stopped ? "搜索已取消" : loading ? "正在搜索…" : recent ? "暂无最近文件" : query.trim() ? "没有匹配的文件" : "输入关键词，搜索当前项目的文件名和正文"}</div>}
+                        <p title={result.snippet}><HighlightedText text={result.snippet} query={query} options={recent ? undefined : options} /></p>
                     </div>
-                    {error && <div className="search-error" role="alert">{error}</div>}
-                    <footer><span>{opening ? "正在打开…" : loading ? "正在搜索…" : `最多显示 50 条 · 当前 ${results.length} 条`}</span><span>↑ ↓ 选择　Enter 打开　Esc 关闭</span></footer>
-                </Dialog.Content>
-            </Dialog.Portal>
+                    </div>)}
+                    {!results.length && <div className="search-empty" role="status">{!root ? "请先打开项目目录" : stopped ? "搜索已取消" : loading ? "正在搜索…" : recent ? "暂无最近文件" : query.trim() ? "没有匹配的文件" : "输入关键词，搜索当前项目的文件名和正文"}</div>}
+                </div>
+                {error && <div className="search-error" role="alert">{error}</div>}
+                <footer><span>{opening ? "正在打开…" : loading ? "正在搜索…" : `最多显示 50 条 · 当前 ${results.length} 条`}</span><span>↑ ↓ 选择　Enter 打开　Esc 关闭</span></footer>
+            </DialogShell>
         </Dialog.Root>
     );
 }

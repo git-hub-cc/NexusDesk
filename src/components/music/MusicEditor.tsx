@@ -4,6 +4,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DialogShell } from "@/components/DialogShell";
 import { CircleCheck, Download, FolderOpen, Import, ListMusic, LoaderCircle, Music2, Pause, Play, Plus, Repeat, Repeat1, Search, Shuffle, SkipBack, SkipForward, Volume2, Volume1, VolumeX, Trash2, X, AlertTriangle } from "lucide-react";
 import { musicApi, type MusicPlaylist, type MusicTrack } from "@/lib/api";
 import { resolveGDStudioPlayUrl, searchGDStudio } from "@/lib/gdMusic";
@@ -442,17 +443,17 @@ export function MusicEditor({ active }: { active: boolean }) {
     </div>
 
     <Dialog.Root open={playlistDialogOpen} onOpenChange={setPlaylistDialogOpen}>
-      <Dialog.Portal><Dialog.Overlay className="search-overlay" /><Dialog.Content className="create-name-dialog music-form-dialog" onKeyDown={event => event.stopPropagation()} onOpenAutoFocus={event => { event.preventDefault(); document.getElementById("music-playlist-name")?.focus(); }}>
+      <DialogShell onOpenAutoFocus={event => { event.preventDefault(); document.getElementById("music-playlist-name")?.focus(); }}>
         <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3"><Dialog.Title className="font-medium">新建歌单</Dialog.Title><Dialog.Close aria-label="关闭" className="rounded p-1 hover:bg-white/10"><X size={16} /></Dialog.Close></header>
         <form className="flex flex-col gap-3 p-4" onSubmit={event => { event.preventDefault(); void createPlaylist(); }}><Dialog.Description className="text-xs text-gray-400">创建一个歌单来整理本地歌曲。</Dialog.Description><label htmlFor="music-playlist-name" className="text-xs">歌单名称</label><input id="music-playlist-name" value={playlistName} onChange={event => setPlaylistName(event.target.value)} maxLength={60} autoComplete="off" className="w-full ide-control rounded px-3 py-2" /><footer className="mt-2 flex justify-end gap-2"><Dialog.Close className="ide-button ide-button-secondary rounded px-4 py-1.5">取消</Dialog.Close><button type="submit" disabled={!playlistName.trim()} className="rounded ide-button ide-button-primary px-4 py-1.5">创建</button></footer></form>
-      </Dialog.Content></Dialog.Portal>
+      </DialogShell>
     </Dialog.Root>
     <Dialog.Root open={!!confirmDialog} onOpenChange={open => { if (!open) setConfirmDialog(null); }}>
-      <Dialog.Portal><Dialog.Overlay className="search-overlay" /><Dialog.Content className="create-name-dialog delete-confirm-dialog" onKeyDown={event => event.stopPropagation()}>
+      <DialogShell purpose="confirmation">
         <header className="flex items-center gap-3 px-5 pt-5"><span className="delete-confirm-icon"><AlertTriangle size={20} /></span><Dialog.Title className="flex-1 font-medium text-base">{confirmDialog?.kind === "track" ? "删除本地歌曲" : "删除歌单"}</Dialog.Title><Dialog.Close aria-label="取消" className="rounded p-1 text-gray-400 hover:bg-white/10"><X size={16} /></Dialog.Close></header>
         <div className="px-5 py-4"><Dialog.Description className="text-xs leading-6 text-gray-400">{confirmDialog?.kind === "track" ? <>将从本地曲库删除“{confirmDialog.track.title}”。歌单中对应条目会保留为失效状态。</> : <>确定删除歌单“{confirmDialog?.kind === "playlist" ? confirmDialog.playlist.name : ""}”？其中的歌曲文件不会被删除。</>}</Dialog.Description></div>
         <footer className="flex justify-end gap-2 border-t border-ide-panel-border px-5 py-3"><Dialog.Close className="ide-button ide-button-secondary rounded px-4 py-1.5">取消</Dialog.Close><button type="button" className="delete-confirm-action" onClick={() => { const request = confirmDialog; setConfirmDialog(null); if (request?.kind === "track") void removeTrack(request.track); else if (request?.kind === "playlist") void removePlaylist(request.playlist); }}>删除</button></footer>
-      </Dialog.Content></Dialog.Portal>
+      </DialogShell>
     </Dialog.Root>
 
     <footer className="music-player shrink-0 border-t border-ide-panel-border">

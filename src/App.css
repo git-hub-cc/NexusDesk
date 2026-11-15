@@ -28,8 +28,10 @@
   background: var(--ide-control-bg);
   border: 1px solid var(--ide-control-border);
 }
-.ide-control { outline: none; }
-.ide-control:focus, .ide-control-shell:focus-within { border-color: var(--ide-control-focus); }
+.ide-control, .dialog-shell :is(input, textarea, select) { outline: none; }
+.ide-control:focus,
+.ide-control-shell:focus-within,
+.dialog-shell :is(input, textarea, select):focus { border-color: var(--ide-control-focus); }
 .ide-control::placeholder, .ide-control-shell input::placeholder, .ide-control-shell textarea::placeholder { color: var(--ide-control-placeholder); }
 
 /* Content surfaces retain keyboard scrolling without outlining the whole panel. */
@@ -153,7 +155,7 @@
 .chat-composer textarea { display: block; width: 100%; min-height: 58px; max-height: 180px; resize: vertical; color: var(--ide-control-fg); background: transparent; outline: none; font-size: 12px; line-height: 1.6; user-select: text; }
 .chat-composer-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; color: #737780; font-size: 10px; }
 .chat-composer-footer button { display: grid; place-items: center; width: 30px; height: 28px; border-radius: 4px; }
-.chat-save-dialog { display: flex; width: min(560px, 92vw); max-height: 82vh; flex-direction: column; overflow: hidden; }
+.chat-save-dialog { display: flex; flex-direction: column; overflow: hidden; }
 .chat-save-dialog > header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--ide-panel-border); }
 .chat-save-dialog > header [data-radix-dialog-title] { color: #e4e6ea; font-size: 14px; font-weight: 600; }
 .chat-save-dialog > header [data-radix-dialog-description] { margin-top: 4px; color: #898e98; font-size: 10px; }
@@ -168,7 +170,6 @@
 .chat-save-list label > span > span { display: -webkit-box; overflow: hidden; color: #c7cad0; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .chat-save-dialog > footer { display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 12px 16px; border-top: 1px solid var(--ide-panel-border); }
 .chat-save-confirm { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 4px; font-size: 11px; }
-.chat-rename-dialog { width: min(420px, 92vw); }
 .chat-rename-dialog > header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; color: #e4e6ea; border-bottom: 1px solid var(--ide-panel-border); font-size: 13px; font-weight: 600; }
 .chat-rename-dialog form { display: grid; gap: 8px; padding: 16px; }
 .chat-rename-dialog label { color: #aeb4bf; font-size: 11px; }
@@ -504,28 +505,32 @@
 .explorer-tree [role="tree"]:focus,
 .explorer-tree [role="treeitem"]:focus,
 [data-graph-root]:focus { outline: none; }
-.search-overlay { position: fixed; inset: 0; z-index: 100; background: #0006; }
-.modal-overlay { position: fixed; inset: 0; z-index: 100; background: #0008; backdrop-filter: blur(4px); }
-.modal-glass { border: 1px solid var(--ide-panel-border); border-radius: 12px; background: var(--ide-panel-bg); color: var(--ide-fg); box-shadow: 0 18px 64px #0009; }
-.settings-dialog { position: fixed; z-index: 101; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; width: min(960px, calc(100vw - 32px)); height: min(680px, calc(100dvh - 64px)); overflow: hidden; }
-.settings-dialog :focus-visible { outline: 2px solid var(--ide-accent); outline-offset: 2px; }
-.create-name-dialog { position: fixed; z-index: 101; top: 30%; left: 50%; transform: translateX(-50%); width: min(440px, calc(100vw - 32px)); max-height: 65dvh; overflow-y: auto; border: 1px solid #55585e; border-radius: 8px; background: #2b2d30; color: #dfe1e5; box-shadow: 0 18px 64px #0009; font-size: 13px; }
-.create-name-dialog button:focus-visible { outline: 2px solid var(--ide-accent); outline-offset: 2px; }
+.dialog-overlay { position: fixed; inset: 0; z-index: 100; background: #0006; }
+.dialog-shell { position: fixed; z-index: 101; top: 30dvh; left: 50%; transform: translateX(-50%); width: min(440px, calc(100vw - 32px)); max-height: calc(70dvh - 16px); overflow-y: auto; border: 1px solid var(--ide-panel-border); border-radius: 8px; background: var(--ide-panel-bg); color: var(--ide-fg); box-shadow: 0 18px 64px #0009; font-size: 13px; }
+.dialog-shell[data-wide] { width: min(600px, calc(100vw - 32px)); }
+.dialog-shell[data-purpose="confirmation"],
+.dialog-shell[data-purpose="settings"],
+.dialog-shell[data-purpose="detail"] { top: 50%; transform: translate(-50%, -50%); max-height: calc(100dvh - 32px); }
+.dialog-shell[data-purpose="confirmation"] { width: min(480px, calc(100vw - 32px)); }
+.dialog-shell[data-purpose="settings"],
+.dialog-shell[data-purpose="detail"] { display: flex; flex-direction: column; overflow: hidden; }
+.dialog-shell[data-purpose="settings"] { width: min(960px, calc(100vw - 32px)); height: min(680px, calc(100dvh - 64px)); }
+.dialog-shell[data-purpose="detail"] { width: min(1100px, calc(100vw - 32px)); height: calc(100dvh - 64px); }
+.dialog-shell[data-purpose="search"] { top: min(15dvh, 100px); width: min(760px, calc(100vw - 32px)); max-height: calc(100dvh - min(15dvh, 100px) - 16px); display: flex; flex-direction: column; overflow: hidden; }
+.dialog-shell :focus-visible:not(input, textarea, select),
+.dialog-shell input:is([type="checkbox"], [type="radio"], [type="range"], [type="file"]):focus-visible { outline: 2px solid var(--ide-control-focus); outline-offset: 2px; }
 .network-detail-dialog:focus,
 .network-detail-dialog button:focus-visible { outline: none; }
 .network-detail-dialog button:focus-visible { background-color: #244a80; color: #fff; }
-.delete-confirm-dialog { top: 50%; transform: translate(-50%, -50%); width: min(480px, calc(100vw - 32px)); max-height: 85dvh; }
 .delete-confirm-icon { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 10px; background: #e35d6a18; color: #f08b95; }
 .delete-confirm-list { margin-top: 12px; max-height: 26dvh; overflow-y: auto; border: 1px solid #43454a; border-radius: 6px; background: #232427; }
 .delete-confirm-list li + li { border-top: 1px solid #34363a; }
 .delete-confirm-action { padding: 6px 16px; border: 1px solid #ca5360; border-radius: 4px; background: #b5414e; color: #fff; }
 .delete-confirm-action:hover { background: #c64b59; }
-.search-dialog { position: fixed; z-index: 101; top: min(15vh, 100px); left: 50%; transform: translateX(-50%); width: min(760px, calc(100vw - 32px)); max-height: min(80vh, calc(100dvh - min(15vh, 100px) - 16px)); display: flex; flex-direction: column; background: #2b2d30; color: #dfe1e5; border: 1px solid #55585e; border-radius: 9px; box-shadow: 0 18px 64px #0009; overflow: hidden; font-size: 13px; }
 .search-dialog header { display: flex; gap: 16px; align-items: center; padding: 12px 16px; border-bottom: 1px solid #43454a; }
 .search-dialog header > span:first-child { font-weight: 600; }
 .search-scope { flex: 1; color: #92969e; font-size: 12px; }
 .search-dialog button { padding: 4px; border-radius: 4px; }
-.search-dialog button:focus-visible { outline: 2px solid var(--ide-accent); }
 .search-input { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 2px solid var(--ide-accent); }
 .search-input input { flex: 1; min-width: 0; outline: none; background: transparent; font-size: 17px; user-select: text; }
 .search-input kbd { color: #92969e; font-size: 11px; white-space: nowrap; }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import * as ContextMenu from "@/lib/nativeMenu";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DialogShell } from "@/components/DialogShell";
 import { X } from "lucide-react";
 import { ReactFlow, Background, Controls, MiniMap, Handle, Position, useNodesState, type Node, type Edge, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -221,7 +222,7 @@ export function TreeGraphPreview({ content, path, pane, previewOnly, reverseTree
     </>}
   </ContextMenu.Content></ContextMenu.Portal>
   <Dialog.Root open={!!nodeDialog} onOpenChange={open => { if (!open) setNodeDialog(null); }}>
-    <Dialog.Portal><Dialog.Overlay className="search-overlay" /><Dialog.Content className="create-name-dialog">
+    <DialogShell>
       <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3"><Dialog.Title>{nodeDialog?.mode === "add" ? "添加子节点" : "编辑节点"}</Dialog.Title><Dialog.Close aria-label="关闭"><X size={16} /></Dialog.Close></header>
       <form className="flex flex-col gap-3 p-4" onSubmit={event => {
         event.preventDefault();
@@ -233,13 +234,13 @@ export function TreeGraphPreview({ content, path, pane, previewOnly, reverseTree
         <input autoFocus aria-label="节点名称" required value={nodeDialog?.value ?? ""} onChange={event => setNodeDialog(current => current ? { ...current, value: event.target.value } : current)} className="rounded border border-ide-panel-border bg-ide-bg px-3 py-2 text-sm" />
         <footer className="flex justify-end gap-2"><Dialog.Close className="rounded border border-ide-panel-border px-4 py-1.5">取消</Dialog.Close><button type="submit" disabled={!nodeDialog?.value.trim() || nodeDialog.value.includes("//")} className="rounded bg-ide-accent px-4 py-1.5 text-white">保存</button></footer>
       </form>
-    </Dialog.Content></Dialog.Portal>
+    </DialogShell>
   </Dialog.Root>
   <Dialog.Root open={!!commentDialog} onOpenChange={open => { if (!open) setCommentDialog(null); }}>
-    <Dialog.Portal><Dialog.Overlay className="search-overlay" /><Dialog.Content className="create-name-dialog" onOpenAutoFocus={event => { event.preventDefault(); document.getElementById("tree-node-comment")?.focus(); }}>
+    <DialogShell onOpenAutoFocus={event => { event.preventDefault(); document.getElementById("tree-node-comment")?.focus(); }}>
       <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3"><Dialog.Title className="font-medium">编辑节点备注</Dialog.Title><Dialog.Close aria-label="关闭" className="rounded p-1 hover:bg-white/10"><X size={16} /></Dialog.Close></header>
       <form className="flex flex-col gap-3 p-4" onSubmit={event => { event.preventDefault(); saveComment(); }}><Dialog.Description className="text-xs text-gray-400">备注将以 <code>//</code> 写入当前节点行。</Dialog.Description><textarea id="tree-node-comment" value={commentDialog?.value ?? ""} onChange={event => setCommentDialog(current => current ? { ...current, value: event.target.value } : current)} rows={4} maxLength={500} placeholder="输入节点备注（可留空以删除）" className="w-full resize-y rounded border border-ide-panel-border bg-ide-bg px-3 py-2 text-sm outline-none focus:border-ide-accent" /><footer className="flex justify-end gap-2"><Dialog.Close className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10">取消</Dialog.Close><button type="submit" className="rounded bg-ide-accent px-4 py-1.5 text-white">保存</button></footer></form>
-    </Dialog.Content></Dialog.Portal>
+    </DialogShell>
   </Dialog.Root>
   </ContextMenu.Root>;
 }

@@ -1,6 +1,7 @@
 import { settingsStorage } from "@/lib/globalSettings";
 import { useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DialogShell } from "@/components/DialogShell";
 import { X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { remoteUri } from "@/lib/remote";
@@ -73,38 +74,35 @@ export function SftpConnectDialog({ onClose }: { onClose: () => void }) {
   };
 
   return <Dialog.Root open onOpenChange={open => { if (!open && !working.current) onClose(); }}>
-    <Dialog.Portal>
-      <Dialog.Overlay className="search-overlay" />
-      <Dialog.Content className="create-name-dialog" onEscapeKeyDown={event => { if (working.current) event.preventDefault(); }}
-        onKeyDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
-        <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3">
-          <Dialog.Title className="font-medium">打开 SFTP...</Dialog.Title>
-          <Dialog.Close disabled={busy} aria-label="关闭 SFTP 连接对话框" className="rounded p-1 hover:bg-white/10 disabled:opacity-40"><X size={16} /></Dialog.Close>
-        </header>
-        <Dialog.Description className="sr-only">连接后，在工作区文件树中浏览服务器目录，在底部终端中使用远程 Shell。</Dialog.Description>
-        <form className="flex flex-col gap-3 p-4 text-sm" onSubmit={event => { event.preventDefault(); void connect(); }}>
-          {connections.length > 0 && <label className="flex flex-col gap-1">已保存的连接<select disabled={busy} defaultValue="" className="ide-control rounded px-3 py-2" onChange={event => {
-            const connection = connections.find(item => item.id === event.target.value);
-            if (!connection) return;
-            const next = { host: connection.host, port: String(connection.port), username: connection.username, password: connection.password };
-            setHost(next.host); setPort(next.port); setUsername(next.username); setPassword(next.password); setTrust(undefined);
-            settingsStorage.setItem(FORM_KEY, JSON.stringify(next));
-          }}><option value="" disabled>选择已保存的服务器</option>{connections.map(connection => <option key={connection.id} value={connection.id}>{connection.username}@{connection.host}:{connection.port}</option>)}</select></label>}
-          {([ ["链接 / 主机", host, setHost, "text"], ["端口", port, setPort, "number"], ["用户名", username, setUsername, "text"], ["密码", password, setPassword, "password"] ] as const).map(([label, value, setter, type]) =>
-            <label key={label} className="flex flex-col gap-1">{label}<input required disabled={busy} type={type} value={value} autoComplete="off"
-              min={type === "number" ? 1 : undefined} max={type === "number" ? 65535 : undefined} step={type === "number" ? 1 : undefined}
-              placeholder={label === "链接 / 主机" ? "192.168.1.10 或 sftp://server:22" : undefined}
-              onChange={event => {
-                setter(event.target.value); setTrust(undefined);
-                const field = label === "链接 / 主机" ? "host" : label === "端口" ? "port" : label === "用户名" ? "username" : "password";
-                settingsStorage.setItem(FORM_KEY, JSON.stringify({ host, port, username, password, [field]: event.target.value }));
-              }}
-              className="ide-control rounded px-3 py-2" /></label>)}
-          {trust && <div className="break-all rounded border border-ide-panel-border p-3 text-xs">请与服务器管理员核对 SSH 主机指纹（SHA-256 十六进制）：<p className="my-2 font-mono select-text">{trust}</p>确认后将发送密码进行认证。</div>}
-          {error && <p role="alert" className="text-red-400">{error}</p>}
-          <button disabled={busy} type="submit" className="self-end rounded ide-button ide-button-primary px-4 py-2">{busy ? "正在连接..." : trust ? "信任指纹并连接" : "连接"}</button>
-        </form>
-      </Dialog.Content>
-    </Dialog.Portal>
+    <DialogShell onEscapeKeyDown={event => { if (working.current) event.preventDefault(); }}
+     >
+      <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3">
+        <Dialog.Title className="font-medium">打开 SFTP...</Dialog.Title>
+        <Dialog.Close disabled={busy} aria-label="关闭 SFTP 连接对话框" className="rounded p-1 hover:bg-white/10 disabled:opacity-40"><X size={16} /></Dialog.Close>
+      </header>
+      <Dialog.Description className="sr-only">连接后，在工作区文件树中浏览服务器目录，在底部终端中使用远程 Shell。</Dialog.Description>
+      <form className="flex flex-col gap-3 p-4 text-sm" onSubmit={event => { event.preventDefault(); void connect(); }}>
+        {connections.length > 0 && <label className="flex flex-col gap-1">已保存的连接<select disabled={busy} defaultValue="" className="ide-control rounded px-3 py-2" onChange={event => {
+          const connection = connections.find(item => item.id === event.target.value);
+          if (!connection) return;
+          const next = { host: connection.host, port: String(connection.port), username: connection.username, password: connection.password };
+          setHost(next.host); setPort(next.port); setUsername(next.username); setPassword(next.password); setTrust(undefined);
+          settingsStorage.setItem(FORM_KEY, JSON.stringify(next));
+        }}><option value="" disabled>选择已保存的服务器</option>{connections.map(connection => <option key={connection.id} value={connection.id}>{connection.username}@{connection.host}:{connection.port}</option>)}</select></label>}
+        {([ ["链接 / 主机", host, setHost, "text"], ["端口", port, setPort, "number"], ["用户名", username, setUsername, "text"], ["密码", password, setPassword, "password"] ] as const).map(([label, value, setter, type]) =>
+          <label key={label} className="flex flex-col gap-1">{label}<input required disabled={busy} type={type} value={value} autoComplete="off"
+            min={type === "number" ? 1 : undefined} max={type === "number" ? 65535 : undefined} step={type === "number" ? 1 : undefined}
+            placeholder={label === "链接 / 主机" ? "192.168.1.10 或 sftp://server:22" : undefined}
+            onChange={event => {
+              setter(event.target.value); setTrust(undefined);
+              const field = label === "链接 / 主机" ? "host" : label === "端口" ? "port" : label === "用户名" ? "username" : "password";
+              settingsStorage.setItem(FORM_KEY, JSON.stringify({ host, port, username, password, [field]: event.target.value }));
+            }}
+            className="ide-control rounded px-3 py-2" /></label>)}
+        {trust && <div className="break-all rounded border border-ide-panel-border p-3 text-xs">请与服务器管理员核对 SSH 主机指纹（SHA-256 十六进制）：<p className="my-2 font-mono select-text">{trust}</p>确认后将发送密码进行认证。</div>}
+        {error && <p role="alert" className="text-red-400">{error}</p>}
+        <button disabled={busy} type="submit" className="self-end rounded ide-button ide-button-primary px-4 py-2">{busy ? "正在连接..." : trust ? "信任指纹并连接" : "连接"}</button>
+      </form>
+    </DialogShell>
   </Dialog.Root>;
 }

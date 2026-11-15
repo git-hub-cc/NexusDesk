@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Trash2, Pause, Play, X } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DialogShell } from "@/components/DialogShell";
 import { type NetworkRequest } from "@/lib/networkMonitor";
 import { NetworkInspector } from "./NetworkInspector";
 import { watchCodexProxy, type ProxyInfo } from "@/lib/codexProxy";
@@ -51,23 +52,20 @@ export const NetworkMonitor: React.FC = () => {
       </div>}
     </div>
     <Dialog.Root open={selected !== null} onOpenChange={open => { if (!open) setSelected(null); }}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="search-overlay" />
-        <Dialog.Content className="create-name-dialog network-detail-dialog flex flex-col gap-3 p-4" style={{ top: "5vh", width: "min(1100px, 94vw)", height: "90vh", maxHeight: "90vh" }} onKeyDown={event => event.stopPropagation()} aria-describedby="network-detail-description">
-          <div className="flex items-center justify-between gap-2 shrink-0">
-            <Dialog.Title className="text-sm font-semibold">请求详情</Dialog.Title>
-            <Dialog.Close aria-label="关闭请求详情" className="p-1 text-gray-400 hover:text-white"><X size={16} /></Dialog.Close>
-          </div>
-          <Dialog.Description id="network-detail-description" className="text-xs text-gray-400 shrink-0">
-            {selected && <span className="block break-all text-gray-200">{selected.source === "codex" ? "Codex · " : ""}{selected.method} {selected.url} · {selected.status ?? "ERR"} · {selected.metricsUnavailable ? "耗时未记录" : `${selected.timeMs} ms`}</span>}
-            来源：Codex 捕获会话。显示请求正文与响应流，认证头已脱敏；正文中的加密字段保留原值。
-            {selected?.truncated && <span className="block text-amber-400">正文超过 16 MiB，面板显示已截断；转发内容不受影响。</span>}
-            {selected?.inFlight && <span className="block text-ide-accent">正在接收响应，报文持续更新…</span>}
-          </Dialog.Description>
-          {selected && <NetworkInspector key={selected.id} item={selected} copy={(label, text) => void copyMessage(label, text)} />}
-          <div role="status" className="text-xs text-gray-400 shrink-0 min-h-4">{copyStatus}</div>
-        </Dialog.Content>
-      </Dialog.Portal>
+      <DialogShell purpose="detail" className="network-detail-dialog gap-3 p-4" aria-describedby="network-detail-description">
+        <div className="flex items-center justify-between gap-2 shrink-0">
+          <Dialog.Title className="text-sm font-semibold">请求详情</Dialog.Title>
+          <Dialog.Close aria-label="关闭请求详情" className="p-1 text-gray-400 hover:text-white"><X size={16} /></Dialog.Close>
+        </div>
+        <Dialog.Description id="network-detail-description" className="text-xs text-gray-400 shrink-0">
+          {selected && <span className="block break-all text-gray-200">{selected.source === "codex" ? "Codex · " : ""}{selected.method} {selected.url} · {selected.status ?? "ERR"} · {selected.metricsUnavailable ? "耗时未记录" : `${selected.timeMs} ms`}</span>}
+          来源：Codex 捕获会话。显示请求正文与响应流，认证头已脱敏；正文中的加密字段保留原值。
+          {selected?.truncated && <span className="block text-amber-400">正文超过 16 MiB，面板显示已截断；转发内容不受影响。</span>}
+          {selected?.inFlight && <span className="block text-ide-accent">正在接收响应，报文持续更新…</span>}
+        </Dialog.Description>
+        {selected && <NetworkInspector key={selected.id} item={selected} copy={(label, text) => void copyMessage(label, text)} />}
+        <div role="status" className="text-xs text-gray-400 shrink-0 min-h-4">{copyStatus}</div>
+      </DialogShell>
     </Dialog.Root>
   </div>;
 };

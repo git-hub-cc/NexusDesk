@@ -6,6 +6,7 @@ import { useDeleteConfirmation } from "./useDeleteConfirmation";
 import { CreateNameDialog, validateEntryName } from "./CreateNameDialog";
 import * as ContextMenu from "@/lib/nativeMenu";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DialogShell } from "@/components/DialogShell";
 import React, { useState, useEffect, useRef } from "react";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { invoke } from "@tauri-apps/api/core";
@@ -157,7 +158,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
             let curr = targetDir;
             // 路径比较按 Windows 规则处理，忽略大小写。
             const normalizedRoot = rootPath.replace(/\\/g, "/").toLowerCase();
-            
+
             while (curr) {
                 const normalizedCurr = curr.replace(/\\/g, "/").toLowerCase();
                 if (!normalizedCurr.startsWith(normalizedRoot)) break;
@@ -216,7 +217,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
         if (busy.current) return;
         busy.current = true; setError("");
         fileOperationHistory.beginGroup();
-        try { await action(); } catch (error: any) { 
+        try { await action(); } catch (error: any) {
             const message = error instanceof Error ? error.message : String(error);
             if (message.startsWith("无法删除目录：")) showDeletionBlocked(message);
             else if (error?.message !== "CANCELLED") setError(String(error));
@@ -300,19 +301,19 @@ export const PhysicalTree: React.FC = React.memo(() => {
                 if (msg.startsWith("CONFLICT:DIR:")) {
                     const conflictPath = msg.replace("CONFLICT:DIR:", "");
                     currentOpts = await new Promise<any>((resolve, reject) => {
-                        setConflictState({ 
-                            type: "DIR", path: conflictPath, action, sourcePath, targetDir, opts: currentOpts, 
-                            resolve: (opts) => { setConflictState(null); resolve(opts); }, 
-                            reject: () => { setConflictState(null); reject(new Error("CANCELLED")); } 
+                        setConflictState({
+                            type: "DIR", path: conflictPath, action, sourcePath, targetDir, opts: currentOpts,
+                            resolve: (opts) => { setConflictState(null); resolve(opts); },
+                            reject: () => { setConflictState(null); reject(new Error("CANCELLED")); }
                         });
                     });
                 } else if (msg.startsWith("CONFLICT:FILE:")) {
                     const conflictPath = msg.replace("CONFLICT:FILE:", "");
                     currentOpts = await new Promise<any>((resolve, reject) => {
-                        setConflictState({ 
-                            type: "FILE", path: conflictPath, action, sourcePath, targetDir, opts: currentOpts, 
-                            resolve: (opts) => { setConflictState(null); resolve(opts); }, 
-                            reject: () => { setConflictState(null); reject(new Error("CANCELLED")); } 
+                        setConflictState({
+                            type: "FILE", path: conflictPath, action, sourcePath, targetDir, opts: currentOpts,
+                            resolve: (opts) => { setConflictState(null); resolve(opts); },
+                            reject: () => { setConflictState(null); reject(new Error("CANCELLED")); }
                         });
                     });
                 } else {
@@ -471,7 +472,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
         e.stopPropagation();
         const isSelected = selection.some(s => s.path === node.data.id);
         const paths = isSelected ? selection.map(s => s.path) : [node.data.id];
-        
+
         e.dataTransfer.setData("application/x-nexusdesk-file", node.data.id);
         e.dataTransfer.setData("application/x-nexusdesk-files", JSON.stringify(paths));
         e.dataTransfer.effectAllowed = "all";
@@ -525,7 +526,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
         const physicalFilesStr = e.dataTransfer.getData("application/x-nexusdesk-files");
         const physical = e.dataTransfer.getData("application/x-nexusdesk-file");
         const files = Array.from(e.dataTransfer.files);
-        
+
         if (target && !logical && !physical && !physicalFilesStr && files.length) {
             e.preventDefault(); e.stopPropagation();
             void runOperation(async () => {
@@ -538,7 +539,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
         if (!target || (!logical && !physical && !physicalFilesStr)) return;
         e.preventDefault();
         e.stopPropagation();
-        
+
         if (logical) {
             void runOperation(() => handleTransferWithConflict("copy", logical, target));
         } else {
@@ -548,7 +549,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
             } else if (physical) {
                 physicalPaths = [physical];
             }
-            
+
             if (physicalPaths.length > 0) {
                 void runOperation(async () => {
                     for (const p of physicalPaths) {
@@ -734,44 +735,41 @@ export const PhysicalTree: React.FC = React.memo(() => {
 
             {conflictState && (
                 <Dialog.Root open onOpenChange={open => { if (!open) conflictState.reject(); }}>
-                    <Dialog.Portal>
-                        <Dialog.Overlay className="search-overlay" />
-                        <Dialog.Content className="create-name-dialog delete-confirm-dialog" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
-                            <header className="flex items-center gap-3 px-5 pt-5">
-                                <span className="delete-confirm-icon"><AlertTriangle size={20} className="text-amber-400" /></span>
-                                <Dialog.Title className="flex-1 font-medium text-base">
-                                    {conflictState.type === "DIR" ? "目录已存在" : "文件已存在"}
-                                </Dialog.Title>
-                                <Dialog.Close className="rounded p-1 text-gray-400 hover:bg-white/10"><X size={16} /></Dialog.Close>
-                            </header>
-                            <div className="px-5 py-4">
-                                <Dialog.Description className="text-xs leading-6 text-gray-400">
-                                    目标位置已存在同名{conflictState.type === "DIR" ? "目录" : "文件"}：
-                                </Dialog.Description>
-                                <p className="mt-2 break-all text-sm font-mono bg-ide-panel-bg p-2 rounded border border-ide-panel-border">
-                                    {conflictState.path}
-                                </p>
-                                <p className="mt-3 text-xs text-gray-400">
-                                    {conflictState.type === "DIR" 
-                                        ? "是否合并这两个目录的内容？" 
-                                        : "是否覆盖此文件？"}
-                                </p>
-                            </div>
-                            <footer className="flex justify-end gap-2 border-t border-ide-panel-border px-5 py-3">
-                                <Dialog.Close className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10 text-sm">取消</Dialog.Close>
-                                {conflictState.type === "DIR" ? (
-                                    <button className="rounded bg-ide-accent px-4 py-1.5 text-white text-sm" onClick={() => conflictState.resolve({ ...conflictState.opts, mergeFolders: true })}>合并目录</button>
-                                ) : (
-                                    <>
-                                        <button className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10 text-sm" onClick={() => conflictState.resolve({ ...conflictState.opts, skipPaths: [...(conflictState.opts.skipPaths || []), conflictState.path] })}>跳过</button>
-                                        <button className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10 text-sm" onClick={() => conflictState.resolve({ ...conflictState.opts, skipAll: true })}>全部跳过</button>
-                                        <button className="rounded bg-ide-accent px-4 py-1.5 text-white text-sm" onClick={() => conflictState.resolve({ ...conflictState.opts, overwritePaths: [...(conflictState.opts.overwritePaths || []), conflictState.path] })}>覆盖</button>
-                                        <button className="rounded bg-ide-accent px-4 py-1.5 text-white text-sm" onClick={() => conflictState.resolve({ ...conflictState.opts, overwriteAll: true })}>全部覆盖</button>
-                                    </>
-                                )}
-                            </footer>
-                        </Dialog.Content>
-                    </Dialog.Portal>
+                    <DialogShell purpose="confirmation">
+                        <header className="flex items-center gap-3 px-5 pt-5">
+                            <span className="delete-confirm-icon"><AlertTriangle size={20} className="text-amber-400" /></span>
+                            <Dialog.Title className="flex-1 font-medium text-base">
+                                {conflictState.type === "DIR" ? "目录已存在" : "文件已存在"}
+                            </Dialog.Title>
+                            <Dialog.Close className="rounded p-1 text-gray-400 hover:bg-white/10"><X size={16} /></Dialog.Close>
+                        </header>
+                        <div className="px-5 py-4">
+                            <Dialog.Description className="text-xs leading-6 text-gray-400">
+                                目标位置已存在同名{conflictState.type === "DIR" ? "目录" : "文件"}：
+                            </Dialog.Description>
+                            <p className="mt-2 break-all text-sm font-mono bg-ide-panel-bg p-2 rounded border border-ide-panel-border">
+                                {conflictState.path}
+                            </p>
+                            <p className="mt-3 text-xs text-gray-400">
+                                {conflictState.type === "DIR"
+                                    ? "是否合并这两个目录的内容？"
+                                    : "是否覆盖此文件？"}
+                            </p>
+                        </div>
+                        <footer className="flex justify-end gap-2 border-t border-ide-panel-border px-5 py-3">
+                            <Dialog.Close className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10 text-sm">取消</Dialog.Close>
+                            {conflictState.type === "DIR" ? (
+                                <button className="rounded bg-ide-accent px-4 py-1.5 text-white text-sm" onClick={() => conflictState.resolve({ ...conflictState.opts, mergeFolders: true })}>合并目录</button>
+                            ) : (
+                                <>
+                                    <button className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10 text-sm" onClick={() => conflictState.resolve({ ...conflictState.opts, skipPaths: [...(conflictState.opts.skipPaths || []), conflictState.path] })}>跳过</button>
+                                    <button className="rounded border border-ide-panel-border px-4 py-1.5 hover:bg-white/10 text-sm" onClick={() => conflictState.resolve({ ...conflictState.opts, skipAll: true })}>全部跳过</button>
+                                    <button className="rounded bg-ide-accent px-4 py-1.5 text-white text-sm" onClick={() => conflictState.resolve({ ...conflictState.opts, overwritePaths: [...(conflictState.opts.overwritePaths || []), conflictState.path] })}>覆盖</button>
+                                    <button className="rounded bg-ide-accent px-4 py-1.5 text-white text-sm" onClick={() => conflictState.resolve({ ...conflictState.opts, overwriteAll: true })}>全部覆盖</button>
+                                </>
+                            )}
+                        </footer>
+                    </DialogShell>
                 </Dialog.Root>
             )}
 

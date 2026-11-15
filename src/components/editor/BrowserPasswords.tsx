@@ -1,4 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
+import { DialogShell } from "@/components/DialogShell";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { KeyRound, X } from "lucide-react";
@@ -62,30 +63,27 @@ export function BrowserPasswords({ onImported }: { onImported?: () => Promise<vo
   };
   return <Dialog.Root open={opened} onOpenChange={value => { if (!busy) { setOpened(value); setMessage(""); setError(""); } }}>
     <Dialog.Trigger asChild><button type="button" title="密码管理" aria-label="密码管理" className="rounded p-1.5 text-gray-400 hover:bg-white/10 hover:text-white"><KeyRound size={15} /></button></Dialog.Trigger>
-    <Dialog.Portal>
-      <Dialog.Overlay className="search-overlay" />
-      <Dialog.Content className="create-name-dialog" style={{ width: "min(480px, 92vw)" }} onKeyDown={event => event.stopPropagation()} onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}>
-        <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3">
-          <Dialog.Title>密码管理</Dialog.Title>
-          <Dialog.Close disabled={busy} aria-label="关闭密码管理" className="rounded p-1 hover:bg-white/10"><X size={16} /></Dialog.Close>
-        </header>
-        <div className="flex flex-col gap-4 p-4 text-sm">
-          <Dialog.Description className="text-gray-400">导入 Chrome 密码管理工具导出的 CSV 文件，或将已保存的密码导出为兼容 Chrome 的 CSV。</Dialog.Description>
-          <div className="grid grid-cols-3 gap-2 rounded border border-ide-panel-border bg-black/10 p-3 text-center">
-            <div><strong className="block text-base text-gray-100">{statsLoading ? "…" : stats?.sites ?? 0}</strong><span className="text-xs text-gray-400">保存的网站</span></div>
-            <div><strong className="block text-base text-gray-100">{statsLoading ? "…" : stats?.passwords ?? 0}</strong><span className="text-xs text-gray-400">保存的密码</span></div>
-            <div><strong className="block text-xs leading-4 text-gray-100">{statsLoading ? "…" : stats?.updated_at ? <><span className="block">{new Date(stats.updated_at).toLocaleDateString()}</span><span className="block">{new Date(stats.updated_at).toLocaleTimeString()}</span></> : "暂无"}</strong><span className="text-xs text-gray-400">最新更新</span></div>
-          </div>
-          <p className="text-xs text-gray-400">按完整域名匹配登录信息，忽略路径和查询参数，支持先填账号再填密码；同一网站有多个账号时可选择账号。检测到登录表单消失后，会更新已有账号的密码和登录地址。密码在 Windows 本机加密保存。</p>
-          <div className="flex gap-2">
-            <button disabled={busy} onClick={() => void run("import")} className="rounded bg-ide-accent px-3 py-2 text-white disabled:opacity-50">导入密码</button>
-            <button disabled={busy} onClick={() => void run("export")} className="rounded border border-ide-panel-border px-3 py-2 hover:bg-white/10 disabled:opacity-50">导出密码</button>
-          </div>
-          {busy && <p role="status" className="text-xs text-gray-400">正在处理…</p>}
-          {message && <p role="status" className="text-xs text-green-400">{message}</p>}
-          {error && <p role="alert" className="break-all text-xs text-red-400">{error}</p>}
+    <DialogShell onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}>
+      <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3">
+        <Dialog.Title>密码管理</Dialog.Title>
+        <Dialog.Close disabled={busy} aria-label="关闭密码管理" className="rounded p-1 hover:bg-white/10"><X size={16} /></Dialog.Close>
+      </header>
+      <div className="flex flex-col gap-4 p-4 text-sm">
+        <Dialog.Description className="text-gray-400">导入 Chrome 密码管理工具导出的 CSV 文件，或将已保存的密码导出为兼容 Chrome 的 CSV。</Dialog.Description>
+        <div className="grid grid-cols-3 gap-2 rounded border border-ide-panel-border bg-black/10 p-3 text-center">
+          <div><strong className="block text-base text-gray-100">{statsLoading ? "…" : stats?.sites ?? 0}</strong><span className="text-xs text-gray-400">保存的网站</span></div>
+          <div><strong className="block text-base text-gray-100">{statsLoading ? "…" : stats?.passwords ?? 0}</strong><span className="text-xs text-gray-400">保存的密码</span></div>
+          <div><strong className="block text-xs leading-4 text-gray-100">{statsLoading ? "…" : stats?.updated_at ? <><span className="block">{new Date(stats.updated_at).toLocaleDateString()}</span><span className="block">{new Date(stats.updated_at).toLocaleTimeString()}</span></> : "暂无"}</strong><span className="text-xs text-gray-400">最新更新</span></div>
         </div>
-      </Dialog.Content>
-    </Dialog.Portal>
+        <p className="text-xs text-gray-400">按完整域名匹配登录信息，忽略路径和查询参数，支持先填账号再填密码；同一网站有多个账号时可选择账号。检测到登录表单消失后，会更新已有账号的密码和登录地址。密码在 Windows 本机加密保存。</p>
+        <div className="flex gap-2">
+          <button disabled={busy} onClick={() => void run("import")} className="rounded bg-ide-accent px-3 py-2 text-white disabled:opacity-50">导入密码</button>
+          <button disabled={busy} onClick={() => void run("export")} className="rounded border border-ide-panel-border px-3 py-2 hover:bg-white/10 disabled:opacity-50">导出密码</button>
+        </div>
+        {busy && <p role="status" className="text-xs text-gray-400">正在处理…</p>}
+        {message && <p role="status" className="text-xs text-green-400">{message}</p>}
+        {error && <p role="alert" className="break-all text-xs text-red-400">{error}</p>}
+      </div>
+    </DialogShell>
   </Dialog.Root>;
 }

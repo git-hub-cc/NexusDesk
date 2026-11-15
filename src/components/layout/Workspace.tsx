@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Cloud, GitBranch, Mic, Package, Terminal, X } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DialogShell } from "@/components/DialogShell";
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
 import { DndContext, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent, closestCenter, DragOverlay } from "@dnd-kit/core";
 import { setLayoutResizing, useLayoutStore } from "@/store/layoutStore";
@@ -298,27 +299,24 @@ export const Workspace: React.FC = () => {
         </div>
       </div>
       <AndroidMirrorWorkspace />
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-glass settings-dialog" onKeyDown={event => event.stopPropagation()}>
-          <header className="flex items-center justify-between border-b border-ide-panel-border px-5 py-4">
-            <Dialog.Title className="text-lg font-semibold">设置</Dialog.Title>
-            <Dialog.Close type="button" aria-label="关闭设置" className="rounded p-1 hover:bg-white/10"><X size={20} /></Dialog.Close>
-          </header>
-          <Dialog.Description className="sr-only">管理应用设置。</Dialog.Description>
-          <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
-            <nav className="shrink-0 border-b border-ide-panel-border bg-ide-panel-bg p-4 sm:w-48 sm:border-b-0 sm:border-r" aria-label="设置列表">
-              <button type="button" onClick={() => setSettingsSection("git")} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "git" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "git" ? "page" : undefined}><GitBranch size={16} />版本控制</button>
-              <button type="button" onClick={() => setSettingsSection("speech")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "speech" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "speech" ? "page" : undefined}><Mic size={16} />语音识别</button>
-              <button type="button" onClick={() => setSettingsSection("software")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "software" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "software" ? "page" : undefined}><Package size={16} />软件管理</button>
-              <button type="button" onClick={() => setSettingsSection("codex")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "codex" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "codex" ? "page" : undefined}><img src={openAiIcon} alt="" aria-hidden="true" className="h-4 w-4 shrink-0" />Codex</button>
-              <button type="button" onClick={() => setSettingsSection("navigation")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "navigation" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "navigation" ? "page" : undefined}><Cloud size={16} />云同步</button>
-              <button type="button" onClick={() => setSettingsSection("terminal")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "terminal" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "terminal" ? "page" : undefined}><Terminal size={16} />终端</button>
-            </nav>
-            <div className="min-h-0 min-w-0 flex-1 overflow-auto">{settingsSection === "git" ? <GitSettings /> : settingsSection === "speech" ? <SpeechRecognitionSettings /> : settingsSection === "software" ? <SoftwareSettings /> : settingsSection === "codex" ? <CodexSettings /> : settingsSection === "navigation" ? <NavigationSyncSettings /> : <TerminalSettings />}</div>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
+      <DialogShell purpose="settings">
+        <header className="flex items-center justify-between border-b border-ide-panel-border px-5 py-4">
+          <Dialog.Title className="text-lg font-semibold">设置</Dialog.Title>
+          <Dialog.Close type="button" aria-label="关闭设置" className="rounded p-1 hover:bg-white/10"><X size={20} /></Dialog.Close>
+        </header>
+        <Dialog.Description className="sr-only">管理应用设置。</Dialog.Description>
+        <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+          <nav className="shrink-0 border-b border-ide-panel-border bg-ide-panel-bg p-4 sm:w-48 sm:border-b-0 sm:border-r" aria-label="设置列表">
+            <button type="button" onClick={() => setSettingsSection("git")} className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "git" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "git" ? "page" : undefined}><GitBranch size={16} />版本控制</button>
+            <button type="button" onClick={() => setSettingsSection("speech")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "speech" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "speech" ? "page" : undefined}><Mic size={16} />语音识别</button>
+            <button type="button" onClick={() => setSettingsSection("software")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "software" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "software" ? "page" : undefined}><Package size={16} />软件管理</button>
+            <button type="button" onClick={() => setSettingsSection("codex")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "codex" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "codex" ? "page" : undefined}><img src={openAiIcon} alt="" aria-hidden="true" className="h-4 w-4 shrink-0" />Codex</button>
+            <button type="button" onClick={() => setSettingsSection("navigation")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "navigation" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "navigation" ? "page" : undefined}><Cloud size={16} />云同步</button>
+            <button type="button" onClick={() => setSettingsSection("terminal")} className={`mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${settingsSection === "terminal" ? "bg-ide-selection text-ide-fg" : "text-gray-400 hover:bg-white/5 hover:text-ide-fg"}`} aria-current={settingsSection === "terminal" ? "page" : undefined}><Terminal size={16} />终端</button>
+          </nav>
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto">{settingsSection === "git" ? <GitSettings /> : settingsSection === "speech" ? <SpeechRecognitionSettings /> : settingsSection === "software" ? <SoftwareSettings /> : settingsSection === "codex" ? <CodexSettings /> : settingsSection === "navigation" ? <NavigationSyncSettings /> : <TerminalSettings />}</div>
+        </div>
+      </DialogShell>
       </Dialog.Root>
 
       <DragOverlay dropAnimation={null}>

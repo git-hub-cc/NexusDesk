@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import nexusdeskIcon from "@/assets/nexusdesk.svg";
 import * as DropdownMenu from "@/lib/nativeDropdownMenu";
 import * as Dialog from "@radix-ui/react-dialog";
+import { DialogShell } from "@/components/DialogShell";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { flushGlobalSettings, settingsStorage } from "@/lib/globalSettings";
@@ -201,25 +202,22 @@ export const TitleBar: React.FC<{ expanded?: boolean }> = ({ expanded = false } 
         </div>
 
         <Dialog.Root open={dialogOpen} onOpenChange={open => { setDialogOpen(open); setWindowError(null); }}>
-          <Dialog.Portal>
-            <Dialog.Overlay className="search-overlay" />
-            <Dialog.Content className="create-name-dialog" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
-              <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3">
-                <Dialog.Title className="font-medium">打开项目</Dialog.Title>
-                <Dialog.Close className="rounded p-1 hover:bg-white/10"><X size={16} /></Dialog.Close>
-              </header>
-              <div className="p-4 text-sm">
-                <p>你想在哪个窗口打开项目？</p>
-                <p className="text-xs text-gray-400 mt-1 break-all">{selectedProject}</p>
-                {windowError && <p role="alert" className="mt-2 text-sm text-red-400 break-all">新窗口打开失败：{windowError}</p>}
-              </div>
-              <footer className="flex justify-end gap-2 border-t border-ide-panel-border px-4 py-3">
-                <Dialog.Close className="ide-button ide-button-secondary rounded px-4 py-1.5 text-sm">取消</Dialog.Close>
-                <button onClick={openInThisWindow} className="ide-button ide-button-secondary rounded px-4 py-1.5 text-sm">当前窗口</button>
-                <button onClick={openInNewWindow} className="rounded ide-button ide-button-primary px-4 py-1.5 text-sm">新窗口</button>
-              </footer>
-            </Dialog.Content>
-          </Dialog.Portal>
+          <DialogShell>
+            <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3">
+              <Dialog.Title className="font-medium">打开项目</Dialog.Title>
+              <Dialog.Close className="rounded p-1 hover:bg-white/10"><X size={16} /></Dialog.Close>
+            </header>
+            <div className="p-4 text-sm">
+              <p>你想在哪个窗口打开项目？</p>
+              <p className="text-xs text-gray-400 mt-1 break-all">{selectedProject}</p>
+              {windowError && <p role="alert" className="mt-2 text-sm text-red-400 break-all">新窗口打开失败：{windowError}</p>}
+            </div>
+            <footer className="flex justify-end gap-2 border-t border-ide-panel-border px-4 py-3">
+              <Dialog.Close className="ide-button ide-button-secondary rounded px-4 py-1.5 text-sm">取消</Dialog.Close>
+              <button onClick={openInThisWindow} className="ide-button ide-button-secondary rounded px-4 py-1.5 text-sm">当前窗口</button>
+              <button onClick={openInNewWindow} className="rounded ide-button ide-button-primary px-4 py-1.5 text-sm">新窗口</button>
+            </footer>
+          </DialogShell>
         </Dialog.Root>
         {sftpOpen && <SftpConnectDialog onClose={() => setSftpOpen(false)} />}
         {newProjectOpen && <CreateProjectDialog

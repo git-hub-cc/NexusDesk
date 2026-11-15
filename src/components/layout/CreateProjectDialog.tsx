@@ -1,4 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
+import { DialogShell } from "@/components/DialogShell";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 import { fsApi } from "@/lib/api";
@@ -67,41 +68,37 @@ export function CreateProjectDialog({ onCreate, onClose }: CreateProjectDialogPr
 
   return (
     <Dialog.Root open onOpenChange={open => { if (!open && !working.current) onClose(); }}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="search-overlay" />
-        <Dialog.Content className="create-name-dialog" onClick={event => event.stopPropagation()}
-          onKeyDown={event => event.stopPropagation()}
-          onOpenAutoFocus={event => { event.preventDefault(); nameInput.current?.focus(); }}
-          onEscapeKeyDown={event => { if (working.current) event.preventDefault(); }}>
-          <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3">
-            <Dialog.Title className="font-medium">新建项目</Dialog.Title>
-            <Dialog.Close disabled={busy} aria-label="取消新建项目" className="rounded p-1 hover:bg-white/10 disabled:opacity-40"><X size={16} /></Dialog.Close>
-          </header>
-          <form onSubmit={event => void submit(event)} className="flex flex-col gap-3 p-4" aria-busy={busy}>
-            <Dialog.Description className="text-xs text-gray-400">填写项目名称和保存位置，将自动创建项目文件夹。</Dialog.Description>
-            <label htmlFor={`${id}-name`} className="text-xs">项目名称</label>
-            <input ref={nameInput} id={`${id}-name`} value={name} disabled={busy} autoComplete="off" spellCheck={false}
-              onChange={event => { setName(event.target.value); setError(""); }}
+      <DialogShell
+        onOpenAutoFocus={event => { event.preventDefault(); nameInput.current?.focus(); }}
+        onEscapeKeyDown={event => { if (working.current) event.preventDefault(); }}>
+        <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3">
+          <Dialog.Title className="font-medium">新建项目</Dialog.Title>
+          <Dialog.Close disabled={busy} aria-label="取消新建项目" className="rounded p-1 hover:bg-white/10 disabled:opacity-40"><X size={16} /></Dialog.Close>
+        </header>
+        <form onSubmit={event => void submit(event)} className="flex flex-col gap-3 p-4" aria-busy={busy}>
+          <Dialog.Description className="text-xs text-gray-400">填写项目名称和保存位置，将自动创建项目文件夹。</Dialog.Description>
+          <label htmlFor={`${id}-name`} className="text-xs">项目名称</label>
+          <input ref={nameInput} id={`${id}-name`} value={name} disabled={busy} autoComplete="off" spellCheck={false}
+            onChange={event => { setName(event.target.value); setError(""); }}
+            onKeyDown={event => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }}
+            className="w-full ide-control rounded px-3 py-2" />
+          <label htmlFor={`${id}-location`} className="text-xs">保存位置</label>
+          <div className="flex gap-2">
+            <input id={`${id}-location`} value={location} disabled={busy} autoComplete="off" spellCheck={false}
+              placeholder="选择或输入父目录路径"
+            onChange={event => { setLocation(event.target.value); rememberProjectSaveLocation(event.target.value); setError(""); }}
               onKeyDown={event => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }}
-              className="w-full ide-control rounded px-3 py-2" />
-            <label htmlFor={`${id}-location`} className="text-xs">保存位置</label>
-            <div className="flex gap-2">
-              <input id={`${id}-location`} value={location} disabled={busy} autoComplete="off" spellCheck={false}
-                placeholder="选择或输入父目录路径"
-              onChange={event => { setLocation(event.target.value); rememberProjectSaveLocation(event.target.value); setError(""); }}
-                onKeyDown={event => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }}
-                className="min-w-0 flex-1 ide-control rounded px-3 py-2" />
-              <button type="button" disabled={busy} onClick={() => void browse()} className="shrink-0 ide-button ide-button-secondary rounded px-3 py-2">浏览…</button>
-            </div>
-            {projectPath && <p className="break-all text-xs text-gray-400">项目路径：{projectPath}</p>}
-            {error && <p role="alert" className="break-words text-xs text-red-400">{error}</p>}
-            <footer className="mt-2 flex justify-end gap-2">
-              <Dialog.Close disabled={busy} className="ide-button ide-button-secondary rounded px-4 py-1.5">取消</Dialog.Close>
-              <button type="submit" disabled={busy || !projectPath} className="rounded ide-button ide-button-primary px-4 py-1.5">{busy ? "正在处理…" : "创建"}</button>
-            </footer>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
+              className="min-w-0 flex-1 ide-control rounded px-3 py-2" />
+            <button type="button" disabled={busy} onClick={() => void browse()} className="shrink-0 ide-button ide-button-secondary rounded px-3 py-2">浏览…</button>
+          </div>
+          {projectPath && <p className="break-all text-xs text-gray-400">项目路径：{projectPath}</p>}
+          {error && <p role="alert" className="break-words text-xs text-red-400">{error}</p>}
+          <footer className="mt-2 flex justify-end gap-2">
+            <Dialog.Close disabled={busy} className="ide-button ide-button-secondary rounded px-4 py-1.5">取消</Dialog.Close>
+            <button type="submit" disabled={busy || !projectPath} className="rounded ide-button ide-button-primary px-4 py-1.5">{busy ? "正在处理…" : "创建"}</button>
+          </footer>
+        </form>
+      </DialogShell>
     </Dialog.Root>
   );
 }
