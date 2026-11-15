@@ -70,13 +70,20 @@ export const videoApi = {
 };
 export interface GraphCategory { name: string; files: string[]; missingFiles: string[]; color?: string | null }
 export interface LogicalSyncData { workspace: string; folders: string[]; entries: { path: string; category: string; kind: string }[]; deletedFolders?: string[] }
+export interface GraphSyncData { workspace: string; categories: { name: string; color: string | null }[]; files: { category: string; path: string }[] }
+function notifyGraphChanged() {
+    window.dispatchEvent(new Event("nexusdesk-graph-data-changed"));
+    window.dispatchEvent(new Event("nexusdesk:graph-updated"));
+}
 export const fsApi = {
-    editGraphCategory: (name: string, newName: string | null): Promise<void> => invoke("edit_graph_category", { name, newName }),
-    removeGraphFile: (category: string, path: string): Promise<void> => invoke("remove_graph_file", { category, path }),
-    setGraphCategoryColor: (category: string, color: string | null): Promise<void> => invoke("set_graph_category_color", { category, color }),
+    editGraphCategory: async (name: string, newName: string | null): Promise<void> => { await invoke("edit_graph_category", { name, newName }); notifyGraphChanged(); },
+    removeGraphFile: async (category: string, path: string): Promise<void> => { await invoke("remove_graph_file", { category, path }); notifyGraphChanged(); },
+    setGraphCategoryColor: async (category: string, color: string | null): Promise<void> => { await invoke("set_graph_category_color", { category, color }); notifyGraphChanged(); },
     getGraphCategories: (): Promise<GraphCategory[]> => invoke("get_graph_categories"),
-    createGraphCategory: (name: string): Promise<void> => invoke("create_graph_category", { name }),
-    linkGraphFiles: (category: string, paths: string[]): Promise<void> => invoke("link_graph_files", { category, paths }),
+    createGraphCategory: async (name: string): Promise<void> => { await invoke("create_graph_category", { name }); notifyGraphChanged(); },
+    linkGraphFiles: async (category: string, paths: string[]): Promise<void> => { await invoke("link_graph_files", { category, paths }); notifyGraphChanged(); },
+    getGraphSyncData: (root: string): Promise<GraphSyncData> => invoke("get_graph_sync_data", { root }),
+    applyGraphSyncData: async (root: string, data: GraphSyncData): Promise<void> => { await invoke("apply_graph_sync_data", { root, data }); notifyGraphChanged(); },
     readBinaryFile: (path: string): Promise<number[]> => invoke("read_binary_file", { path }),
     writeBinaryFile: (path: string, bytes: number[]): Promise<void> => invoke("write_binary_file", { path, bytes }),
     importAsset: (notePath: string, asset: { sourcePath?: string; name?: string; bytes?: number[] }): Promise<string> => invoke("import_asset", { notePath, ...asset }),

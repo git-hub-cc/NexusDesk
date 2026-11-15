@@ -1,5 +1,5 @@
 import { settingsStorage } from "@/lib/globalSettings";
-import { fsApi, type LogicalSyncData } from "@/lib/api";
+import { fsApi, type GraphSyncData, type LogicalSyncData } from "@/lib/api";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { loadNavigationData, mergeNavigationData, saveNavigationData, type NavigationCategory, type NavigationData } from "./navigationData";
 
@@ -10,10 +10,12 @@ const PROVIDER_KEY = "nexusdesk.navigation.provider";
 const SYNC_ENABLED_KEY = "nexusdesk.navigation.syncEnabled";
 const SYNC_NAVIGATION_KEY = "nexusdesk.cloudSync.myNavigation";
 const SYNC_LOGICAL_KEY = "nexusdesk.cloudSync.logicalPartitions";
+const SYNC_GRAPH_KEY = "nexusdesk.cloudSync.graphPartitions";
 const LEGACY_TOKEN_KEY = "navhub-github-token";
 const LEGACY_REPO_KEY = "navhub-github-repo";
 const DATA_FILE = "navhub.json";
 const LOGICAL_FILE = "logical-partitions.json";
+const GRAPH_FILE = "graph-partitions.json";
 const SYNC_TIMEOUT_MS = 15000;
 type SyncStatus = "disconnected" | "connecting" | "connected" | "syncing" | "error" | "conflict";
 export type NavigationSyncState = { status: SyncStatus; provider: NavigationSyncProvider; user: string; repo: string; lastSync: number | null; error: string; logicalNotice?: string; fileErrors?: Partial<Record<SyncChannel, string>> };
@@ -22,10 +24,12 @@ let current: NavigationSyncState = { status: "disconnected", provider: "github",
 let token = "";
 let githubBranch = "main";
 let repositoryWrites: Promise<void> = Promise.resolve();
-type SyncChannel = "navigation" | "logical";
+type SyncChannel = "navigation" | "logical" | "graph";
 type RepositoryFile = { value: Record<string, unknown> | null; sha: string | null; exists: boolean };
 type LogicalWorkspace = Omit<LogicalSyncData, "workspace"> & { deletedEntries?: string[] };
 type LogicalFile = { version: 1; updatedAt: number; workspaces: Record<string, LogicalWorkspace> };
+type GraphWorkspace = Omit<GraphSyncData, "workspace"> & { deletedCategories?: string[]; deletedFiles?: string[] };
+type GraphFile = { version: 1; updatedAt: number; workspaces: Record<string, GraphWorkspace> };
 let remoteData: NavigationData | null = null;
 let lastNavigationSnapshot: string | null = null;
 let lastLogicalSnapshot: string | null = null;
@@ -33,7 +37,7 @@ let ready = false;
 let suppressSave = false;
 const files = new Map<string, RepositoryFile>();
 const timers: Partial<Record<SyncChannel, number>> = {};
-const queues: Record<SyncChannel, Promise<void>> = { navigation: Promise.resolve(), logical: Promise.resolve() };
+const queues: Record<SyncChannel, Promise<void>> = { navigation: Promise.resolve(), logical: Promise.resolve(), graph: Promise.resolve() };
 const active = new Set<SyncChannel>();
 const subscribers = new Set<(state: NavigationSyncState) => void>();
 
@@ -339,8 +343,91 @@ async function syncLogical() {
   lastLogicalSnapshot = logicalSnapshot(root, applied);
 }
 
+function graphCategoryKey(category: GraphSyncData["categories"][number]) { return category.name.toLocaleLowerCase(); }
+function graphFileKey(file: GraphSyncData["files"][number]) { return JSON.stringify([file.category.toLocaleLowerCase(), file.path.replace(/\\/g, "/")]); }
+function graphEqual(a: Pick<GraphSyncData, "categories" | "files">, b: Pick<GraphSyncData, "categories" | "files">) {
+  const categories = (value: GraphSyncData["categories"]) => value.map(item => [graphCategoryKey(item), item.color ?? null]).sort((x, y) => String(x[0]).localeCompare(String(y[0])));
+  return JSON.stringify(categories(a.categories)) === JSON.stringify(categories(b.categories))
+    && JSON.stringify(a.files.map(graphFileKey).sort()) === JSON.stringify(b.files.map(graphFileKey).sort());
+}
+function validGraphWorkspace(value: unknown): value is GraphWorkspace {
+  if (!value || typeof value !== "object") return false;
+  const data = value as GraphWorkspace;
+  return Array.isArray(data.categories) && data.categories.every(category => category && typeof category.name === "string" && (category.color === null || typeof category.color === "string"))
+    && Array.isArray(data.files) && data.files.every(file => file && typeof file.category === "string" && typeof file.path === "string")
+    && (data.deletedCategories === undefined || Array.isArray(data.deletedCategories) && data.deletedCategories.every(name => typeof name === "string"))
+    && (data.deletedFiles === undefined || Array.isArray(data.deletedFiles) && data.deletedFiles.every(key => typeof key === "string"));
+}
+function mergeGraph(local: GraphSyncData, remote: GraphWorkspace | undefined, baseline: GraphSyncData | null): GraphWorkspace {
+  const deletedCategories = new Set(remote?.deletedCategories ?? []);
+  const deletedFiles = new Set(remote?.deletedFiles ?? []);
+  const localCategories = new Map(local.categories.map(category => [graphCategoryKey(category), category]));
+  const remoteCategories = new Map((remote?.categories ?? []).map(category => [graphCategoryKey(category), category]));
+  const baselineCategories = new Map((baseline?.categories ?? []).map(category => [graphCategoryKey(category), category]));
+  const localFiles = new Map(local.files.map(file => [graphFileKey(file), file]));
+  const baselineFiles = new Set(baseline?.files.map(graphFileKey) ?? []);
+  for (const key of baselineCategories.keys()) if (!localCategories.has(key)) deletedCategories.add(key);
+  for (const key of baselineFiles) if (!localFiles.has(key)) deletedFiles.add(key);
+  if (baseline) {
+    for (const key of localCategories.keys()) if (!baselineCategories.has(key)) deletedCategories.delete(key);
+    for (const key of localFiles.keys()) if (!baselineFiles.has(key)) deletedFiles.delete(key);
+  }
+  const categories = new Map(remoteCategories);
+  for (const [key, category] of localCategories) {
+    const base = baselineCategories.get(key);
+    const remoteCategory = remoteCategories.get(key);
+    if (!remoteCategory || (base ? (category.color ?? null) !== (base.color ?? null) : !!category.color || !remoteCategory.color)) categories.set(key, category);
+  }
+  for (const key of deletedCategories) categories.delete(key);
+  const files = new Map((remote?.files ?? []).map(file => [graphFileKey(file), file]));
+  for (const [key, file] of localFiles) files.set(key, file);
+  for (const [key, file] of files) if (deletedCategories.has(file.category.toLocaleLowerCase())) deletedFiles.add(key);
+  return {
+    categories: [...categories.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    files: [...files.entries()].filter(([key, file]) => !deletedFiles.has(key) && categories.has(file.category.toLocaleLowerCase())).map(([, file]) => file).sort((a, b) => graphFileKey(a).localeCompare(graphFileKey(b))),
+    deletedCategories: [...deletedCategories].sort(),
+    deletedFiles: [...deletedFiles].sort(),
+  };
+}
+
+async function syncGraph() {
+  if (!getCloudSyncSelection().graphPartitions) return false;
+  const root = useWorkspaceStore.getState().rootPath;
+  if (!root || root.startsWith("sftp:")) return false;
+  const local = await fsApi.getGraphSyncData(root);
+  const snapshot = await readRepositoryFile(GRAPH_FILE);
+  let document: GraphFile;
+  if (snapshot.value) {
+    if (snapshot.value.version !== 1 || !snapshot.value.workspaces || typeof snapshot.value.workspaces !== "object" || Array.isArray(snapshot.value.workspaces)) throw new Error("云端图谱分区文件格式无效或版本不受支持");
+    document = { ...(snapshot.value as GraphFile), workspaces: { ...(snapshot.value as GraphFile).workspaces } };
+  } else document = { version: 1, updatedAt: 0, workspaces: {} };
+  if (!Object.values(document.workspaces).every(validGraphWorkspace)) throw new Error("云端图谱分区数据格式无效");
+  const baselineKey = `nexusdesk.cloudSync.baseline:${current.provider}:${current.repo}:${root}:${local.workspace}:graph`;
+  let baseline: GraphSyncData | null = null;
+  try { baseline = JSON.parse(settingsStorage.getItem(baselineKey) || "null"); } catch { /* 无效基线按首次同步处理。 */ }
+  const merged = mergeGraph(local, document.workspaces[local.workspace], baseline);
+  const applied: GraphSyncData = { workspace: local.workspace, categories: merged.categories, files: merged.files };
+  if (useWorkspaceStore.getState().rootPath !== root) return;
+  const workspaces = { ...document.workspaces, [local.workspace]: merged };
+  if (!snapshot.value || JSON.stringify(snapshot.value.workspaces) !== JSON.stringify(workspaces)) {
+    await writeRepositoryFile(GRAPH_FILE, { version: 1, updatedAt: Date.now(), workspaces }, `同步图谱分区：分类 ${merged.categories.length} 个，关联 ${merged.files.length} 条`);
+  }
+  if (useWorkspaceStore.getState().rootPath !== root) return;
+  const latestLocal = await fsApi.getGraphSyncData(root);
+  if (useWorkspaceStore.getState().rootPath !== root || !graphEqual(local, latestLocal)) return;
+  if (!graphEqual(local, applied)) await fsApi.applyGraphSyncData(root, applied);
+  settingsStorage.setItem(baselineKey, JSON.stringify(applied));
+  lastGraphSnapshot = graphSnapshot(root, applied);
+}
+
+function graphSnapshot(root: string, data: GraphSyncData) {
+  return JSON.stringify([root, data.workspace, data.categories.map(category => [graphCategoryKey(category), category.color ?? null]).sort(), data.files.map(graphFileKey).sort()]);
+}
+let lastGraphSnapshot: string | null = null;
+
 function publishError(channel: SyncChannel, error: unknown) {
-  const fileErrors = { ...current.fileErrors, [channel]: `${channel === "navigation" ? DATA_FILE : LOGICAL_FILE}：${String(error)}` };
+  const fileName = channel === "navigation" ? DATA_FILE : channel === "logical" ? LOGICAL_FILE : GRAPH_FILE;
+  const fileErrors = { ...current.fileErrors, [channel]: `${fileName}：${String(error)}` };
   update({ fileErrors, status: Object.values(fileErrors).some(value => value?.includes("版本已变化")) ? "conflict" : "error", error: Object.values(fileErrors).filter(Boolean).join("；") });
 }
 
@@ -369,15 +456,17 @@ function enqueue(channel: SyncChannel, action: () => Promise<void | boolean>, sh
 function queuePush(channel: SyncChannel, mergeRemote = false) {
   if (!ready || !token || current.status === "disconnected") return;
   const selection = getCloudSyncSelection();
-  if (!(channel === "navigation" ? selection.myNavigation : selection.logicalPartitions)) return;
+  if (!(channel === "navigation" ? selection.myNavigation : channel === "logical" ? selection.logicalPartitions : selection.graphPartitions)) return;
   window.clearTimeout(timers[channel]);
   timers[channel] = window.setTimeout(() => {
-    void enqueue(channel, channel === "navigation" ? () => syncNavigation(mergeRemote) : syncLogical, async () => {
+    const action = channel === "navigation" ? () => syncNavigation(mergeRemote) : channel === "logical" ? syncLogical : syncGraph;
+    void enqueue(channel, action, async () => {
       if (current.fileErrors?.[channel]) return true;
       if (channel === "navigation") return mergeRemote || JSON.stringify(navigationSnapshot(await loadNavigationData())) !== lastNavigationSnapshot;
       const root = useWorkspaceStore.getState().rootPath;
       if (!root || root.startsWith("sftp:")) return true;
-      return logicalSnapshot(root, await fsApi.getLogicalSyncData(root)) !== lastLogicalSnapshot;
+      if (channel === "logical") return logicalSnapshot(root, await fsApi.getLogicalSyncData(root)) !== lastLogicalSnapshot;
+      return graphSnapshot(root, await fsApi.getGraphSyncData(root)) !== lastGraphSnapshot;
     }).catch(() => {});
   }, 1800);
 }
@@ -389,10 +478,13 @@ window.addEventListener("nexusdesk-navigation-preferences-changed", () => {
   if (!suppressSave) queuePush("navigation");
 });
 window.addEventListener("nexusdesk-logical-data-changed", () => {
-  if (!suppressSave) queuePush("logical");
+  if (!suppressSave) { queuePush("logical"); queuePush("graph"); }
+});
+window.addEventListener("nexusdesk-graph-data-changed", () => {
+  if (!suppressSave) queuePush("graph");
 });
 window.addEventListener("nexusdesk-cloud-sync-selection-changed", () => {
-  if (!suppressSave) { queuePush("navigation", true); queuePush("logical"); }
+  if (!suppressSave) { queuePush("navigation", true); queuePush("logical"); queuePush("graph"); }
   if (!getCloudSyncSelection().logicalPartitions) update({ logicalNotice: "" });
 });
 
@@ -400,12 +492,14 @@ export function getCloudSyncSelection() {
   return {
     myNavigation: settingsStorage.getItem(SYNC_NAVIGATION_KEY) !== "false",
     logicalPartitions: settingsStorage.getItem(SYNC_LOGICAL_KEY) === "true",
+    graphPartitions: settingsStorage.getItem(SYNC_GRAPH_KEY) === "true",
   };
 }
 
-export function setCloudSyncSelection(selection: { myNavigation: boolean; logicalPartitions: boolean }) {
+export function setCloudSyncSelection(selection: { myNavigation: boolean; logicalPartitions: boolean; graphPartitions: boolean }) {
   settingsStorage.setItem(SYNC_NAVIGATION_KEY, String(selection.myNavigation));
   settingsStorage.setItem(SYNC_LOGICAL_KEY, String(selection.logicalPartitions));
+  settingsStorage.setItem(SYNC_GRAPH_KEY, String(selection.graphPartitions));
   window.dispatchEvent(new Event("nexusdesk-cloud-sync-selection-changed"));
 }
 
@@ -520,6 +614,7 @@ async function syncSelected() {
   const results = await Promise.allSettled([
     ...(selection.myNavigation ? [enqueue("navigation", syncNavigation)] : []),
     ...(selection.logicalPartitions ? [enqueue("logical", syncLogical)] : []),
+    ...(selection.graphPartitions ? [enqueue("graph", syncGraph)] : []),
   ]);
   const failure = results.find(result => result.status === "rejected");
   if (failure?.status === "rejected") throw failure.reason;

@@ -307,6 +307,8 @@ pub fn run() {
             commands::remote_cmds::close_remote_terminal,
             commands::remote_cmds::close_remote,
             commands::graph_cmds::get_graph_categories,
+            commands::graph_cmds::get_graph_sync_data,
+            commands::graph_cmds::apply_graph_sync_data,
             commands::graph_cmds::set_graph_category_color,
             commands::graph_cmds::create_graph_category,
             commands::graph_cmds::link_graph_files,

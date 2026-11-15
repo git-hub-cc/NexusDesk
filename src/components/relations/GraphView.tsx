@@ -211,7 +211,8 @@ export function GraphView() {
     const receive = () => { if (root) void refresh().catch(cause => setError(String(cause))); };
     receive();
     window.addEventListener("nexusdesk:files-moved", receive);
-    return () => window.removeEventListener("nexusdesk:files-moved", receive);
+    window.addEventListener("nexusdesk:graph-updated", receive);
+    return () => { window.removeEventListener("nexusdesk:files-moved", receive); window.removeEventListener("nexusdesk:graph-updated", receive); };
   }, [root, revision]);
 
   const link = async (name: string, paths: string[]) => {

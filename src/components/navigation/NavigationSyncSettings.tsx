@@ -75,6 +75,7 @@ export function NavigationSyncSettings() {
         <legend className="mb-2 font-medium">同步内容</legend>
         <label className="flex items-center gap-2"><input type="checkbox" checked={selection.myNavigation} onChange={event => { const next = { ...selection, myNavigation: event.target.checked }; setSelection(next); setCloudSyncSelection(next); }} />我的导航</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={selection.logicalPartitions} onChange={event => { const next = { ...selection, logicalPartitions: event.target.checked }; setSelection(next); setCloudSyncSelection(next); }} />逻辑分区</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={selection.graphPartitions} onChange={event => { const next = { ...selection, graphPartitions: event.target.checked }; setSelection(next); setCloudSyncSelection(next); }} />图谱分区</label>
       </fieldset>
       {state.status === "connected" || state.status === "syncing" || state.status === "conflict" ? <>
         <div className="rounded border border-ide-panel-border bg-ide-panel-bg p-3">

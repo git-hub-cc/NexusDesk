@@ -431,7 +431,7 @@ pub struct LogicalSyncData {
     pub deleted_folders: Vec<String>,
 }
 
-fn relative_workspace_path(root: &std::path::Path, path: &str) -> Option<String> {
+pub(super) fn relative_workspace_path(root: &std::path::Path, path: &str) -> Option<String> {
     let normalize = |value: &str| {
         value
             .strip_prefix(r"\\?\UNC\")
@@ -519,7 +519,7 @@ fn logical_sync_data(conn: &rusqlite::Connection, root: &str) -> Result<LogicalS
     })
 }
 
-fn logical_workspace_id(root: &std::path::Path) -> String {
+pub(super) fn logical_workspace_id(root: &std::path::Path) -> String {
     let remote = git2::Repository::discover(root)
         .ok()
         .and_then(|repo| {

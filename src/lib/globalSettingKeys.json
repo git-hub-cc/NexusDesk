@@ -19,7 +19,8 @@
     "nexusdesk.navigation.provider",
     "nexusdesk.navigation.syncEnabled",
     "nexusdesk.cloudSync.myNavigation",
-    "nexusdesk.cloudSync.logicalPartitions"
+    "nexusdesk.cloudSync.logicalPartitions",
+    "nexusdesk.cloudSync.graphPartitions"
   ],
   "prefixes": ["nexusdesk.cloudSync.baseline:", "sftp-profile:", "sftp-label:", "nexusdesk-ui:", "nexusdesk.git.", "nexusdesk.sftp.", "nexusdesk.http.limits.", "nexusdesk.settingsDraft:", "git-credentials:", "sftp-connection:"]
 }

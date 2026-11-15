@@ -2,6 +2,25 @@ use crate::state::AppState;
 use rusqlite::{Connection, params};
 use tauri::State;
 
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct GraphSyncCategory {
+    pub name: String,
+    pub color: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct GraphSyncFile {
+    pub category: String,
+    pub path: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct GraphSyncData {
+    pub workspace: String,
+    pub categories: Vec<GraphSyncCategory>,
+    pub files: Vec<GraphSyncFile>,
+}
+
 #[derive(serde::Serialize)]
 pub struct GraphCategory {
     name: String,
@@ -39,6 +58,152 @@ fn schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS graph_categories (name TEXT PRIMARY KEY COLLATE NOCASE);
         CREATE TABLE IF NOT EXISTS graph_files (category TEXT NOT NULL COLLATE NOCASE, path TEXT NOT NULL, PRIMARY KEY(category, path));")
         .map_err(|e| e.to_string())
+}
+
+fn validate_graph_sync_data(root: &std::path::Path, data: &GraphSyncData) -> Result<(), String> {
+    if data.workspace != crate::commands::fs_cmds::logical_workspace_id(root) {
+        return Err("云端图谱分区属于其他工作区".into());
+    }
+    let mut names = std::collections::HashSet::new();
+    for category in &data.categories {
+        if category.name.trim().is_empty() || !names.insert(category.name.to_lowercase()) {
+            return Err("云端图谱分类包含无效或重复名称".into());
+        }
+        if let Some(color) = &category.color {
+            if color.len() != 7
+                || !color.starts_with('#')
+                || !color[1..].bytes().all(|c| c.is_ascii_hexdigit())
+            {
+                return Err("云端图谱分类颜色无效".into());
+            }
+        }
+    }
+    for file in &data.files {
+        let relative = std::path::Path::new(&file.path);
+        if relative.is_absolute()
+            || relative.components().any(|part| {
+                matches!(
+                    part,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            })
+            || !relative
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("tree"))
+            || !names.contains(&file.category.to_lowercase())
+        {
+            return Err("云端图谱分区包含无效文件关联".into());
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_graph_sync_data(
+    root: String,
+    state: State<'_, AppState>,
+) -> Result<GraphSyncData, String> {
+    let root = std::fs::canonicalize(root).map_err(|error| error.to_string())?;
+    let guard = state.db_conn.lock().map_err(|error| error.to_string())?;
+    let conn = guard.as_ref().ok_or("请先打开项目")?;
+    schema(conn)?;
+    let colors = color_db()?;
+    let mut categories = Vec::new();
+    let mut statement = conn
+        .prepare("SELECT name FROM graph_categories ORDER BY name")
+        .map_err(|e| e.to_string())?;
+    let names = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    use rusqlite::OptionalExtension;
+    for name in names {
+        let name = name.map_err(|e| e.to_string())?;
+        let color = colors
+            .query_row(
+                "SELECT color FROM colors WHERE category=?1",
+                [&name],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        categories.push(GraphSyncCategory { name, color });
+    }
+    let mut files = Vec::new();
+    let mut statement = conn
+        .prepare("SELECT category, path FROM graph_files ORDER BY category, path")
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (category, path) = row.map_err(|e| e.to_string())?;
+        if let Some(path) = crate::commands::fs_cmds::relative_workspace_path(&root, &path) {
+            if std::path::Path::new(&path)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("tree"))
+            {
+                files.push(GraphSyncFile { category, path });
+            }
+        }
+    }
+    Ok(GraphSyncData {
+        workspace: crate::commands::fs_cmds::logical_workspace_id(&root),
+        categories,
+        files,
+    })
+}
+
+#[tauri::command]
+pub fn apply_graph_sync_data(
+    root: String,
+    data: GraphSyncData,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let root = std::fs::canonicalize(root).map_err(|error| error.to_string())?;
+    validate_graph_sync_data(&root, &data)?;
+    let guard = state.db_conn.lock().map_err(|error| error.to_string())?;
+    let conn = guard.as_ref().ok_or("请先打开项目")?;
+    schema(conn)?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM graph_files", [])
+        .map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM graph_categories", [])
+        .map_err(|e| e.to_string())?;
+    for category in &data.categories {
+        tx.execute(
+            "INSERT INTO graph_categories(name) VALUES (?1)",
+            [&category.name],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    for file in &data.files {
+        let path = root.join(&file.path).to_string_lossy().to_string();
+        tx.execute(
+            "INSERT INTO graph_files(category,path) VALUES (?1,?2)",
+            params![file.category, path],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    let colors = color_db()?;
+    for category in &data.categories {
+        if let Some(color) = &category.color {
+            colors.execute("INSERT INTO colors(category,color) VALUES (?1,?2) ON CONFLICT(category) DO UPDATE SET color=excluded.color", params![category.name, color]).map_err(|e| e.to_string())?;
+        } else {
+            colors
+                .execute("DELETE FROM colors WHERE category=?1", [&category.name])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    use tauri::Emitter;
+    let _ = app.emit("nexusdesk-graph-data-changed", ());
+    let _ = app.emit("nexusdesk:graph-colors", ());
+    Ok(())
 }
 
 #[tauri::command]
@@ -222,6 +387,31 @@ pub fn remove_graph_file(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn graph_sync_accepts_relative_tree_memberships_and_rejects_unsafe_paths() {
+        let root = std::env::temp_dir();
+        let data = super::GraphSyncData {
+            workspace: crate::commands::fs_cmds::logical_workspace_id(&root),
+            categories: vec![super::GraphSyncCategory {
+                name: "分类".into(),
+                color: Some("#12aBef".into()),
+            }],
+            files: vec![super::GraphSyncFile {
+                category: "分类".into(),
+                path: "notes/map.tree".into(),
+            }],
+        };
+        assert!(super::validate_graph_sync_data(&root, &data).is_ok());
+        let mut invalid = data.clone();
+        invalid.files[0].path = "../outside.tree".into();
+        assert!(super::validate_graph_sync_data(&root, &invalid).is_err());
+        invalid.files[0].path = "notes/map.md".into();
+        assert!(super::validate_graph_sync_data(&root, &invalid).is_err());
+        invalid.files[0].path = "notes/map.tree".into();
+        invalid.files[0].category = "missing".into();
+        assert!(super::validate_graph_sync_data(&root, &invalid).is_err());
+    }
+
     #[test]
     fn category_edits_preserve_links_and_reject_duplicates() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
