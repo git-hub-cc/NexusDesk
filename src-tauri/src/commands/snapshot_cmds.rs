@@ -54,6 +54,35 @@ fn remove(root: &Path, path: &Path) {
         &["worktree", "remove", "--force", &path.to_string_lossy()],
     ) {
         log::error!("Snapshot cleanup {}: {error}", path.display());
+        return;
+    }
+    // Snapshot directories are grouped by commit ID; remove the group when its
+    // last window closes, while preserving groups for other open snapshots.
+    if let Some(commit_dir) = path.parent() {
+        if std::fs::read_dir(commit_dir)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(false)
+        {
+            if let Err(error) = std::fs::remove_dir(commit_dir) {
+                log::error!(
+                    "Snapshot directory cleanup {}: {error}",
+                    commit_dir.display()
+                );
+            }
+        }
+        if let Some(worktrees_dir) = commit_dir.parent() {
+            if std::fs::read_dir(worktrees_dir)
+                .map(|mut entries| entries.next().is_none())
+                .unwrap_or(false)
+            {
+                if let Err(error) = std::fs::remove_dir(worktrees_dir) {
+                    log::error!(
+                        "Snapshot directory cleanup {}: {error}",
+                        worktrees_dir.display()
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -113,9 +142,7 @@ pub async fn open_git_snapshot(
         Ok(window) => {
             window.on_window_event(move |event| {
                 if matches!(event, tauri::WindowEvent::Destroyed) {
-                    let root = root.clone();
-                    let path = path.clone();
-                    tauri::async_runtime::spawn_blocking(move || remove(&root, &path));
+                    remove(&root, &path);
                 }
             });
             Ok(())
