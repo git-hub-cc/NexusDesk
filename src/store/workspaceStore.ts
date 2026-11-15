@@ -377,7 +377,7 @@ interface WorkspaceState {
   createPhysicalFile: (path: string) => Promise<void>;
   createPhysicalFolder: (path: string) => Promise<void>;
 
-  openTab: (tab: Tab) => void;
+  openTab: (tab: Tab, options?: { background?: boolean; pane?: PaneType }) => void;
   returnFromRevision: (root: string) => void;
   closeTab: (id: string, pane: PaneType) => void;
   closeOtherTabs: (id: string, pane: PaneType) => void;
@@ -872,12 +872,22 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }
       },
 
-      openTab: (tab) =>
+      openTab: (tab, options) =>
         setTabs((state) => {
           if (tab.diff === undefined && !tab.revision && !tab.reverseTree && !tab.browser && !tab.readOnly) void fsApi.touchFile(tab.path).catch(console.error);
-          const pane = state.focusedPane;
+          const pane = options?.pane ?? state.focusedPane;
           const tabs = pane === "left" ? state.leftTabs : state.rightTabs;
           const exists = tabs.find((t) => t.id === tab.id);
+
+          if (options?.background) {
+            if (exists) return {};
+            const newTabs = sortTabs([tab, ...tabs]);
+            return resolveTabTitles(
+              pane === "left" ? newTabs : state.leftTabs,
+              pane === "right" ? newTabs : state.rightTabs,
+              state.rootPath,
+            );
+          }
 
           if (exists) {
             if (tab.diff !== undefined) {

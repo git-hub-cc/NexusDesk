@@ -564,6 +564,19 @@ pub async fn create_browser(
             }
         })
         .on_navigation(move |url| {
+            if url.scheme() == "nexusdesk-tab" {
+                if let Some((_, target)) = url.query_pairs().find(|(key, _)| key == "url") {
+                    if let Ok(target) = tauri::Url::parse(&target) {
+                        if matches!(target.scheme(), "http" | "https") {
+                            let _ = trace_browser_result(&navigation_label, "emit-background-tab", owner.emit_to(
+                                owner.label(), &format!("browser-new-tab-{navigation_label}"),
+                                serde_json::json!({ "url": target.as_str(), "background": true }),
+                            ));
+                        }
+                    }
+                }
+                return false;
+            }
             if url.scheme() == "nexusdesk-extension" {
                 if owner.get_webview(&navigation_label)
                     .and_then(|view| view.url().ok()).is_some_and(|current| current.scheme() == "https" && current.host_str() == Some("chromewebstore.google.com")) {

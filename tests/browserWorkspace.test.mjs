@@ -38,6 +38,23 @@ test("browser tabs preserve metadata and never enter file history or autosave", 
   assert.equal(store.getState().rightTabs.length, 0);
 });
 
+test("background browser tabs open in the source pane without changing active tabs or focus", () => {
+  const left = { id: "browser:left", path: "browser:left", title: "Left", browser: { root: "C:/project", url: "https://example.com/left" } };
+  const right = { ...left, id: "browser:right", path: "browser:right" };
+  const background = { ...left, id: "browser:background", path: "browser:background" };
+  store.setState({ rootPath: "C:/project", leftTabs: [left], rightTabs: [right], activeLeftTabId: left.id, activeRightTabId: right.id, focusedPane: "right", isSplitMode: true });
+  store.getState().openTab(background, { background: true, pane: "left" });
+  assert.equal(store.getState().leftTabs.some(tab => tab.id === background.id), true);
+  assert.equal(store.getState().rightTabs.length, 1);
+  assert.equal(store.getState().activeLeftTabId, left.id);
+  assert.equal(store.getState().activeRightTabId, right.id);
+  assert.equal(store.getState().focusedPane, "right");
+  store.getState().openTab(background, { background: true, pane: "left" });
+  assert.equal(store.getState().leftTabs.filter(tab => tab.id === background.id).length, 1);
+  store.getState().openTab(background, { pane: "left" });
+  assert.equal(store.getState().activeLeftTabId, background.id);
+});
+
 
 test("switching project removes terminal sessions, reopening the same project preserves them", async () => {
   store.setState({ rootPath: "C:/project", leftTabs: [], rightTabs: [], refreshTreeStatuses: async () => {}, fetchLogicalTree: async () => {} });

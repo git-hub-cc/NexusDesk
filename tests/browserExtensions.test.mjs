@@ -14,7 +14,7 @@ test('native extension settings requests open a workspace browser tab', async ()
   let handler;
   const tabs = [];
   const context = { URL, disposed: false, label: 'main-browser-one', tab: { browser: { root: 'C:/project' } },
-    crypto: { randomUUID: () => 'new-tab' }, useWorkspaceStore: { getState: () => ({ openTab: tab => tabs.push(tab) }) },
+    pane: 'left', crypto: { randomUUID: () => 'new-tab' }, useWorkspaceStore: { getState: () => ({ setFocusedPane() {}, openTab: tab => tabs.push(tab) }) },
     getCurrentWindow: () => ({ listen: async (event, callback) => { assert.equal(event, 'browser-new-tab-main-browser-one'); handler = callback; return () => {}; } }),
   };
   await vm.runInNewContext(`(async () => { let unlistenNewTab; ${compiled} })()`, context);
@@ -25,6 +25,34 @@ test('native extension settings requests open a workspace browser tab', async ()
   assert.equal(tabs[0].browser.root, 'C:/project');
   handler({ payload: 'javascript:alert(1)' });
   assert.equal(tabs.length, 1);
+});
+
+test('background link requests preserve focus and target the source pane', async () => {
+  const source = readFileSync(new URL('../src/components/editor/BrowserEditor.tsx', import.meta.url), 'utf8');
+  const start = source.indexOf('      unlistenNewTab = await');
+  const end = source.indexOf('      if (disposed) { unlistenNewTab();', start);
+  const compiled = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  let handler;
+  const opened = [];
+  const focused = [];
+  const context = { URL, disposed: false, label: 'main-browser-one', pane: 'left', tab: { browser: { root: 'C:/project' } },
+    crypto: { randomUUID: () => 'new-tab' },
+    useWorkspaceStore: { getState: () => ({ setFocusedPane: pane => focused.push(pane), openTab: (tab, options) => opened.push({ tab, options }) }) },
+    getCurrentWindow: () => ({ listen: async (_, callback) => { handler = callback; return () => {}; } }),
+  };
+  await vm.runInNewContext(`(async () => { let unlistenNewTab; ${compiled} })()`, context);
+  const url = 'https://example.com/article?q=a%26b#section';
+  handler({ payload: { url, background: true } });
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0].tab.browser.url, url);
+  assert.equal(opened[0].options.background, true);
+  assert.equal(opened[0].options.pane, 'left');
+  assert.deepEqual(focused, []);
+  handler({ payload: { url: 'javascript:alert(1)', background: true } });
+  assert.equal(opened.length, 1);
+  handler({ payload: url });
+  assert.equal(opened[1].options.background, false);
+  assert.deepEqual(focused, ['left']);
 });
 function page(hostname = 'chromewebstore.google.com', framed = false) {
   const handlers = {};

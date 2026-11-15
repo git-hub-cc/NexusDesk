@@ -225,17 +225,18 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
         updatePage(event.payload.url, event.payload.title);
       });
       if (disposed) { unlistenTitle(); return; }
-      unlistenNewTab = await getCurrentWindow().listen<string>(`browser-new-tab-${label}`, event => {
+      unlistenNewTab = await getCurrentWindow().listen<string | { url: string; background: boolean }>(`browser-new-tab-${label}`, event => {
         if (disposed) return;
-        const url = new URL(event.payload);
+        const background = typeof event.payload !== "string" && event.payload.background;
+        const url = new URL(typeof event.payload === "string" ? event.payload : event.payload.url);
         if (!['http:', 'https:', 'chrome-extension:'].includes(url.protocol)) return;
         const state = useWorkspaceStore.getState();
-        state.setFocusedPane(pane);
+        if (!background) state.setFocusedPane(pane);
         const id = `browser:${crypto.randomUUID()}`;
         state.openTab({
           id, path: id, title: url.hostname,
           browser: { root: tab.browser!.root, url: url.href },
-        });
+        }, { background, pane });
       });
       if (disposed) { unlistenNewTab(); return; }
       unlistenFullscreen = await getCurrentWindow().listen<boolean>(`browser-fullscreen-${label}`, event => {
