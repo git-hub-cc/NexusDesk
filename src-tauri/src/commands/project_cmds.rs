@@ -118,6 +118,26 @@ pub fn open_project_instance(path: String) -> Result<u32, String> {
     Ok(pid)
 }
 
+#[tauri::command]
+pub fn close_project_instance(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    startup: tauri::State<'_, StartupProject>,
+) -> Result<(), String> {
+    if startup.0.is_some() {
+        let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+        let mut child = independent_command(executable)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+        app.exit(0);
+        return Ok(());
+    }
+    crate::profiles::register_launcher_instance(&window)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

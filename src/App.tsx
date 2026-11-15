@@ -64,8 +64,7 @@ function App() {
       const projectPath = new URLSearchParams(window.location.search).get("project");
       // Reuse initialization across StrictMode's effect replay.
       startup.current = (async () => {
-        const path = projectPath ?? (isTauri() ? await invoke<string | null>("startup_project") : null)
-          ?? useWorkspaceStore.getState().recentProjects[0];
+        const path = projectPath ?? (isTauri() ? await invoke<string | null>("startup_project") : null);
         if (path) await setProject(path);
       })()
         .catch(console.error);

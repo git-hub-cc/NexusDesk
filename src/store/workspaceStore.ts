@@ -646,6 +646,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           editorJump: null, graphLocation: null,
         });
         useLayoutStore.setState({ leftSidebarVisible: false, rightSidebarVisible: false, bottomPanelVisible: false });
+        if (isTauri()) await tauriInvoke("close_project_instance");
       },
 
       setProject: async (path) => {

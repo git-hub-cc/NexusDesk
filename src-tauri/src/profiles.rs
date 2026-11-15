@@ -4,6 +4,8 @@ use tauri::Manager;
 #[cfg(windows)]
 static PROJECT_INSTANCE_MUTEX: std::sync::OnceLock<std::sync::Mutex<Option<(String, isize)>>> =
     std::sync::OnceLock::new();
+#[cfg(windows)]
+static LAUNCHER_INSTANCE_MUTEX: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
 
 #[cfg(windows)]
 fn project_instance_mutex() -> &'static std::sync::Mutex<Option<(String, isize)>> {
@@ -21,10 +23,7 @@ pub fn activate_existing_project(project: Option<&Path>) -> bool {
         },
     };
 
-    let Some(project) = project else {
-        return false;
-    };
-    let Ok(key) = profile_key(Some(project)) else {
+    let Ok(key) = profile_key(project) else {
         return false;
     };
     let mutex_name: Vec<u16> = OsStr::new(&format!("Local\\NexusDeskProject-{key}"))
@@ -81,6 +80,9 @@ pub fn activate_existing_project(project: Option<&Path>) -> bool {
         }
         return true;
     }
+    if project.is_none() {
+        let _ = LAUNCHER_INSTANCE_MUTEX.set(mutex as isize);
+    }
     *project_instance_mutex().lock().unwrap() = Some((key, mutex as isize));
     false
 }
@@ -128,8 +130,10 @@ fn claim_project_window(window: &tauri::Window, project: &Path) -> Result<bool, 
                 RemovePropW(hwnd.0 as _, previous_property.as_ptr());
             }
         }
-        unsafe {
-            windows_sys::Win32::Foundation::CloseHandle(previous_mutex as _);
+        if previous_key != "launcher" {
+            unsafe {
+                windows_sys::Win32::Foundation::CloseHandle(previous_mutex as _);
+            }
         }
     }
     if let Ok(hwnd) = window.hwnd() {
@@ -139,6 +143,38 @@ fn claim_project_window(window: &tauri::Window, project: &Path) -> Result<bool, 
     }
     *current = Some((key, mutex as isize));
     Ok(true)
+}
+
+pub fn register_launcher_instance(window: &tauri::Window) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{RemovePropW, SetPropW};
+        let mut current = project_instance_mutex()
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let launcher_mutex = *LAUNCHER_INSTANCE_MUTEX
+            .get()
+            .ok_or_else(|| "Launcher instance lock is not initialized".to_string())?;
+        if let Some((previous_key, previous_mutex)) = current.take() {
+            if previous_key != "launcher" {
+                if let Ok(hwnd) = window.hwnd() {
+                    let previous_property = project_property_name(&previous_key);
+                    unsafe { RemovePropW(hwnd.0 as _, previous_property.as_ptr()) };
+                }
+                unsafe {
+                    windows_sys::Win32::Foundation::CloseHandle(previous_mutex as _);
+                }
+            }
+        }
+        let property_name = project_property_name("launcher");
+        if let Ok(hwnd) = window.hwnd() {
+            unsafe { SetPropW(hwnd.0 as _, property_name.as_ptr(), 1usize as _) };
+        }
+        *current = Some(("launcher".into(), launcher_mutex));
+    }
+    #[cfg(not(windows))]
+    let _ = window;
+    Ok(())
 }
 
 #[cfg(not(windows))]
@@ -216,10 +252,7 @@ pub fn activate_existing_project(_: Option<&Path>) -> bool {
 #[cfg(windows)]
 pub fn mark_project_window(window: &tauri::Window, project: Option<&Path>) {
     use windows_sys::Win32::UI::WindowsAndMessaging::SetPropW;
-    let Some(project) = project else {
-        return;
-    };
-    let Ok(key) = profile_key(Some(project)) else {
+    let Ok(key) = profile_key(project) else {
         return;
     };
     let property_name = project_property_name(&key);

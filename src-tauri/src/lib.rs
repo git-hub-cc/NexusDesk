@@ -236,6 +236,7 @@ pub fn run() {
             commands::project_cmds::startup_url,
             commands::project_cmds::startup_file,
             commands::project_cmds::open_project_instance,
+            commands::project_cmds::close_project_instance,
             profiles::register_project_instance,
             commands::settings_cmds::read_global_settings,
             commands::settings_cmds::write_global_setting,
