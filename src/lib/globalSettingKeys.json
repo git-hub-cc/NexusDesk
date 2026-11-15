@@ -15,7 +15,9 @@
     "nexusdesk.navigation.giteeToken",
     "nexusdesk.navigation.giteeRepo",
     "nexusdesk.navigation.provider",
-    "nexusdesk.navigation.syncEnabled"
+    "nexusdesk.navigation.syncEnabled",
+    "nexusdesk.cloudSync.myNavigation",
+    "nexusdesk.cloudSync.logicalPartitions"
   ],
-  "prefixes": ["sftp-profile:", "sftp-label:", "nexusdesk-ui:", "nexusdesk.git.", "nexusdesk.sftp.", "nexusdesk.http.limits.", "nexusdesk.settingsDraft:", "git-credentials:", "sftp-connection:"]
+  "prefixes": ["nexusdesk.cloudSync.baseline:", "sftp-profile:", "sftp-label:", "nexusdesk-ui:", "nexusdesk.git.", "nexusdesk.sftp.", "nexusdesk.http.limits.", "nexusdesk.settingsDraft:", "git-credentials:", "sftp-connection:"]
 }

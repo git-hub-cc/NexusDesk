@@ -1,4 +1,6 @@
 import { settingsStorage } from "@/lib/globalSettings";
+import { fsApi, type LogicalSyncData } from "@/lib/api";
+import { useWorkspaceStore } from "@/store/workspaceStore";
 import { loadNavigationData, mergeNavigationData, saveNavigationData, type NavigationCategory, type NavigationData } from "./navigationData";
 
 export type NavigationSyncProvider = "github" | "gitlab" | "gitee";
@@ -6,22 +8,29 @@ const TOKEN_KEYS: Record<NavigationSyncProvider, string> = { github: "nexusdesk.
 const REPO_KEYS: Record<NavigationSyncProvider, string> = { github: "nexusdesk.navigation.githubRepo", gitlab: "nexusdesk.navigation.gitlabRepo", gitee: "nexusdesk.navigation.giteeRepo" };
 const PROVIDER_KEY = "nexusdesk.navigation.provider";
 const SYNC_ENABLED_KEY = "nexusdesk.navigation.syncEnabled";
+const SYNC_NAVIGATION_KEY = "nexusdesk.cloudSync.myNavigation";
+const SYNC_LOGICAL_KEY = "nexusdesk.cloudSync.logicalPartitions";
 const LEGACY_TOKEN_KEY = "navhub-github-token";
 const LEGACY_REPO_KEY = "navhub-github-repo";
 const DATA_FILE = "navhub-data.json";
+const LOGICAL_FILE = "logical-partitions.json";
 const SYNC_TIMEOUT_MS = 15000;
 type SyncStatus = "disconnected" | "connecting" | "connected" | "syncing" | "error" | "conflict";
-export type NavigationSyncState = { status: SyncStatus; provider: NavigationSyncProvider; user: string; repo: string; lastSync: number | null; error: string };
+export type NavigationSyncState = { status: SyncStatus; provider: NavigationSyncProvider; user: string; repo: string; lastSync: number | null; error: string; logicalNotice?: string; fileErrors?: Partial<Record<SyncChannel, string>> };
 
 let current: NavigationSyncState = { status: "disconnected", provider: "github", user: "", repo: "", lastSync: null, error: "" };
 let token = "";
-let remoteSha: string | null = null;
-let remoteFileExists = false;
+type SyncChannel = "navigation" | "logical";
+type RepositoryFile = { value: Record<string, unknown> | null; sha: string | null; exists: boolean };
+type LogicalWorkspace = Omit<LogicalSyncData, "workspace"> & { deletedEntries?: string[] };
+type LogicalFile = { version: 1; updatedAt: number; workspaces: Record<string, LogicalWorkspace> };
 let remoteData: NavigationData | null = null;
 let ready = false;
 let suppressSave = false;
-let saveTimer: number | undefined;
-let syncQueue = Promise.resolve();
+const files = new Map<string, RepositoryFile>();
+const timers: Partial<Record<SyncChannel, number>> = {};
+const queues: Record<SyncChannel, Promise<void>> = { navigation: Promise.resolve(), logical: Promise.resolve() };
+const active = new Set<SyncChannel>();
 const subscribers = new Set<(state: NavigationSyncState) => void>();
 
 function update(patch: Partial<NavigationSyncState>) {
@@ -72,24 +81,37 @@ function legacyRemoteData(value: Record<string, unknown>): NavigationData | null
   return categories.length ? { categories } : null;
 }
 
-async function readRemote(): Promise<{ data: NavigationData | null; sha: string | null }> {
-  const path = encodeURIComponent(DATA_FILE);
+async function readRepositoryFile(name: string): Promise<RepositoryFile> {
+  const path = encodeURIComponent(name);
   const url = current.provider === "github" ? `https://api.github.com/repos/${current.repo}/contents/${path}?t=${Date.now()}` : current.provider === "gitlab" ? `https://gitlab.com/api/v4/projects/${encodeURIComponent(current.repo)}/repository/files/${path}?ref=main&t=${Date.now()}` : `https://gitee.com/api/v5/repos/${current.repo}/contents/${path}?ref=master&t=${Date.now()}`;
   const headers: Record<string, string> = current.provider === "github" ? { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } : current.provider === "gitlab" ? { "PRIVATE-TOKEN": token } : { Authorization: `token ${token}` };
   const result = await fetch(url, { headers, signal: AbortSignal.timeout(SYNC_TIMEOUT_MS) });
-  if (result.status === 404) return { data: null, sha: null };
-  if (!result.ok) throw new Error(`读取 GitHub 数据失败 (${result.status})`);
+  if (result.status === 404) {
+    const missing = { value: null, sha: null, exists: false };
+    files.set(name, missing);
+    return missing;
+  }
+  if (!result.ok) throw new Error(`读取 ${current.provider} 数据失败 (${result.status})：${name}`);
   const file = await result.json() as { content: string; sha?: string; blob_id?: string; last_commit_id?: string; encoding?: string; download_url?: string };
   let raw = file.content ? (current.provider === "gitlab" && file.encoding !== "base64" ? file.content : decodeBase64(file.content)) : "";
   if (!raw && file.download_url) {
-    const download = await fetch(file.download_url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(SYNC_TIMEOUT_MS) });
-    if (!download.ok) throw new Error(`下载 GitHub 数据失败 (${download.status})`);
+    const download = await fetch(file.download_url, { headers, signal: AbortSignal.timeout(SYNC_TIMEOUT_MS) });
+    if (!download.ok) throw new Error(`下载 ${current.provider} 数据失败 (${download.status})：${name}`);
     raw = await download.text();
   }
-  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`云端文件格式无效：${name}`);
+  const snapshot = { value: parsed as Record<string, unknown>, sha: file.sha || file.last_commit_id || file.blob_id || null, exists: true };
+  files.set(name, snapshot);
+  return snapshot;
+}
+
+async function readRemote(applyPreferences = true): Promise<NavigationData | null> {
+  const { value: parsed } = await readRepositoryFile(DATA_FILE);
+  if (!parsed) return null;
   const data = parsed.navigationData as NavigationData | undefined;
   const preferences = parsed.preferences as { theme?: string; proxyMode?: boolean } | undefined;
-  if (preferences) {
+  if (preferences && applyPreferences) {
     if (preferences.theme === "dark" || preferences.theme === "light") localStorage.setItem("theme-preference", preferences.theme);
     if (typeof preferences.proxyMode === "boolean") localStorage.setItem("proxy-mode-preference", String(preferences.proxyMode));
     const previous = suppressSave;
@@ -97,9 +119,8 @@ async function readRemote(): Promise<{ data: NavigationData | null; sha: string 
     window.dispatchEvent(new CustomEvent("nexusdesk-navigation-preferences-changed", { detail: preferences }));
     suppressSave = previous;
   }
-  const sha = file.sha || file.last_commit_id || file.blob_id || null;
-  if (data && Array.isArray(data.categories)) return { data, sha };
-  return { data: legacyRemoteData(parsed), sha };
+  if (data && Array.isArray(data.categories)) return data;
+  return legacyRemoteData(parsed);
 }
 
 function navigationChanges(previous: NavigationData | null, next: NavigationData) {
@@ -129,8 +150,8 @@ function navigationChanges(previous: NavigationData | null, next: NavigationData
 
 function commitMessage(previous: NavigationData | null, next: NavigationData) {
   const changes = navigationChanges(previous, next);
-  if (changes.added + changes.modified + changes.deleted === 0) return "同步导航：更新显示偏好";
-  return `同步导航：新增 ${changes.added} 项，修改 ${changes.modified} 项，删除 ${changes.deleted} 项`;
+  if (changes.added + changes.modified + changes.deleted === 0) return "同步我的导航：更新显示偏好";
+  return `同步我的导航：新增 ${changes.added} 项，修改 ${changes.modified} 项，删除 ${changes.deleted} 项`;
 }
 
 async function verifyPrivateRepository() {
@@ -148,59 +169,216 @@ async function verifyPrivateRepository() {
   if (!isPrivate) throw new Error("导航云同步仅允许写入私有仓库，请将仓库设为私有后重试。");
 }
 
-async function push(data: NavigationData) {
+async function writeRepositoryFile(name: string, content: unknown, message: string) {
   await verifyPrivateRepository();
-  const content = {
-    updatedAt: Date.now(),
-    navigationData: data,
-    preferences: {
-      theme: localStorage.getItem("theme-preference") || "dark",
-      proxyMode: localStorage.getItem("proxy-mode-preference") === "true",
-    },
-  };
+  const snapshot = files.get(name) ?? { value: null, sha: null, exists: false };
   const serialized = JSON.stringify(content, null, 2);
-  const message = commitMessage(remoteData, data);
   const bytes = new TextEncoder().encode(serialized);
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
   const encoded = btoa(binary);
-  let sha = remoteSha;
+  const path = encodeURIComponent(name);
+  let sha = snapshot.sha;
   if (current.provider === "github") {
-    const result = await request<{ content: { sha: string } }>(`https://api.github.com/repos/${current.repo}/contents/${DATA_FILE}`, "PUT", { message, content: encoded, branch: "main", ...(remoteSha ? { sha: remoteSha } : {}) });
+    const result = await request<{ content: { sha: string } }>(`https://api.github.com/repos/${current.repo}/contents/${path}`, "PUT", { message, content: encoded, branch: "main", ...(sha ? { sha } : {}) });
     sha = result.content.sha;
   } else if (current.provider === "gitlab") {
-    const path = encodeURIComponent(DATA_FILE);
-    await request(`https://gitlab.com/api/v4/projects/${encodeURIComponent(current.repo)}/repository/files/${path}`, remoteFileExists ? "PUT" : "POST", { branch: "main", commit_message: message, content: serialized });
+    await request(`https://gitlab.com/api/v4/projects/${encodeURIComponent(current.repo)}/repository/files/${path}`, snapshot.exists ? "PUT" : "POST", { branch: "main", commit_message: message, content: serialized, ...(sha ? { last_commit_id: sha } : {}) });
   } else {
-    const result = await request<{ content: { sha: string } }>(`https://gitee.com/api/v5/repos/${current.repo}/contents/${encodeURIComponent(DATA_FILE)}`, remoteFileExists ? "PUT" : "POST", { message, content: encoded, branch: "master", ...(remoteSha ? { sha: remoteSha } : {}) });
+    const result = await request<{ content: { sha: string } }>(`https://gitee.com/api/v5/repos/${current.repo}/contents/${path}`, snapshot.exists ? "PUT" : "POST", { message, content: encoded, branch: "master", ...(sha ? { sha } : {}) });
     sha = result.content.sha;
   }
-  remoteSha = sha;
-  remoteFileExists = true;
-  remoteData = data;
-  update({ status: "connected", lastSync: Date.now(), error: "" });
+  files.set(name, { value: content as Record<string, unknown>, sha, exists: true });
 }
 
-function queuePush() {
-  if (!ready || !token || current.status === "disconnected") return;
-  window.clearTimeout(saveTimer);
-  update({ status: "syncing", error: "" });
-  saveTimer = window.setTimeout(() => {
-    const task = syncQueue.then(async () => push(await loadNavigationData()));
-    syncQueue = task.catch(error => {
-      update({ status: String(error).includes("版本已变化") ? "conflict" : "error", error: String(error) });
+async function syncNavigation(mergeRemote = true) {
+  if (!getCloudSyncSelection().myNavigation) return false;
+  const local = await loadNavigationData();
+  const remote = await readRemote(mergeRemote);
+  const merged = remote && mergeRemote ? mergeNavigationData(local, remote) : local;
+  suppressSave = true;
+  try { if (remote) saveNavigationData(merged); }
+  finally { suppressSave = false; }
+  await writeRepositoryFile(DATA_FILE, {
+    ...files.get(DATA_FILE)?.value,
+    updatedAt: Date.now(),
+    navigationData: { categories: merged.categories.filter(category => category.categoryId === "custom-user-sites") },
+    preferences: {
+      theme: localStorage.getItem("theme-preference") || "dark",
+      proxyMode: localStorage.getItem("proxy-mode-preference") === "true",
+    },
+  }, commitMessage(remoteData ?? remote, merged));
+  remoteData = merged;
+}
+
+function entryKey(entry: LogicalSyncData["entries"][number]) {
+  return JSON.stringify([entry.kind, entry.path.replace(/\\/g, "/"), entry.category]);
+}
+
+function logicalEqual(a: Pick<LogicalSyncData, "folders" | "entries">, b: Pick<LogicalSyncData, "folders" | "entries">) {
+  return JSON.stringify([...a.folders].sort()) === JSON.stringify([...b.folders].sort())
+    && JSON.stringify(a.entries.map(entryKey).sort()) === JSON.stringify(b.entries.map(entryKey).sort());
+}
+
+function validLogicalWorkspace(value: unknown): value is LogicalWorkspace {
+  if (!value || typeof value !== "object") return false;
+  const data = value as LogicalWorkspace;
+  return Array.isArray(data.folders) && data.folders.every(folder => typeof folder === "string")
+    && Array.isArray(data.entries) && data.entries.every(entry => entry && typeof entry.path === "string" && typeof entry.category === "string" && ["reference", "copy", "hidden"].includes(entry.kind))
+    && (data.deletedFolders === undefined || Array.isArray(data.deletedFolders) && data.deletedFolders.every(folder => typeof folder === "string"))
+    && (data.deletedEntries === undefined || Array.isArray(data.deletedEntries) && data.deletedEntries.every(key => typeof key === "string"));
+}
+
+function mergeLogical(local: LogicalSyncData, remote: LogicalWorkspace | undefined, baseline: LogicalSyncData | null): LogicalWorkspace {
+  const deletedFolders = new Set(remote?.deletedFolders ?? []);
+  const deletedEntries = new Set(remote?.deletedEntries ?? []);
+  const localFolders = new Set(local.folders);
+  const localEntries = new Map(local.entries.map(entry => [entryKey(entry), entry]));
+  const previousFolders = new Set(baseline?.folders ?? []);
+  const previousEntries = new Set(baseline?.entries.map(entryKey) ?? []);
+  for (const folder of previousFolders) if (!localFolders.has(folder)) deletedFolders.add(folder);
+  for (const key of previousEntries) if (!localEntries.has(key)) deletedEntries.add(key);
+  // 仅明确的新建操作可撤销删除标记，旧设备上的残留数据不能复活已删除项。
+  if (baseline) {
+    for (const folder of localFolders) if (!previousFolders.has(folder)) deletedFolders.delete(folder);
+    for (const key of localEntries.keys()) if (!previousEntries.has(key)) deletedEntries.delete(key);
+  }
+  const folders = [...new Set([...(remote?.folders ?? []), ...local.folders])].filter(folder => !deletedFolders.has(folder)).sort();
+  const entries = new Map((remote?.entries ?? []).map(entry => [entryKey(entry), entry]));
+  for (const [key, entry] of localEntries) entries.set(key, entry);
+  for (const [key, entry] of entries) if (deletedFolders.has(entry.category)) deletedEntries.add(key);
+  return {
+    folders,
+    entries: [...entries.values()].filter(entry => !deletedEntries.has(entryKey(entry)) && !deletedFolders.has(entry.category)).sort((a, b) => entryKey(a).localeCompare(entryKey(b))),
+    deletedFolders: [...deletedFolders].sort(),
+    deletedEntries: [...deletedEntries].sort(),
+  };
+}
+
+async function syncLogical() {
+  if (!getCloudSyncSelection().logicalPartitions) { update({ logicalNotice: "" }); return false; }
+  const root = useWorkspaceStore.getState().rootPath;
+  if (!root || root.startsWith("sftp:")) {
+    update({ logicalNotice: root ? "当前 SFTP 项目不支持逻辑分区同步" : "逻辑分区等待打开本地项目" });
+    return false;
+  }
+  update({ logicalNotice: "" });
+  const local = await fsApi.getLogicalSyncData(root);
+  const snapshot = await readRepositoryFile(LOGICAL_FILE);
+  let document: LogicalFile;
+  const legacyFile = await readRepositoryFile(DATA_FILE);
+  if (snapshot.value) {
+    if (snapshot.value.version !== 1 || !snapshot.value.workspaces || typeof snapshot.value.workspaces !== "object" || Array.isArray(snapshot.value.workspaces)) throw new Error("云端逻辑分区文件格式无效或版本不受支持");
+    document = { ...(snapshot.value as LogicalFile), workspaces: { ...(snapshot.value as LogicalFile).workspaces } };
+  } else {
+    document = { version: 1, updatedAt: 0, workspaces: {} };
+  }
+  const legacy = legacyFile.value?.logicalPartitions as LogicalSyncData | undefined;
+  if (legacy && (typeof legacy.workspace !== "string" || !validLogicalWorkspace(legacy))) throw new Error("旧版逻辑分区数据格式无效，已保留原文件");
+  if (!Object.values(document.workspaces).every(validLogicalWorkspace)) throw new Error("云端逻辑分区数据格式无效");
+  if (legacy && !Object.prototype.hasOwnProperty.call(document.workspaces, legacy.workspace)) {
+    document.workspaces = { ...document.workspaces, [legacy.workspace]: { folders: legacy.folders, entries: legacy.entries } };
+  }
+  const baselineKey = `nexusdesk.cloudSync.baseline:${current.provider}:${current.repo}:${root}:${local.workspace}`;
+  let baseline: LogicalSyncData | null = null;
+  try { baseline = JSON.parse(settingsStorage.getItem(baselineKey) || "null"); }
+  catch { /* 损坏的本地基线按首次同步处理，避免推断删除。 */ }
+  const merged = mergeLogical(local, document.workspaces[local.workspace], baseline);
+  const applied = { workspace: local.workspace, folders: merged.folders, entries: merged.entries };
+  if (useWorkspaceStore.getState().rootPath !== root) return;
+  const nextDocument = {
+    version: 1,
+    updatedAt: Date.now(),
+    workspaces: { ...document.workspaces, [local.workspace]: merged },
+  };
+  if (!snapshot.value || JSON.stringify(snapshot.value.workspaces) !== JSON.stringify(nextDocument.workspaces)) {
+    await writeRepositoryFile(LOGICAL_FILE, nextDocument, `同步逻辑分区：${local.workspace}，分区 ${merged.folders.length} 个，记录 ${merged.entries.length} 条`);
+  }
+  if (useWorkspaceStore.getState().rootPath !== root) return;
+  const latestLocal = await fsApi.getLogicalSyncData(root);
+  if (useWorkspaceStore.getState().rootPath !== root || !logicalEqual(local, latestLocal)) return;
+  if (!logicalEqual(local, applied)) {
+    await fsApi.applyLogicalSyncData(root, { ...applied, deletedFolders: merged.deletedFolders });
+  }
+  settingsStorage.setItem(baselineKey, JSON.stringify(applied));
+  // 新文件成功保存后才清理旧字段；通过导航队列避免同一文件并发写入。
+  if (legacyFile?.value?.logicalPartitions) {
+    await enqueue("navigation", async () => {
+      const latest = await readRepositoryFile(DATA_FILE);
+      if (!latest.value?.logicalPartitions) return;
+      const { logicalPartitions: legacy, ...remaining } = latest.value;
+      if (JSON.stringify(legacy) !== JSON.stringify(legacyFile?.value?.logicalPartitions)) return;
+      await writeRepositoryFile(DATA_FILE, remaining, "迁移逻辑分区至独立文件");
     });
+  }
+}
+
+function publishError(channel: SyncChannel, error: unknown) {
+  const fileErrors = { ...current.fileErrors, [channel]: `${channel === "navigation" ? DATA_FILE : LOGICAL_FILE}：${String(error)}` };
+  update({ fileErrors, status: Object.values(fileErrors).some(value => value?.includes("版本已变化")) ? "conflict" : "error", error: Object.values(fileErrors).filter(Boolean).join("；") });
+}
+
+function enqueue(channel: SyncChannel, action: () => Promise<void | boolean>): Promise<void> {
+  const task = queues[channel].then(async () => {
+    active.add(channel);
+    update({ status: "syncing" });
+    try {
+      const completed = await action();
+      const fileErrors = { ...current.fileErrors };
+      delete fileErrors[channel];
+      update({ fileErrors, error: Object.values(fileErrors).filter(Boolean).join("；"), ...(completed === false ? {} : { lastSync: Date.now() }) });
+    } catch (error) { publishError(channel, error); throw error; }
+    finally {
+      active.delete(channel);
+      const errors = Object.values(current.fileErrors ?? {}).filter(Boolean);
+      update({ status: errors.length ? (errors.some(value => value?.includes("版本已变化")) ? "conflict" : "error") : active.size ? "syncing" : "connected" });
+    }
+  });
+  queues[channel] = task.catch(() => {});
+  return task;
+}
+
+function queuePush(channel: SyncChannel, mergeRemote = false) {
+  if (!ready || !token || current.status === "disconnected") return;
+  const selection = getCloudSyncSelection();
+  if (!(channel === "navigation" ? selection.myNavigation : selection.logicalPartitions)) return;
+  window.clearTimeout(timers[channel]);
+  timers[channel] = window.setTimeout(() => {
+    void enqueue(channel, channel === "navigation" ? () => syncNavigation(mergeRemote) : syncLogical).catch(() => {});
   }, 1800);
 }
 
 window.addEventListener("nexusdesk-navigation-data-changed", () => {
-  if (!suppressSave) queuePush();
+  if (!suppressSave) queuePush("navigation");
 });
 window.addEventListener("nexusdesk-navigation-preferences-changed", () => {
-  if (!suppressSave) queuePush();
+  if (!suppressSave) queuePush("navigation");
+});
+window.addEventListener("nexusdesk-logical-data-changed", () => {
+  if (!suppressSave) queuePush("logical");
+});
+window.addEventListener("nexusdesk-cloud-sync-selection-changed", () => {
+  if (!suppressSave) { queuePush("navigation", true); queuePush("logical"); }
+  if (!getCloudSyncSelection().logicalPartitions) update({ logicalNotice: "" });
 });
 
+export function getCloudSyncSelection() {
+  return {
+    myNavigation: settingsStorage.getItem(SYNC_NAVIGATION_KEY) !== "false",
+    logicalPartitions: settingsStorage.getItem(SYNC_LOGICAL_KEY) === "true",
+  };
+}
+
+export function setCloudSyncSelection(selection: { myNavigation: boolean; logicalPartitions: boolean }) {
+  settingsStorage.setItem(SYNC_NAVIGATION_KEY, String(selection.myNavigation));
+  settingsStorage.setItem(SYNC_LOGICAL_KEY, String(selection.logicalPartitions));
+  window.dispatchEvent(new Event("nexusdesk-cloud-sync-selection-changed"));
+}
+
 async function connect(tokenValue: string, repoValue: string, createIfMissing: boolean, provider = current.provider): Promise<NavigationData> {
+  ready = false;
+  for (const timer of Object.values(timers)) window.clearTimeout(timer);
+  await Promise.all(Object.values(queues));
   current = { ...current, provider };
   token = tokenValue.trim();
   if (!token) throw new Error("请输入 GitHub Token。");
@@ -230,25 +408,16 @@ async function connect(tokenValue: string, repoValue: string, createIfMissing: b
     settingsStorage.setItem(TOKEN_KEYS[provider], token);
     settingsStorage.setItem(REPO_KEYS[provider], repo);
     settingsStorage.setItem(PROVIDER_KEY, provider);
-    current = { ...current, provider, user: username, repo, status: "connected", error: "" };
-    const local = await loadNavigationData();
-    const remote = await readRemote();
-    remoteSha = remote.sha;
-    remoteFileExists = remote.sha !== null;
-    remoteData = remote.data;
-    const merged = remote.data ? mergeNavigationData(local, remote.data) : local;
-    if (remote.data) {
-      suppressSave = true;
-      saveNavigationData(merged);
-      suppressSave = false;
-    }
-    await push(merged);
+    current = { ...current, provider, user: username, repo, status: "connected", lastSync: null, error: "" };
+    files.clear();
+    remoteData = null;
+    update({ fileErrors: {}, error: "", logicalNotice: "" });
     ready = true;
     settingsStorage.setItem(SYNC_ENABLED_KEY, "true");
-    update({ status: "connected", lastSync: Date.now(), error: "" });
-    return merged;
+    await syncSelected();
+    update({ status: "connected", error: "" });
+    return loadNavigationData();
   } catch (error) {
-    ready = false;
     update({ status: "error", error: String(error) });
     throw error;
   }
@@ -292,37 +461,29 @@ export async function connectNavigationSync(tokenValue: string, repoValue: strin
   return connect(tokenValue.trim() || savedToken, repoValue, true, provider);
 }
 
+async function syncSelected() {
+  const selection = getCloudSyncSelection();
+  const results = await Promise.allSettled([
+    ...(selection.myNavigation ? [enqueue("navigation", syncNavigation)] : []),
+    ...(selection.logicalPartitions ? [enqueue("logical", syncLogical)] : []),
+  ]);
+  const failure = results.find(result => result.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
+}
+
 export async function syncNavigationNow() {
-  if (!token || !current.repo) throw new Error("请先连接 GitHub。");
-  window.clearTimeout(saveTimer);
-  await syncQueue;
-  update({ status: "syncing", error: "" });
-  try {
-    const local = await loadNavigationData();
-    const remote = await readRemote();
-    remoteSha = remote.sha;
-    remoteFileExists = remote.sha !== null;
-    remoteData = remote.data;
-    const merged = remote.data ? mergeNavigationData(local, remote.data) : local;
-    suppressSave = true;
-    try { saveNavigationData(merged); }
-    finally { suppressSave = false; }
-    await push(merged);
-  } catch (error) {
-    update({ status: String(error).includes("版本已变化") ? "conflict" : "error", error: String(error) });
-    throw error;
-  }
+  if (!token || !current.repo) throw new Error("请先连接云同步。");
+  for (const timer of Object.values(timers)) window.clearTimeout(timer);
+  await syncSelected();
 }
 
 export async function disconnectNavigationSync() {
-  window.clearTimeout(saveTimer);
+  for (const timer of Object.values(timers)) window.clearTimeout(timer);
   ready = false;
   settingsStorage.setItem(SYNC_ENABLED_KEY, "false");
-  await syncQueue;
+  await Promise.all(Object.values(queues));
   token = "";
-  remoteSha = null;
-  remoteFileExists = false;
+  files.clear();
   remoteData = null;
-  ready = false;
-  update({ status: "disconnected", user: "", repo: "", lastSync: null, error: "" });
+  update({ status: "disconnected", user: "", repo: "", lastSync: null, error: "", fileErrors: {}, logicalNotice: "" });
 }

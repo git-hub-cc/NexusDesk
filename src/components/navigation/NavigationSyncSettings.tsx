@@ -5,8 +5,10 @@ import {
   connectNavigationSync,
   disconnectNavigationSync,
   getNavigationSyncState,
+  getCloudSyncSelection,
   initializeNavigationSync,
   subscribeNavigationSync,
+  setCloudSyncSelection,
   type NavigationSyncProvider,
   type NavigationSyncState,
 } from "./navigationSync";
@@ -20,6 +22,7 @@ export function NavigationSyncSettings() {
   const repoKey = `nexusdesk.navigation.${provider}Repo`;
   const [repo, setRepo] = useState(() => settingsStorage.getItem(repoKey) || "");
   const [busy, setBusy] = useState(false);
+  const [selection, setSelection] = useState(getCloudSyncSelection());
   const hasSavedToken = !!settingsStorage.getItem(`nexusdesk.navigation.${provider}Token`)?.trim();
 
   useEffect(() => {
@@ -62,12 +65,17 @@ export function NavigationSyncSettings() {
 
   return <div className="mx-auto w-full max-w-3xl p-8" onKeyDown={event => event.stopPropagation()}>
     <header className="mb-6 border-b border-ide-panel-border pb-4">
-      <h2 className="text-xl font-semibold">导航云同步</h2>
-      <p className="mt-1 text-sm text-gray-400">选择 GitHub、GitLab 或 Gitee，将导航数据和显示偏好同步到你自己的代码仓库。</p>
+      <h2 className="text-xl font-semibold">云同步</h2>
+      <p className="mt-1 text-sm text-gray-400">选择需要同步的内容，数据保存到你自己的私有代码仓库。</p>
       <p className="mt-1 text-sm text-gray-400">不允许多用户使用同一个仓库。</p>
     </header>
     <div className="flex flex-col gap-4 text-sm">
       <div className="flex items-center gap-2 text-gray-300"><Cloud size={16} /><span>{statusLabel}</span>{(state.status === "connecting" || state.status === "syncing") && <LoaderCircle size={14} className="animate-spin" />}</div>
+      <fieldset className="grid gap-2 border-b border-ide-panel-border pb-4">
+        <legend className="mb-2 font-medium">同步内容</legend>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={selection.myNavigation} onChange={event => { const next = { ...selection, myNavigation: event.target.checked }; setSelection(next); setCloudSyncSelection(next); }} />我的导航</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={selection.logicalPartitions} onChange={event => { const next = { ...selection, logicalPartitions: event.target.checked }; setSelection(next); setCloudSyncSelection(next); }} />逻辑分区</label>
+      </fieldset>
       {state.status === "connected" || state.status === "syncing" || state.status === "conflict" ? <>
         <div className="rounded border border-ide-panel-border bg-ide-panel-bg p-3">
           <div className="font-medium">{state.provider} · {state.user}</div>
@@ -85,8 +93,9 @@ export function NavigationSyncSettings() {
         <p className="text-xs text-gray-400">GitHub 支持自动创建私有仓库；GitLab 和 Gitee 请先创建仓库并授予读写权限。Token 保存在 NexusDesk 本机设置中。</p>
         <div><button type="submit" disabled={busy || state.status === "connecting" || (!token.trim() && !hasSavedToken)} className="flex items-center gap-2 rounded bg-ide-accent px-3 py-2 text-white disabled:opacity-50">{busy && <LoaderCircle size={14} className="animate-spin" />}连接 {provider === "github" ? "GitHub" : provider === "gitlab" ? "GitLab" : "Gitee"}</button></div>
       </form>}
+      {state.logicalNotice && <p role="status" className="text-amber-400">{state.logicalNotice}</p>}
       {state.error && <p role="alert" className="break-all text-red-400">{state.error}</p>}
-      {state.status === "connected" && <p className="text-xs text-gray-500">导航修改后会自动同步。连接时本地和云端网站会合并，重复网址保留本地版本。</p>}
+      {state.status === "connected" && <p className="text-xs text-gray-500">所选内容会在修改后自动同步；首次连接时本地和云端数据会合并。</p>}
     </div>
   </div>;
 }

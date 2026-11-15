@@ -733,6 +733,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             if (key.startsWith(`${version}:true:`)) loadedDirectories.delete(key);
           }
           set(state => ({ logicalTreeData: data, indexRevision: state.indexRevision + 1 }));
+          window.dispatchEvent(new Event("nexusdesk-logical-data-changed"));
         } catch (error) {
           console.error("Failed to fetch logical tree:", error);
         }

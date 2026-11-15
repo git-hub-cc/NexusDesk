@@ -166,7 +166,8 @@ test('frontend key contract rejects unsupported keys without caching or sending 
   assert.equal(env.settingsStorage.getItem('unsupported'), null);
   assert.equal(env.calls.length, 0);
   for (const key of ['nexusdesk-workspace-storage', 'nexusdesk-terminal-profiles', 'nexusdesk-browser-history',
-    'nexusdesk.music.libraryTab', 'nexusdesk.http.extraction.v1', 'sftp-profile:user@host', 'sftp-label:host', 'nexusdesk-ui:layout']) {
+    'nexusdesk.music.libraryTab', 'nexusdesk.http.extraction.v1', 'nexusdesk.cloudSync.myNavigation',
+    'nexusdesk.cloudSync.logicalPartitions', 'sftp-profile:user@host', 'sftp-label:host', 'nexusdesk-ui:layout']) {
     assert.equal(env.isGlobalSetting(key), true);
   }
 });

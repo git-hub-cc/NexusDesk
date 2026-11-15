@@ -411,6 +411,325 @@ pub async fn get_logical_tree(state: State<'_, AppState>) -> Result<Vec<FileNode
     .map_err(|e| e.to_string())?
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct LogicalSyncEntry {
+    pub path: String,
+    pub category: String,
+    pub kind: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct LogicalSyncData {
+    pub workspace: String,
+    pub folders: Vec<String>,
+    pub entries: Vec<LogicalSyncEntry>,
+    #[serde(
+        default,
+        rename = "deletedFolders",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub deleted_folders: Vec<String>,
+}
+
+fn relative_workspace_path(root: &std::path::Path, path: &str) -> Option<String> {
+    let normalize = |value: &str| {
+        value
+            .strip_prefix(r"\\?\UNC\")
+            .map(|rest| format!(r"\\{rest}"))
+            .or_else(|| value.strip_prefix(r"\\?\").map(str::to_string))
+            .unwrap_or_else(|| value.to_string())
+    };
+    let root = normalize(&root.to_string_lossy());
+    let path = normalize(path);
+    let relative = std::path::Path::new(&path)
+        .strip_prefix(std::path::Path::new(&root))
+        .ok()?;
+    if relative.as_os_str().is_empty() {
+        return None;
+    }
+    Some(relative.to_string_lossy().replace('\\', "/"))
+}
+
+fn logical_sync_data(conn: &rusqlite::Connection, root: &str) -> Result<LogicalSyncData, String> {
+    let root_path = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
+    let workspace = logical_workspace_id(&root_path);
+    let mut entries = Vec::new();
+    for (table, kind) in [
+        ("logical_refs", "reference"),
+        ("logical_copies", "copy"),
+        ("logical_hidden", "hidden"),
+    ] {
+        let mut stmt = conn
+            .prepare(&format!("SELECT path, category FROM {table}"))
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let (path, category) = row.map_err(|e| e.to_string())?;
+            if let Some(path) = relative_workspace_path(&root_path, &path) {
+                entries.push(LogicalSyncEntry {
+                    path,
+                    category,
+                    kind: kind.into(),
+                });
+            }
+        }
+    }
+    let mut metadata = conn
+        .prepare("SELECT path, logical_type FROM file_meta WHERE logical_type IS NOT NULL AND logical_type != '' AND path NOT IN (SELECT path FROM logical_refs)")
+        .map_err(|e| e.to_string())?;
+    let rows = metadata
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (path, category) = row.map_err(|e| e.to_string())?;
+        if let Some(path) = relative_workspace_path(&root_path, &path) {
+            entries.push(LogicalSyncEntry {
+                path,
+                category,
+                kind: "reference".into(),
+            });
+        }
+    }
+    entries.sort_by(|a, b| (&a.path, &a.category, &a.kind).cmp(&(&b.path, &b.category, &b.kind)));
+    let mut folders = entries
+        .iter()
+        .map(|entry| entry.category.clone())
+        .filter(|category| !category.is_empty())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut stmt = conn
+        .prepare("SELECT name FROM logical_folders")
+        .map_err(|e| e.to_string())?;
+    for folder in stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+    {
+        folders.insert(folder.map_err(|e| e.to_string())?);
+    }
+    Ok(LogicalSyncData {
+        workspace,
+        folders: folders.into_iter().collect(),
+        entries,
+        deleted_folders: Vec::new(),
+    })
+}
+
+fn logical_workspace_id(root: &std::path::Path) -> String {
+    let remote = git2::Repository::discover(root)
+        .ok()
+        .and_then(|repo| {
+            repo.find_remote("origin")
+                .ok()
+                .and_then(|remote| remote.url().map(str::to_owned))
+        })
+        .map(|url| {
+            let without_credentials = url.rsplit_once('@').map(|(_, rest)| rest).unwrap_or(&url);
+            without_credentials
+                .trim_end_matches(".git")
+                .trim_end_matches('/')
+                .to_lowercase()
+        });
+    remote
+        .map(|value| format!("git:{value}"))
+        .unwrap_or_else(|| {
+            format!(
+                "folder:{}",
+                root.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_lowercase()
+            )
+        })
+}
+
+#[cfg(test)]
+mod logical_sync_tests {
+    #[test]
+    fn logical_sync_snapshot_uses_workspace_relative_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "nexusdesk-logical-sync-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let inside = root.join("notes/inside.md");
+        std::fs::create_dir_all(inside.parent().unwrap()).unwrap();
+        std::fs::write(&inside, "note").unwrap();
+        let outside = root.parent().unwrap().join("outside.md");
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE file_meta(path TEXT UNIQUE, logical_type TEXT);
+             CREATE TABLE logical_folders(id INTEGER PRIMARY KEY, name TEXT UNIQUE);
+             CREATE TABLE logical_refs(path TEXT PRIMARY KEY, category TEXT NOT NULL);
+             CREATE TABLE logical_copies(path TEXT NOT NULL, category TEXT NOT NULL, PRIMARY KEY(path, category));
+             CREATE TABLE logical_hidden(path TEXT NOT NULL, category TEXT NOT NULL, PRIMARY KEY(path, category));
+             INSERT INTO logical_folders(name) VALUES ('notes'), ('empty');",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO logical_refs(path,category) VALUES (?1,'notes')",
+            [inside.to_string_lossy().as_ref()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO logical_copies(path,category) VALUES (?1,'copy')",
+            [outside.to_string_lossy().as_ref()],
+        )
+        .unwrap();
+
+        let snapshot = super::logical_sync_data(&conn, root.to_str().unwrap()).unwrap();
+        assert_eq!(
+            snapshot.workspace,
+            super::logical_workspace_id(&std::fs::canonicalize(&root).unwrap())
+        );
+        assert_eq!(snapshot.entries.len(), 1);
+        assert_eq!(snapshot.entries[0].path, "notes/inside.md");
+        assert_eq!(snapshot.entries[0].kind, "reference");
+        assert!(snapshot.folders.contains(&"empty".to_string()));
+        conn.execute(
+            "INSERT INTO file_meta(path,logical_type) VALUES (?1,'notes')",
+            [inside.to_string_lossy().as_ref()],
+        )
+        .unwrap();
+        super::apply_logical_sync_data_in_db(
+            &conn,
+            root.to_str().unwrap(),
+            super::LogicalSyncData {
+                workspace: snapshot.workspace,
+                folders: vec!["empty".into()],
+                entries: vec![],
+                deleted_folders: vec!["notes".into()],
+            },
+        )
+        .unwrap();
+        let after = super::logical_sync_data(&conn, root.to_str().unwrap()).unwrap();
+        assert_eq!(after.folders, vec!["empty"]);
+        assert!(after.entries.iter().all(|entry| entry.category != "notes"));
+        let outside_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM logical_copies", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(outside_count, 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[tauri::command]
+pub fn get_logical_sync_data(
+    root: String,
+    state: State<'_, AppState>,
+) -> Result<LogicalSyncData, String> {
+    let guard = project_db(&state)?;
+    logical_sync_data(guard.as_ref().ok_or("数据库未初始化")?, &root)
+}
+
+#[tauri::command]
+pub fn apply_logical_sync_data(
+    root: String,
+    data: LogicalSyncData,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let guard = project_db(&state)?;
+    apply_logical_sync_data_in_db(guard.as_ref().ok_or("数据库未初始化")?, &root, data)?;
+    use tauri::Emitter;
+    let _ = app.emit("logical-tree-updated", ());
+    Ok(())
+}
+
+fn apply_logical_sync_data_in_db(
+    conn: &rusqlite::Connection,
+    root: &str,
+    data: LogicalSyncData,
+) -> Result<(), String> {
+    let root_path = std::fs::canonicalize(&root).map_err(|e| e.to_string())?;
+    let workspace = logical_workspace_id(&root_path);
+    if data.workspace != workspace {
+        return Err("云端逻辑分区属于其他工作区".into());
+    }
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    for table in ["logical_refs", "logical_copies", "logical_hidden"] {
+        let mut stmt = tx
+            .prepare(&format!("SELECT path FROM {table}"))
+            .map_err(|e| e.to_string())?;
+        let paths = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        drop(stmt);
+        for path in paths {
+            if relative_workspace_path(&root_path, &path).is_some() {
+                tx.execute(&format!("DELETE FROM {table} WHERE path=?1"), [&path])
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    for folder in &data.folders {
+        db::insert_logical_folder(&tx, folder).map_err(|e| e.to_string())?;
+    }
+    for folder in &data.deleted_folders {
+        tx.execute("DELETE FROM logical_folders WHERE name=?1", [folder])
+            .map_err(|e| e.to_string())?;
+    }
+    // 保留显式空引用，阻止旧 frontmatter 分类在下次读取时恢复已删除条目。
+    let mut stmt = tx
+        .prepare("SELECT path FROM file_meta WHERE logical_type IS NOT NULL AND logical_type != ''")
+        .map_err(|e| e.to_string())?;
+    let paths = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    drop(stmt);
+    for path in paths {
+        if relative_workspace_path(&root_path, &path).is_some() {
+            tx.execute(
+                "INSERT OR IGNORE INTO logical_refs(path, category) VALUES (?1, '')",
+                [&path],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    for entry in data.entries {
+        let relative = std::path::Path::new(&entry.path);
+        if relative.is_absolute()
+            || relative.components().any(|part| {
+                matches!(
+                    part,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            })
+        {
+            return Err("云端逻辑分区包含无效路径".into());
+        }
+        let path = root_path.join(relative).to_string_lossy().to_string();
+        db::insert_logical_folder(&tx, &entry.category).map_err(|e| e.to_string())?;
+        let table = match entry.kind.as_str() {
+            "reference" => "logical_refs",
+            "copy" => "logical_copies",
+            "hidden" => "logical_hidden",
+            _ => return Err("云端逻辑分区包含未知记录类型".into()),
+        };
+        tx.execute(
+            &format!("INSERT OR REPLACE INTO {table}(path, category) VALUES (?1, ?2)"),
+            rusqlite::params![path, entry.category],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn get_logical_tree_blocking(state: &AppState) -> Result<Vec<FileNode>, String> {
     let guard = state.db_conn.lock().unwrap();
     if let Some(conn) = guard.as_ref() {

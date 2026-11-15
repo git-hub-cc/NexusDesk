@@ -67,6 +67,7 @@ export const videoApi = {
     cancelMkvToMp4: (path: string): Promise<void> => invoke("cancel_mkv_to_mp4", { path }),
 };
 export interface GraphCategory { name: string; files: string[]; missingFiles: string[]; color?: string | null }
+export interface LogicalSyncData { workspace: string; folders: string[]; entries: { path: string; category: string; kind: string }[]; deletedFolders?: string[] }
 export const fsApi = {
     editGraphCategory: (name: string, newName: string | null): Promise<void> => invoke("edit_graph_category", { name, newName }),
     removeGraphFile: (category: string, path: string): Promise<void> => invoke("remove_graph_file", { category, path }),
@@ -113,6 +114,8 @@ export const fsApi = {
     },
 
     getLogicalTree: (): Promise<any[]> => invoke("get_logical_tree"),
+    getLogicalSyncData: (root: string): Promise<LogicalSyncData> => invoke("get_logical_sync_data", { root }),
+    applyLogicalSyncData: (root: string, data: LogicalSyncData): Promise<void> => invoke("apply_logical_sync_data", { root, data }),
     prepareLogicalSandbox: (project: string, category: string): Promise<string> => invoke("prepare_logical_sandbox", { project, category }),
     removeLogicalFile: (path: string, category: string): Promise<void> => invoke("remove_logical_file", { path, category }),
     getHiddenLogicalFiles: (): Promise<[string, string][]> => invoke("get_hidden_logical_files"),

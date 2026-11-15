@@ -21,10 +21,11 @@ test("watcher skips own saves, merges external events and cancels pending work o
     isRecentlySavedPath: path => path === "own.md",
     refreshOpenFiles: async paths => calls.push(paths),
     fsApi: { invalidateTreeFiles() {}, syncProjectIndex: async () => calls.push("index") },
-    window: { addEventListener() {}, removeEventListener() {} },
+    isSnapshot: false,
+    window: { addEventListener() {}, removeEventListener() {}, dispatchEvent() {} },
   };
   const source = readFileSync(new URL("../src/hooks/useWorkspaceWatcher.ts", import.meta.url), "utf8").replace(/^import .*;$/gm, "");
-  const compiled = ts.transpileModule("const { useEffect, debounce, listen, useWorkspaceStore, isRecentlySavedPath, refreshOpenFiles, fsApi, window } = globalThis.__watcherTest;\n" + source,
+  const compiled = ts.transpileModule("const { useEffect, debounce, listen, useWorkspaceStore, isRecentlySavedPath, refreshOpenFiles, fsApi, window, isSnapshot } = globalThis.__watcherTest;\n" + source,
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
   const { useWorkspaceWatcher } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
   useWorkspaceWatcher();

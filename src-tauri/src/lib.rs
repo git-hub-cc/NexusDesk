@@ -356,6 +356,8 @@ pub fn run() {
             commands::fs_cmds::read_directory,
             commands::fs_cmds::sync_project_index,
             commands::fs_cmds::get_logical_tree,
+            commands::fs_cmds::get_logical_sync_data,
+            commands::fs_cmds::apply_logical_sync_data,
             commands::fs_cmds::prepare_logical_sandbox,
             commands::fs_cmds::create_logical_folder,
             commands::fs_cmds::edit_logical_folder,
