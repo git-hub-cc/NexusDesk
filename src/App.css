@@ -660,8 +660,8 @@
 .terminal-pane, .terminal-host, .terminal-host .xterm, .terminal-host .xterm-screen, .terminal-host .xterm-viewport, .terminal-host canvas { min-height: 0; height: 100%; background-color: var(--ide-bg) !important; }
 .terminal-pane { position: relative; box-sizing: border-box; }
 .terminal-pane > .terminal-host { height: 100%; flex: 1 1 0%; }
-.terminal-pane > [aria-label="命令历史候选"] { position: absolute; z-index: 3; top: 8px; right: 8px; left: 8px; max-height: 35%; overflow: hidden; padding: 7px; background: #20222673; border: 1px solid #626873b3; border-radius: 6px; box-shadow: 0 8px 24px #0006; }
-.terminal-pane > [aria-label="命令历史候选"] > div:first-child { margin: -7px -7px 5px; padding: 6px 8px; color: #c5ccd6; background: #2a2d3399; border-bottom: 1px solid #454a5380; }
+.terminal-pane > [aria-label="命令历史候选"] { position: absolute; z-index: 3; top: 0; right: 0; left: 0; max-height: calc(100% - 3rem); overflow: hidden; padding: 0; background: #20222673; border: 0; border-bottom: 1px solid #ffffff1a; border-radius: 0; box-shadow: 0 8px 24px #0006; }
+.terminal-pane > [aria-label="命令历史候选"] > div:first-child { margin: 0 0 4px; padding: 0; color: #c5ccd6; background: transparent; border-bottom: 0; }
 .terminal-pane > [aria-label="命令历史候选"] > div:last-child { scrollbar-color: #626873 #20222666; }
 .terminal-pane > [aria-label="命令历史候选"] button { border-radius: 3px; }
 .terminal-pane > [aria-label="命令历史候选"] button:hover,

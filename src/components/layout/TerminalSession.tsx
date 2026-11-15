@@ -550,7 +550,7 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
     <>
       <div style={{ display: active ? "flex" : "none", background: "#2b2d30" }} className="terminal-pane relative h-full w-full min-h-0 flex-col p-2">
         <div ref={host} onKeyDown={event => event.stopPropagation()} className="terminal-host min-h-0 flex-1 w-full overflow-hidden" />
-        {matches.length > 0 && <div className="absolute inset-x-2 bottom-8 z-10 flex max-h-[calc(100%-3rem)] flex-col rounded border border-white/10 p-2 shadow-lg" style={{ backgroundColor: `rgba(43, 45, 48, ${1 - historyTransparency / 100})`, textShadow: "0 1px 2px #000" }} aria-label="命令历史候选">
+        {matches.length > 0 && <div className="absolute inset-x-0 top-0 z-10 flex max-h-[calc(100%-3rem)] flex-col border-b border-white/10 shadow-lg" style={{ backgroundColor: `rgba(43, 45, 48, ${1 - historyTransparency / 100})`, textShadow: "0 1px 2px #000" }} aria-label="命令历史候选">
           <div className="mb-1 flex shrink-0 justify-between text-[10px] text-gray-300"><span>命令历史 · 单击回填，双击执行</span><span>{matches.length} 条</span></div>
           <div className="min-h-0 max-h-36 overflow-y-auto">
             {matches.map(match => <button key={match.command} type="button" title={match.command}

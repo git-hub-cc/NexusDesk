@@ -30,7 +30,7 @@ export function TerminalSettings() {
           <p className="text-gray-400">c7d8e9f Initial commit</p>
           <p className="pt-2"><span className="text-green-400">PS C:\Projects\NexusDesk&gt;</span> git<span aria-hidden="true" className="ml-0.5 inline-block h-3 w-1.5 translate-y-0.5 bg-gray-300" /></p>
         </div>
-        <div className="absolute inset-x-2 bottom-8 rounded border border-white/10 p-2 shadow-lg" style={{ backgroundColor: `rgba(43, 45, 48, ${1 - store.historyTransparency / 100})`, textShadow: "0 1px 2px #000" }}>
+        <div className="absolute inset-x-0 top-0 border-b border-white/10 shadow-lg" style={{ backgroundColor: `rgba(43, 45, 48, ${1 - store.historyTransparency / 100})`, textShadow: "0 1px 2px #000" }}>
           <div className="mb-1 flex justify-between text-[10px] text-gray-300"><span>命令历史 · 单击回填，双击执行</span><span>2 条</span></div>
           <p className="px-2 py-0.5 font-mono text-xs text-gray-300"><mark className="bg-transparent text-amber-300">git</mark> status</p>
           <p className="px-2 py-0.5 font-mono text-xs text-gray-300"><mark className="bg-transparent text-amber-300">git</mark> diff</p>
