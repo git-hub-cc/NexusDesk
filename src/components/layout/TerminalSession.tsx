@@ -4,6 +4,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { ILink } from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
+import { Trash2 } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
@@ -553,26 +554,40 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
         {matches.length > 0 && <div className="absolute inset-x-0 top-0 z-10 flex max-h-[calc(100%-3rem)] flex-col border-b border-white/10 shadow-lg" style={{ backgroundColor: `rgba(43, 45, 48, ${1 - historyTransparency / 100})`, textShadow: "0 1px 2px #000" }} aria-label="命令历史候选">
           <div className="mb-1 flex shrink-0 justify-between text-[10px] text-gray-300"><span>命令历史 · 单击回填，双击执行</span><span>{matches.length} 条</span></div>
           <div className="min-h-0 max-h-36 overflow-y-auto">
-            {matches.map(match => <button key={match.command} type="button" title={match.command}
-              onMouseDown={event => event.preventDefault()} onClick={event => {
-                clearTimeout(historyClickTimer.current);
-                if (event.detail > 1) return;
-                historyClickTimer.current = setTimeout(() => fillHistory.current(match.command), 350);
-              }} onDoubleClick={event => {
-                // Chromium can deliver the first click's delayed callback after
-                // dblclick. Cancel it here so the partial input is never restored
-                // over the command being executed.
-                event.preventDefault();
-                event.stopPropagation();
-                clearTimeout(historyClickTimer.current);
-                fillHistory.current(match.command, true);
-              }}
-              className="block w-full truncate rounded px-2 py-0.5 text-left font-mono text-xs text-gray-300 hover:bg-white/10 focus:bg-white/10">
-              {Array.from(match.command).map((char, index, chars) => {
-                const offset = chars.slice(0, index).join('').length;
-                return match.indices.includes(offset) ? <mark key={index} className="bg-transparent text-amber-300">{char}</mark> : char;
-              })}
-            </button>)}
+            {matches.map(match => <div key={match.command} className="group flex min-w-0 items-center rounded hover:bg-white/10 focus-within:bg-white/10">
+              <button type="button" title={match.command}
+                onMouseDown={event => event.preventDefault()} onClick={event => {
+                  clearTimeout(historyClickTimer.current);
+                  if (event.detail > 1) return;
+                  historyClickTimer.current = setTimeout(() => fillHistory.current(match.command), 350);
+                }} onDoubleClick={event => {
+                  // Chromium can deliver the first click's delayed callback after
+                  // dblclick. Cancel it here so the partial input is never restored
+                  // over the command being executed.
+                  event.preventDefault();
+                  event.stopPropagation();
+                  clearTimeout(historyClickTimer.current);
+                  fillHistory.current(match.command, true);
+                }}
+                className="min-w-0 flex-1 truncate rounded px-2 py-0.5 text-left font-mono text-xs text-gray-300 focus:outline-none">
+                {Array.from(match.command).map((char, index, chars) => {
+                  const offset = chars.slice(0, index).join('').length;
+                  return match.indices.includes(offset) ? <mark key={index} className="bg-transparent text-amber-300">{char}</mark> : char;
+                })}
+              </button>
+              <button type="button" title="删除命令历史" aria-label={`删除命令历史：${match.command}`}
+                onMouseDown={event => event.preventDefault()} onClick={event => {
+                  event.stopPropagation();
+                  clearTimeout(historyClickTimer.current);
+                  void invoke<string[]>("delete_terminal_history", { command: match.command }).then(entries => {
+                    setHistory(entries);
+                    setHistoryError('');
+                  }).catch(error => setHistoryError(String(error)));
+                }}
+                className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 hover:bg-red-500/20 hover:text-red-300 focus:opacity-100 focus:outline-none group-hover:opacity-100">
+                <Trash2 size={12} />
+              </button>
+            </div>)}
           </div>
         </div>}
         {historyError && <div role="status" className="shrink-0 text-xs text-amber-400" title={historyError}>命令历史读取或保存失败</div>}

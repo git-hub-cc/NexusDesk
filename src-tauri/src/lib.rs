@@ -334,6 +334,7 @@ pub fn run() {
             commands::terminal_cmds::start_terminal,
             commands::terminal_cmds::check_terminal_command,
             commands::terminal_cmds::load_terminal_history,
+            commands::terminal_cmds::delete_terminal_history,
             commands::terminal_cmds::save_terminal_history,
             commands::terminal_cmds::write_terminal,
             commands::terminal_cmds::resize_terminal,

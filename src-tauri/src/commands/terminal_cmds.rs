@@ -207,6 +207,14 @@ pub fn load_terminal_history() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+pub fn delete_terminal_history(command: String) -> Result<Vec<String>, String> {
+    let conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
+    conn.execute("DELETE FROM terminal_history WHERE command=?1", [command])
+        .map_err(|error| error.to_string())?;
+    read_history()
+}
+
+#[tauri::command]
 pub fn save_terminal_history(command: String) -> Result<Vec<String>, String> {
     let mut conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
