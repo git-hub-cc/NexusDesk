@@ -1,5 +1,6 @@
 import resourceDataUrl from "@/assets/navigation/data/01资源.json?url";
 import serviceDataUrl from "@/assets/navigation/data/02服务.json?url";
+import { settingsStorage } from "@/lib/globalSettings";
 
 export type NavigationSite = {
   id: string;
@@ -90,8 +91,8 @@ async function loadBundledData(): Promise<NavigationData> {
 
 export async function loadNavigationData(): Promise<NavigationData> {
   let stored: NavigationData | null = null;
-  try { stored = parseData(JSON.parse(localStorage.getItem(STORAGE_KEY) || "null")); }
-  catch { localStorage.removeItem(STORAGE_KEY); }
+  try { stored = parseData(JSON.parse(settingsStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(STORAGE_KEY) ?? "null")); }
+  catch { if (!settingsStorage.getItem(STORAGE_KEY)) localStorage.removeItem(STORAGE_KEY); }
   if (stored) {
     const custom = stored.categories.find(category => category.categoryId === CUSTOM_CATEGORY_ID)
       ?? { categoryId: CUSTOM_CATEGORY_ID, categoryName: "我的导航", sites: [] };
@@ -130,7 +131,7 @@ export async function loadNavigationData(): Promise<NavigationData> {
 }
 
 export function saveNavigationData(data: NavigationData) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  settingsStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   window.dispatchEvent(new CustomEvent("nexusdesk-navigation-data-changed", { detail: data }));
 }
 

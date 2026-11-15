@@ -119,6 +119,20 @@ export async function refreshGlobalSettings(): Promise<void> {
 export async function initializeGlobalSettings(): Promise<void> {
   if (!isTauri()) return;
   Object.assign(cache, await invoke<Record<string, string>>("read_global_settings"));
+  for (const key of ["nexusdesk-chat-history-v1", "nexusdesk-navigation-data-v1"]) {
+    const legacy = localStorage.getItem(key);
+    if (legacy === null) continue;
+    if (cache[key] === undefined) {
+      settingsStorage.setItem(key, legacy);
+      try {
+        await flushGlobalSettings();
+      } catch (error) {
+        console.error(`Cannot migrate local storage key=${key}:`, error);
+        continue;
+      }
+    }
+    if (cache[key] !== undefined && !pending.some(entry => entry.key === key)) localStorage.removeItem(key);
+  }
   const refresh = () => void refreshGlobalSettings().catch(error => console.error("Cannot refresh global settings:", error));
   window.addEventListener("focus", refresh);
   window.addEventListener("pagehide", () => { void flushGlobalSettings().catch(console.error); });

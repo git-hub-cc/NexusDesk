@@ -3,6 +3,8 @@
     "nexusdesk-workspace-storage",
     "nexusdesk-terminal-profiles",
     "nexusdesk-browser-history",
+    "nexusdesk-chat-history-v1",
+    "nexusdesk-navigation-data-v1",
     "nexusdesk.music.libraryTab",
     "nexusdesk.http.extraction.v1",
     "nexusdesk.codex.autoReview",

@@ -3,6 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Check, Copy, GitBranch, LoaderCircle, MessageCircle, Pencil, Plus, Save, Send, Settings2, Trash2, X } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { chatApi, codexSettingsApi, type ChatOverrides, type CodexSettings } from "@/lib/api";
+import { flushGlobalSettings, settingsStorage } from "@/lib/globalSettings";
 
 type Message = { role: "user" | "assistant"; content: string };
 type SavedConversation = { id: string; title: string; messages: Message[]; savedAt: number };
@@ -10,7 +11,7 @@ const HISTORY_KEY = "nexusdesk-chat-history-v1";
 
 function readHistory(): SavedConversation[] {
   try {
-    const value: unknown = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
+    const value: unknown = JSON.parse(settingsStorage.getItem(HISTORY_KEY) ?? localStorage.getItem(HISTORY_KEY) ?? "[]");
     return Array.isArray(value) ? value.filter(item => item && typeof item.id === "string" && Array.isArray(item.messages)) : [];
   } catch { return []; }
 }
@@ -46,14 +47,17 @@ export function ChatEditor({ active }: { active: boolean }) {
     return () => { disposed = true; };
   }, [active]);
   useEffect(() => {
-    const syncHistory = (event: StorageEvent) => {
-      if (event.key !== HISTORY_KEY) return;
+    const syncHistory = () => {
       const latest = readHistory();
       historyRef.current = latest;
       setHistory(latest);
     };
+    window.addEventListener("global-settings-changed", syncHistory);
     window.addEventListener("storage", syncHistory);
-    return () => window.removeEventListener("storage", syncHistory);
+    return () => {
+      window.removeEventListener("global-settings-changed", syncHistory);
+      window.removeEventListener("storage", syncHistory);
+    };
   }, []);
   useEffect(() => {
     const container = conversation.current;
@@ -83,16 +87,20 @@ export function ChatEditor({ active }: { active: boolean }) {
   const updateHistory = async (update: (current: SavedConversation[]) => SavedConversation[]) => {
     const write = () => {
       const next = update(readHistory());
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      settingsStorage.setItem(HISTORY_KEY, JSON.stringify(next));
       historyRef.current = next;
       setHistory(next);
     };
     try {
       if (navigator.locks) await navigator.locks.request(`${HISTORY_KEY}-write`, write);
       else write();
+      await flushGlobalSettings();
+      const latest = readHistory();
+      historyRef.current = latest;
+      setHistory(latest);
       return true;
     } catch {
-      setError("对话历史保存失败，请检查本机存储空间");
+      setError("对话历史保存失败，请检查数据库或本机存储状态");
       return false;
     }
   };
