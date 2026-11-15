@@ -1,14 +1,12 @@
 import { settingsStorage } from "./globalSettings";
+import { pathKey } from "./paths";
 import { isSnapshot } from "./snapshot";
 
 const pending = new Map<string, string>();
 let timer: ReturnType<typeof setTimeout> | undefined;
 let deadline: ReturnType<typeof setTimeout> | undefined;
 
-export function projectKey(path: string) {
-  const value = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return /^(?:[a-z]:|\/\/)/i.test(value) ? value.toLowerCase() : value;
-}
+export const projectKey = pathKey;
 
 export function readUI<T>(root: string, category: string): T | undefined {
   const key = `nexusdesk-ui:${projectKey(root)}:${category}`;

@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import * as ContextMenu from "@/lib/nativeMenu";
 import { ChevronRight, FileText, Folder } from "lucide-react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { useGraphData } from "@/hooks/useGraphData";
+import { pathKey, samePath } from "@/lib/paths";
+import { findWorkspaceFile, openWorkspaceFile } from "@/lib/workspaceFile";
 import { fsApi, type GraphCategory } from "@/lib/api";
-import { buildReverseTree, changeTreeNode, countTreeGraphNames, parseTreeGraph, type TreeGraphNode } from "@/lib/treeGraph";
+import { buildReverseTree, changeTreeNode, parseTreeGraph, type TreeGraphNode } from "@/lib/treeGraph";
 import { openContextMenuFromKeyboard } from "@/lib/contextMenu";
 import { flushEditorContent, flushPendingWrites, useWorkspaceStore } from "@/store/workspaceStore";
 import { CreateNameDialog } from "@/components/explorer/CreateNameDialog";
@@ -57,9 +60,9 @@ function TreeNode({ node, onLocate, location, counts, onContextNode }: { node: T
 function TreeFile({ path, root, missing, counts, onContextNode, selected, label, searchRef }: { path: string; root: string; missing: boolean; counts: Map<string, number>; onContextNode: (name: string) => void; selected?: boolean; label?: ReactNode; searchRef?: (element: HTMLButtonElement | null) => void }) {
   const revision = useWorkspaceStore(state => state.indexRevision);
   const graphLocation = useWorkspaceStore(state => state.graphLocation);
-  const location = graphLocation?.path === path ? graphLocation : null;
+  const location = graphLocation && samePath(graphLocation.path, path) ? graphLocation : null;
   useEffect(() => { if (location && !missing) setExpanded(true); }, [location, missing]);
-  const buffer = useWorkspaceStore(state => [...state.leftTabs, ...state.rightTabs].find(tab => tab.path === path && !tab.revision && tab.diff === undefined)?.content);
+  const buffer = useWorkspaceStore(state => findWorkspaceFile([...state.leftTabs, ...state.rightTabs], path)?.content);
   const [nodes, setNodes] = useState<TreeGraphNode[] | null>(null);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(false);
@@ -67,7 +70,7 @@ function TreeFile({ path, root, missing, counts, onContextNode, selected, label,
     if (!expanded || missing) return;
     let live = true;
     setError(""); setNodes(null);
-    (buffer !== undefined ? Promise.resolve(buffer) : fsApi.readFile(path))
+    (buffer !== undefined ? Promise.resolve(buffer) : fsApi.readTreeFile(path))
       .then(content => { if (live) setNodes(parseTreeGraph(content)); })
       .catch(cause => { if (live) setError("读取图谱失败：" + String(cause)); });
     return () => { live = false; };
@@ -75,12 +78,7 @@ function TreeFile({ path, root, missing, counts, onContextNode, selected, label,
   const open = async (line?: number) => {
     if (missing) return;
     try {
-      flushEditorContent();
-      const state = useWorkspaceStore.getState();
-      const existing = [...state.leftTabs, ...state.rightTabs].find(tab => tab.path === path && !tab.revision && tab.diff === undefined);
-      const content = existing?.content ?? await fsApi.readFile(path);
-      if (useWorkspaceStore.getState().rootPath !== root) return;
-      useWorkspaceStore.getState().openTab({ id: path, path, title: filename(path), content, markdownMode: existing?.markdownMode });
+      if (useWorkspaceStore.getState().rootPath !== root || !await openWorkspaceFile(path)) return;
       useWorkspaceStore.getState().locateGraph(path, line ?? 1, useWorkspaceStore.getState().focusedPane);
     } catch (cause) { setError("打开文件失败：" + String(cause)); }
   };
@@ -103,10 +101,8 @@ export function GraphView() {
   const focusedPane = useWorkspaceStore(state => state.focusedPane);
   const leftTabs = useWorkspaceStore(state => state.leftTabs);
   const rightTabs = useWorkspaceStore(state => state.rightTabs);
-  const revision = useWorkspaceStore(state => state.indexRevision);
-  const [categories, setCategories] = useState<GraphCategory[]>([]);
-  const [treeContents, setTreeContents] = useState<Map<string, string>>(new Map());
-  const [nodeCounts, setNodeCounts] = useState<Map<string, number>>(new Map());
+  const { categories, trees, counts: nodeCounts, error: loadError, refresh } = useGraphData();
+  const treeContents = useMemo(() => new Map(trees.map(tree => [pathKey(tree.path), tree.content])), [trees]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [hovered, setHovered] = useState<string | null>(null);
@@ -160,7 +156,7 @@ export function GraphView() {
     if (!graphLocation) return;
     setCollapsed(previous => {
       const next = new Set(previous);
-      categories.filter(category => category.files.includes(graphLocation.path)).forEach(category => next.delete(category.name));
+      categories.filter(category => category.files.some(file => samePath(file, graphLocation.path))).forEach(category => next.delete(category.name));
       return next;
     });
   }, [graphLocation, categories]);
@@ -170,7 +166,7 @@ export function GraphView() {
     const activeId = focusedPane === "left" ? useWorkspaceStore.getState().activeLeftTabId : useWorkspaceStore.getState().activeRightTabId;
     const path = tabs.find(tab => tab.id === activeId)?.path;
     if (!path) return;
-    const category = categories.find(item => item.files.some(file => file.toLocaleLowerCase() === path.toLocaleLowerCase()));
+    const category = categories.find(item => item.files.some(file => samePath(file, path)));
     // A locate signal is shared by the explorers. Ignore files outside graph
     // categories so opening a regular file does not force the sidebar away
     // from the graph partition.
@@ -180,40 +176,15 @@ export function GraphView() {
   }, [locateSignal, categories, focusedPane, leftTabs, rightTabs]);
   const selectedCategory = categories.find(category => category.name === contextCategory);
   const dialogFromMenu = useRef(false);
-  const request = useRef(0);
-  const refresh = async () => {
-    const id = ++request.current;
-    const data = await fsApi.getGraphCategories();
-    const paths = [...new Set(data.flatMap(category => category.files.filter(path => !category.missingFiles.includes(path))))];
-    const results = await Promise.allSettled(paths.map(async path => {
-      const buffered = [...useWorkspaceStore.getState().leftTabs, ...useWorkspaceStore.getState().rightTabs].find(tab => tab.path === path && !tab.revision && tab.diff === undefined)?.content;
-      return [path, buffered ?? await fsApi.readFile(path)] as const;
-    }));
-    if (id === request.current && useWorkspaceStore.getState().rootPath === root) {
-      const entries = results.flatMap(result => result.status === "fulfilled" ? [result.value] : []);
-      const failures = results.flatMap((result, index) => result.status === "rejected" ? [`${paths[index]}: ${String(result.reason)}`] : []);
-      setError(failures.join("\n"));
-      setCategories(data);
-      if (!initializedFolders.current) {
-        setCollapsed(new Set(data.map(category => category.name)));
-        initializedFolders.current = true;
-      }
-      setTreeContents(new Map(entries));
-      setNodeCounts(countTreeGraphNames(entries.map(([path, content]) => ({ path, content }))));
-    }
-  };
   useEffect(() => {
-    setCategories([]); setTreeContents(new Map()); setNodeCounts(new Map()); setCreating(false); setRename(null); setContextFile(null); setContextCategory(null); setContextNode(null); setError(""); setHovered(null); setCollapsed(new Set()); initializedFolders.current = false;
-    return () => { request.current++; };
+    setCreating(false); setRename(null); setContextFile(null); setContextCategory(null); setContextNode(null); setError(""); setHovered(null); setCollapsed(new Set()); initializedFolders.current = false;
   }, [root]);
-
   useEffect(() => {
-    const receive = () => { if (root) void refresh().catch(cause => setError(String(cause))); };
-    receive();
-    window.addEventListener("nexusdesk:files-moved", receive);
-    window.addEventListener("nexusdesk:graph-updated", receive);
-    return () => { window.removeEventListener("nexusdesk:files-moved", receive); window.removeEventListener("nexusdesk:graph-updated", receive); };
-  }, [root, revision]);
+    if (!initializedFolders.current && categories.length) {
+      setCollapsed(new Set(categories.map(category => category.name)));
+      initializedFolders.current = true;
+    }
+  }, [categories]);
 
   const link = async (name: string, paths: string[]) => {
     setError("");
@@ -247,11 +218,11 @@ export function GraphView() {
   }, [root]);
 
   const setCategoryColor = (name: string, color: string) => {
-    void fsApi.setGraphCategoryColor(name, color).then(async () => { await refresh(); window.dispatchEvent(new Event("nexusdesk:graph-colors")); }).catch(cause => setError(String(cause)));
+    void fsApi.setGraphCategoryColor(name, color).then(() => refresh()).catch(cause => setError(String(cause)));
   };
 
   const openReverseTree = (name: string) => {
-    const reverseTree = buildReverseTree(name, [...treeContents].map(([path, content]) => ({ path, content })));
+    const reverseTree = buildReverseTree(name, trees);
     useWorkspaceStore.getState().openTab({ id: `reverse-tree:${root}:${name}:${Date.now()}`, path: `reverse-tree:${name}`, title: `反向树 · ${name}`, content: "", reverseTree, markdownMode: "preview" });
   };
 
@@ -278,14 +249,14 @@ export function GraphView() {
     dialogFromMenu.current = true;
     setError("");
     try {
-      const nodePath = findNodePath(parseTreeGraph(treeContents.get(target.path) ?? ""), target.line);
+      const nodePath = findNodePath(parseTreeGraph(treeContents.get(pathKey(target.path)) ?? ""), target.line);
       const location = nodePath?.join(" > ") ?? name;
       const confirmed = await confirmDelete({ title: "删除节点及子节点", description: `将删除节点“${name}”及其全部子节点。\n所在层级：${location}`, paths: [], confirmLabel: "删除节点" });
       if (!confirmed || useWorkspaceStore.getState().rootPath !== root) return;
       flushEditorContent();
       await flushPendingWrites();
       const state = useWorkspaceStore.getState();
-      const tab = [...state.leftTabs, ...state.rightTabs].find(item => item.path === target.path && !item.revision && item.diff === undefined);
+      const tab = findWorkspaceFile([...state.leftTabs, ...state.rightTabs], target.path);
       const current = tab?.content ?? await fsApi.readFile(target.path);
       const next = changeTreeNode(current, target.line, "delete");
       if (next === current) return;
@@ -335,17 +306,17 @@ export function GraphView() {
         onDrop={event => { event.preventDefault(); event.stopPropagation(); if (root) setError("请将 .tree 文件拖入图谱分类，不能放在根目录。"); }}>
         {speedSearch.searchBox}
         <div className="flex-1 min-h-0 overflow-auto p-1">
-        {error && <p role="alert" className="text-red-400 break-words px-2 py-1">{error}</p>}
+        {(error || loadError) && <p role="alert" className="text-red-400 break-words px-2 py-1">{error || loadError}</p>}
         {!root || !categories.length ? <p className="p-4 text-gray-500 text-center">暂无图谱分类。</p> : filteredCategories.map(category => <div key={category.name} data-graph-category={category.name}
           onDragOver={event => { if (dragTypes.some(type => event.dataTransfer.types.includes(type))) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "link"; setHovered(category.name); } }}
           onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHovered(null); }}
           onDrop={event => drop(event, category.name)}
           >
-          <div className="flex items-center"><button ref={element => registerSearchTarget(categoryId(category.name), element)} type="button" className={`flex items-center gap-1 flex-1 min-w-0 text-left px-1 py-1 rounded-sm ${!!speedSearch.searchBox && searchSelected === categoryId(category.name) ? "bg-ide-selection text-white" : ""} ${hovered === category.name ? "bg-sky-500/30 ring-1 ring-inset ring-sky-400/70" : "hover:bg-ide-tree-hover"}`} aria-expanded={!!speedSearch.filterTerm || !collapsed.has(category.name)} onClick={() => { useWorkspaceStore.getState().setPartitionSearchPaths(category.files.filter(path => !category.missingFiles.includes(path))); setCollapsed(previous => { const next = new Set(previous); if (next.has(category.name)) next.delete(category.name); else next.add(category.name); return next; }); }}>
+          <div className="flex items-center"><button ref={element => registerSearchTarget(categoryId(category.name), element)} type="button" className={`flex items-center gap-1 flex-1 min-w-0 text-left px-1 py-1 rounded-sm ${!!speedSearch.searchBox && searchSelected === categoryId(category.name) ? "bg-ide-selection text-white" : ""} ${hovered === category.name ? "bg-sky-500/30 ring-1 ring-inset ring-sky-400/70" : "hover:bg-ide-tree-hover"}`} aria-expanded={!!speedSearch.filterTerm || !collapsed.has(category.name)} onClick={() => { useWorkspaceStore.getState().setPartitionSearchPaths(category.files.filter(path => !category.missingFiles.some(file => samePath(file, path)))); setCollapsed(previous => { const next = new Set(previous); if (next.has(category.name)) next.delete(category.name); else next.add(category.name); return next; }); }}>
             <ChevronRight size={14} className={`shrink-0 ${!speedSearch.filterTerm && collapsed.has(category.name) ? "" : "rotate-90"}`} /><Folder size={14} className="shrink-0" style={{ color: category.color ?? undefined }} /><span className="truncate">{speedSearch.highlight(category.name)}</span>
           </button>
           </div>
-          {(!!speedSearch.filterTerm || !collapsed.has(category.name)) && category.files.filter(path => !speedSearch.filterTerm || matchTreeName(category.name, speedSearch.filterTerm) || matchTreeName(filename(path), speedSearch.filterTerm)).map(path => <TreeFile key={path} path={path} root={root} missing={category.missingFiles.includes(path)} counts={nodeCounts} onContextNode={setContextNode} label={speedSearch.highlight(filename(path))} searchRef={element => registerSearchTarget(fileId(category.name, path), element)} selected={(!!speedSearch.searchBox && searchSelected === fileId(category.name, path)) || locatedPath?.toLocaleLowerCase() === path.toLocaleLowerCase()} />)}
+          {(!!speedSearch.filterTerm || !collapsed.has(category.name)) && category.files.filter(path => !speedSearch.filterTerm || matchTreeName(category.name, speedSearch.filterTerm) || matchTreeName(filename(path), speedSearch.filterTerm)).map(path => <TreeFile key={path} path={path} root={root} missing={category.missingFiles.some(file => samePath(file, path))} counts={nodeCounts} onContextNode={setContextNode} label={speedSearch.highlight(filename(path))} searchRef={element => registerSearchTarget(fileId(category.name, path), element)} selected={(!!speedSearch.searchBox && searchSelected === fileId(category.name, path)) || !!locatedPath && samePath(locatedPath, path)} />)}
         </div>)}
         {!!categories.length && !filteredCategories.length && <p className="p-4 text-gray-500 text-center">无匹配目录或文件。</p>}
         </div>
@@ -383,7 +354,6 @@ export function GraphView() {
         await fsApi.editGraphCategory(rename.name, name);
         setCollapsed(previous => { const next = new Set(previous); if (next.delete(rename.name)) next.add(name); return next; });
         await refresh();
-        window.dispatchEvent(new Event("nexusdesk:graph-colors"));
       }} onClose={() => setRename(null)} />}
     {creating && root && <CreateNameDialog key={root} title="新建图谱分类" description="在当前项目中创建图谱分类，拖入 .tree 文件建立关联。" label="分类名称" validate={name => categories.some(category => category.name.toLocaleLowerCase() === name.toLocaleLowerCase()) ? "该分类已存在。" : undefined} onCreate={async name => { await fsApi.createGraphCategory(name); await refresh(); }} onClose={() => setCreating(false)} />}
   </ContextMenu.Root>;

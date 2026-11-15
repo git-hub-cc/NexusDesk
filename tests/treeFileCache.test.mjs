@@ -1,12 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import ts from 'typescript';
+import { moduleUrl, pathsUrl } from "./helpers/loadSource.mjs";
 
-const code = ts.transpileModule(fs.readFileSync(new URL('../src/lib/treeFileCache.ts', import.meta.url), 'utf8'), {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-}).outputText;
-const { readCachedTreeFile: read, invalidateTreeFiles: invalidate } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'));
+const { readCachedTreeFile: read, invalidateTreeFiles: invalidate } = await import(moduleUrl("lib/treeFileCache.ts", { "./paths": pathsUrl }));
 
 test('tree cache deduplicates concurrent reads and reuses content until invalidated', async () => {
   invalidate([]);
@@ -36,4 +32,15 @@ test('remote paths preserve case and separate connections', async () => {
   assert.equal(await read('sftp://one/A.tree', async () => 'A'), 'A');
   assert.equal(await read('sftp://one/a.tree', async () => 'a'), 'a');
   assert.equal(await read('sftp://two/A.tree', async () => 'other'), 'other');
+});
+
+test('POSIX cache entries preserve case and root invalidation covers descendants', async () => {
+  invalidate([]);
+  assert.equal(await read('/notes/A.tree', async () => 'A'), 'A');
+  assert.equal(await read('/notes/a.tree', async () => 'a'), 'a');
+  invalidate(['/notes/a.tree']);
+  assert.equal(await read('/notes/A.tree', async () => 'unexpected'), 'A');
+  assert.equal(await read('/notes/a.tree', async () => 'fresh'), 'fresh');
+  invalidate(['/']);
+  assert.equal(await read('/notes/A.tree', async () => 'reloaded'), 'reloaded');
 });

@@ -1,3 +1,4 @@
+import { pathDeclarations } from "./helpers/loadSource.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -24,7 +25,7 @@ globalThis.__saveTest = { fileOperationHistory: { selectProject() {}, clear() {}
   writeFile: (...args) => write(...args), getLogicalTree: async () => [{ id: "updated" }],
   readDirectory: async path => [{ id: `${path}/child.txt`, name: 'child.txt' }],
 } };
-const source = readFileSync(new URL("../src/store/workspaceStore.ts", import.meta.url), "utf8")
+const source = pathDeclarations + readFileSync(new URL("../src/store/workspaceStore.ts", import.meta.url), "utf8")
   .replace(/^import .*;$/gm, "");
 const compiled = ts.transpileModule("const isSnapshot = false; const isTauri = () => false; const window = { dispatchEvent() {} }; const globalJsonStorage = undefined; const settingsStorage = { getItem: () => null }; const { fileOperationHistory, create, debounce, fsApi, persist, isRemotePath, remotePath, tauriInvoke, useTerminalStore, useLayoutStore, restoreProjectLayout, showError } = globalThis.__saveTest;\n" + source,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
@@ -313,4 +314,26 @@ test("SFTP deletion refreshes after an older listing and supports the server roo
     api.readDirectory = originalRead;
     delete api.deleteEntry;
   }
+});
+
+test("file tabs reuse Windows aliases without merging case-sensitive remote or POSIX files", () => {
+  const api = globalThis.__saveTest.fsApi;
+  const originalTouch = api.touchFile;
+  api.touchFile = async () => {};
+  try {
+    for (const [first, second, expected] of [
+      ["C:\\notes\\A.md", "c:/notes/a.md", 1],
+      ["/notes/A.md", "/notes/a.md", 2],
+      ["sftp://one/A.md", "sftp://one/a.md", 2],
+    ]) {
+      store.setState({ leftTabs: [], rightTabs: [], focusedPane: "left" });
+      store.getState().openTab({ id: "first", path: first, title: "A", content: "unsaved", isDirty: true });
+      store.getState().openTab({ id: "second", path: second, title: "a", content: "disk" });
+      assert.equal(store.getState().leftTabs.length, expected);
+      if (expected === 1) {
+        assert.equal(store.getState().activeLeftTabId, "first");
+        assert.equal(store.getState().leftTabs[0].content, "unsaved");
+      }
+    }
+  } finally { api.touchFile = originalTouch; }
 });

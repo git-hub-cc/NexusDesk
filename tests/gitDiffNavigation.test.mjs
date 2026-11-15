@@ -1,3 +1,5 @@
+import { assetsUrl } from "./helpers/loadSource.mjs";
+const { canCompareAsText } = await import(assetsUrl);
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -29,10 +31,10 @@ async function navigate({ direction = 1, staged = false, revision, current = 'a.
     async revisionDiff(root, commit, path) { calls.push(['revisionDiff', commit, path]); return patch; },
   };
   const store = { rootPath: '/repo', activeLeftTabId: inactive ? 'other' : 'current', setFocusedPane() {}, openTab(tab) { opened.push(tab); } };
-  const factory = new Function('tab', 'navigating', 'setBusy', 'setNotice', 'flushPendingWrites', 'gitApi', 'isImage', 'diffChanges', 'parseGitDiff', 'useWorkspaceStore', 'pane', 'navigationToken', compiled);
+  const factory = new Function('tab', 'navigating', 'setBusy', 'setNotice', 'flushPendingWrites', 'gitApi', 'canCompareAsText', 'diffChanges', 'parseGitDiff', 'useWorkspaceStore', 'pane', 'navigationToken', compiled);
   const run = factory(tab, { current: false }, () => {}, value => notices.push(value), async () => {
     calls.push('save'); if (failSave) throw new Error('save failed');
-  }, api, () => false, diffChanges, parseGitDiff, { getState: () => store }, 'left', 0);
+  }, api, canCompareAsText, diffChanges, parseGitDiff, { getState: () => store }, 'left', 0);
   await run(direction);
   return { calls, opened, notices };
 }

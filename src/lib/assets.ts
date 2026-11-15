@@ -1,15 +1,26 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 
+const fileExtensions = {
+  image: new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "bmp", "avif"]),
+  video: new Set(["mp4", "m4v", "webm", "ogg", "mov", "mkv", "avi", "ogv"]),
+  document: new Set(["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx"]),
+  binary: new Set(["mp3", "wav", "flac", "zip", "7z", "rar", "exe", "dll", "iso", "img", "bin", "dat", "class", "wasm", "sqlite", "db"]),
+};
+
+function extension(path: string): string {
+  return /\.([^./\\]+)$/.exec(path)?.[1].toLowerCase() ?? "";
+}
+
 export function isImage(path: string) {
-  return /\.(png|jpe?g|gif|svg|webp|ico|bmp)$/i.test(path);
+  return fileExtensions.image.has(extension(path));
 }
 
 export function isVideo(path: string) {
-  return /\.(mp4|m4v|webm|ogg|mov|mkv|avi|ogv)$/i.test(path);
+  return fileExtensions.video.has(extension(path));
 }
 
 export function isPreviewDocument(path: string) {
-  return /\.(pdf|docx?|pptx?|xlsx?)$/i.test(path);
+  return fileExtensions.document.has(extension(path));
 }
 
 export function isTextFile(path: string) {
@@ -17,7 +28,19 @@ export function isTextFile(path: string) {
 }
 
 export function isBinaryAsset(path: string) {
-  return /\.(mp4|m4v|webm|ogg|mov|mkv|avi|ogv|mp3|wav|flac|zip|7z|rar|pdf|docx?|xlsx?|pptx?|exe|dll|iso|img|bin|dat|class|wasm|sqlite|db)$/i.test(path);
+  return fileExtensions.binary.has(extension(path)) || isVideo(path) || isPreviewDocument(path);
+}
+
+export function canReadAsText(path: string) {
+  return !isBinaryAsset(path) && (!isImage(path) || extension(path) === "svg");
+}
+
+export function canPreview(path: string) {
+  return isImage(path) || isVideo(path) || isPreviewDocument(path);
+}
+
+export function canCompareAsText(path: string) {
+  return canReadAsText(path) && !isImage(path);
 }
 
 export function resolveAsset(notePath: string, source: string) {

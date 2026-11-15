@@ -1,3 +1,4 @@
+import { paths } from "./helpers/loadSource.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -19,7 +20,7 @@ function harness(disk = new Map(), isSnapshot = false) {
   const timers = new Map();
   const writes = [];
   const ui = load("../src/lib/uiPersistence.ts", {
-    isSnapshot, setTimeout: (callback, delay) => { const id = ++nextTimer; timers.set(id, { callback, delay }); return id; },
+    ...paths, isSnapshot, setTimeout: (callback, delay) => { const id = ++nextTimer; timers.set(id, { callback, delay }); return id; },
     clearTimeout: id => timers.delete(id),
     settingsStorage: {
       getItem: key => disk.get(key) ?? null,

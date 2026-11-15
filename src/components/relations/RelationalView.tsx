@@ -1,8 +1,9 @@
-﻿import { PanelMinimizeButton } from "@/components/layout/PanelMinimizeButton";
+import { openWorkspaceFile } from "@/lib/workspaceFile";
+import { PanelMinimizeButton } from "@/components/layout/PanelMinimizeButton";
 import React, { useEffect, useState } from "react";
 import { Link, Activity, ChevronDown, ChevronRight } from "lucide-react";
 import { fsApi } from "@/lib/api";
-import { flushEditorContent, useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/store/workspaceStore";
 import { NetworkMonitor } from "@/components/NetworkMonitor";
 
 type FileLink = [string, string];
@@ -16,7 +17,6 @@ export const RelationalView: React.FC = () => {
   });
   const root = useWorkspaceStore(state => state.rootPath);
   const indexRevision = useWorkspaceStore(state => state.indexRevision);
-  const openTab = useWorkspaceStore(state => state.openTab);
   const [relations, setRelations] = useState<Relations | null>(null);
   const [navigationError, setNavigationError] = useState("");
   const [relationsOpen, setRelationsOpen] = useState(true);
@@ -40,12 +40,7 @@ export const RelationalView: React.FC = () => {
   const nav = async (target: string) => {
     setNavigationError("");
     try {
-      flushEditorContent();
-      const state = useWorkspaceStore.getState();
-      const existing = [...state.leftTabs, ...state.rightTabs].find(tab => tab.path === target && !tab.revision && tab.diff === undefined);
-      const content = existing?.content ?? await fsApi.readFile(target);
-      if (useWorkspaceStore.getState().rootPath !== root) return;
-      openTab({ id: target, path: target, title: target.split(/[\\/]/).pop() ?? target, content });
+      await openWorkspaceFile(target);
     } catch (error) { setNavigationError("打开关联文件失败：" + String(error)); }
   };
   const group = (title: string, items: FileLink[]) => (

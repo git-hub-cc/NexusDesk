@@ -12,7 +12,7 @@ import { SearchEverywhere } from "@/components/search/SearchEverywhere";
 import { flushEditorContent, useWorkspaceStore } from "@/store/workspaceStore";
 import { isSnapshot } from "@/lib/snapshot";
 import { isImage, isTextFile, isVideo, isPreviewDocument } from "@/lib/assets";
-import { fsApi } from "@/lib/api";
+import { openWorkspaceFile } from "@/lib/workspaceFile";
 
 function App() {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -98,9 +98,7 @@ function App() {
     void invoke<string | null>("startup_file").then(async path => {
       const media = !!path && ((isImage(path) && !/\.svg$/i.test(path)) || isVideo(path));
       if (!path || (!media && !isTextFile(path) && !isPreviewDocument(path))) return;
-      const name = path.split(/[\\/]/).pop() || path;
-      const content = isTextFile(path) ? await fsApi.readFile(path) : "";
-      useWorkspaceStore.getState().openTab({ id: path, path, title: name, content, isDirty: false });
+      await openWorkspaceFile(path);
     }).catch(console.error);
   }, [startupReady]);
 

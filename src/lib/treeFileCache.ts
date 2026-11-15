@@ -1,8 +1,10 @@
+import { isWithinPath, pathKey } from "./paths";
+
 // mtime is the frontend read time; freshness is driven by save/watcher events,
 // without a metadata round trip on every tab switch.
 const entries = new Map<string, { mtime: number; content: string }>();
 const pending = new Map<string, Promise<string>>();
-const keyFor = (path: string) => path.startsWith("sftp://") ? path : path.replace(/\\/g, "/").toLowerCase();
+const keyFor = pathKey;
 
 export function readCachedTreeFile(path: string, read: (path: string) => Promise<string>): Promise<string> {
   const key = keyFor(path);
@@ -24,10 +26,10 @@ export function readCachedTreeFile(path: string, read: (path: string) => Promise
 export function invalidateTreeFiles(paths: string[]) {
   if (!paths.length) { entries.clear(); pending.clear(); return; }
   for (const path of paths) {
-    const key = keyFor(path).replace(/\/$/, "");
+    const key = keyFor(path);
     // Directory changes cover deleted/renamed descendants as well.
     for (const candidate of new Set([...entries.keys(), ...pending.keys()])) {
-      if (candidate === key || candidate.startsWith(`${key}/`)) {
+      if (isWithinPath(candidate, key)) {
         entries.delete(candidate);
         pending.delete(candidate);
       }

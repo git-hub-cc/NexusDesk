@@ -1,3 +1,4 @@
+import { isWithinPath, normalizePath, pathKey, samePath } from "@/lib/paths";
 import { isSnapshot } from "@/lib/snapshot";
 import { fileOperationHistory } from "@/lib/fileOperationHistory";
 import { showError } from "@/lib/dialogs";
@@ -110,10 +111,7 @@ const pendingWrites = new Map<string, Promise<void>>();
 
 // Transient write provenance; never persisted in the workspace state.
 const recentlySavedPaths = new Map<string, ReturnType<typeof setTimeout>>();
-const savedPathKey = (path: string) => {
-  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return /^(?:[a-z]:|\/\/)/i.test(normalized) ? normalized.toLowerCase() : normalized;
-};
+const savedPathKey = pathKey;
 
 function forgetRecentSave(path: string) {
   const key = savedPathKey(path);
@@ -273,16 +271,7 @@ function sortTabs(tabs: Tab[]) {
   return [...pinned, ...unpinned];
 }
 
-const normalizePath = (path: string) => path.replace(/\\/g, "/").replace(/\/$/, "");
-function isPathInProject(path: string, rootPath: string) {
-  const normalize = (value: string) => {
-    const normalized = value.replace(/\\/g, "/").replace(/\/+$/, "");
-    return /^(?:[a-z]:|\/\/)/i.test(normalized) ? normalized.toLowerCase() : normalized;
-  };
-  const candidate = normalize(path);
-  const root = normalize(rootPath);
-  return candidate === root || candidate.startsWith(`${root}/`);
-}
+const isPathInProject = isWithinPath;
 const parentPath = (path: string) => {
   if (path.startsWith("sftp://")) {
     const { id, path: remote } = remotePath(path);
@@ -299,9 +288,9 @@ const directoryRequests = new Map<string, Promise<void>>();
 const loadedDirectories = new Set<string>();
 
 const preserveLoadedChildren = (previous: any[], incoming: any[]): any[] => {
-  const existing = new Map(previous.map(node => [normalizePath(node.id), node]));
+  const existing = new Map(previous.map(node => [pathKey(node.id), node]));
   return incoming.map(node => {
-    const old = existing.get(normalizePath(node.id));
+    const old = existing.get(pathKey(node.id));
     return old?.children?.length && node.children?.length === 0
       ? { ...node, children: old.children } : node;
   });
@@ -311,7 +300,7 @@ const preserveLoadedChildren = (previous: any[], incoming: any[]): any[] => {
 const replaceChildren = (nodes: any[], path: string, children: any[]): any[] => {
   let changed = false;
   const next = nodes.map(node => {
-    if (normalizePath(node.id) === normalizePath(path)) {
+    if (samePath(node.id, path)) {
       changed = true;
       return { ...node, children: preserveLoadedChildren(node.children ?? [], children) };
     }
@@ -601,7 +590,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       loadDirectory: async (path, logical = false, refresh = false) => {
         const version = projectVersion;
-        const key = `${version}:${logical}:${normalizePath(path)}`;
+        const key = `${version}:${logical}:${pathKey(path)}`;
         const pending = directoryRequests.get(key);
         if (pending) {
           if (!refresh) return pending;
@@ -617,7 +606,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             if (version !== projectVersion) return;
             set(state => logical
               ? { logicalTreeData: replaceChildren(state.logicalTreeData, path, children) }
-              : { fileTreeData: normalizePath(path) === normalizePath(state.rootPath ?? "")
+              : { fileTreeData: samePath(path, state.rootPath ?? "")
                   ? preserveLoadedChildren(state.fileTreeData, children) : replaceChildren(state.fileTreeData, path, children) });
             loadedDirectories.add(key);
           } catch (error) {
@@ -782,7 +771,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             redo: async () => {
               await flushPendingWrites();
               backup = await tauriInvoke<string>("stash_entry", { path });
-              const contains = (candidate: string) => normalizePath(candidate).toLowerCase() === normalizePath(path).toLowerCase() || normalizePath(candidate).toLowerCase().startsWith(normalizePath(path).toLowerCase() + "/");
+              const contains = (candidate: string) => isWithinPath(candidate, path);
               set(state => {
                 const leftTabs = state.leftTabs.filter(tab => !contains(tab.path));
                 const rightTabs = state.rightTabs.filter(tab => !contains(tab.path));
@@ -796,8 +785,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             },
           });
         }
-        const normalize = (candidate: string) => isRemotePath(candidate) ? normalizePath(candidate) : normalizePath(candidate).toLowerCase();
-        const contains = (candidate: string) => normalize(candidate) === normalize(path) || normalize(candidate).startsWith(normalize(path) + "/");
+        const contains = (candidate: string) => isWithinPath(candidate, path);
         for (const [key, entry] of saves) if (contains(key)) { entry.schedule.cancel(); saves.delete(key); }
         set(state => {
           const leftTabs = state.leftTabs.filter(tab => !contains(tab.path));
@@ -828,9 +816,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             });
           }
           const remap = (path: string) => {
-            const normalized = path.replace(/\\/g, "/");
-            const source = sourcePath.replace(/\\/g, "/");
-            return normalized === source || normalized.startsWith(source + "/") ? target + (target.includes("\\") ? normalized.slice(source.length).replace(/\//g, "\\") : normalized.slice(source.length)) : path;
+            const normalized = normalizePath(path);
+            const source = normalizePath(sourcePath);
+            return isWithinPath(path, sourcePath) ? target + (target.includes("\\") ? normalized.slice(source.length).replace(/\//g, "\\") : normalized.slice(source.length)) : path;
           };
           for (const [path, entry] of [...saves]) {
             if (remap(path) !== path) { entry.schedule.cancel(); saves.delete(path); }
@@ -886,7 +874,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           if (tab.diff === undefined && !tab.revision && !tab.reverseTree && !tab.browser && !tab.readOnly) void fsApi.touchFile(tab.path).catch(console.error);
           const pane = options?.pane ?? state.focusedPane;
           const tabs = pane === "left" ? state.leftTabs : state.rightTabs;
-          const exists = tabs.find((t) => t.id === tab.id);
+          const exists = tabs.find((t) => t.id === tab.id || (tab.diff === undefined && !tab.revision && !tab.reverseTree && !tab.browser
+            && t.diff === undefined && !t.revision && !t.reverseTree && !t.browser && samePath(t.path, tab.path)));
 
           if (options?.background) {
             if (exists) return {};
@@ -906,10 +895,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               const resolved = resolveTabTitles(nextLeft, nextRight, state.rootPath);
               return { ...resolved, activeLeftTabId: pane === "left" ? tab.id : state.activeLeftTabId, activeRightTabId: pane === "right" ? tab.id : state.activeRightTabId };
             }
-            const reorderedTabs = sortTabs([exists, ...tabs.filter(t => t.id !== tab.id)]);
+            const reorderedTabs = sortTabs([exists, ...tabs.filter(t => t.id !== exists.id)]);
             return pane === "left"
-              ? { leftTabs: reorderedTabs, activeLeftTabId: tab.id }
-              : { rightTabs: reorderedTabs, activeRightTabId: tab.id };
+              ? { leftTabs: reorderedTabs, activeLeftTabId: exists.id }
+              : { rightTabs: reorderedTabs, activeRightTabId: exists.id };
           }
 
           const newTabs = sortTabs([tab, ...tabs]);
@@ -1208,7 +1197,7 @@ export async function refreshOpenFiles(paths: string[]) {
   flushEditorContent();
   const root = useWorkspaceStore.getState().rootPath;
   const tabs = [...useWorkspaceStore.getState().leftTabs, ...useWorkspaceStore.getState().rightTabs];
-  await Promise.all([...new Set(tabs.filter(t => !t.revision && t.diff === undefined && paths.some(p => normalizePath(t.path) === normalizePath(p) || normalizePath(t.path).startsWith(normalizePath(p) + "/"))).map(t => t.path))].map(async path => {
+  await Promise.all([...new Set(tabs.filter(t => !t.revision && t.diff === undefined && paths.some(p => isWithinPath(t.path, p))).map(t => t.path))].map(async path => {
     const before = tabs.find(t => t.path === path)!;
     if (before.isDirty || pendingWrites.has(path)) return;
     try {

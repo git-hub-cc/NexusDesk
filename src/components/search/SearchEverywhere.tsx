@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
 import { useEffect, useRef, useState } from "react";
 import { FileText, Search, X } from "lucide-react";
+import { openWorkspaceFile } from "@/lib/workspaceFile";
 import { fsApi, searchApi, type SearchResult, type SearchOptions } from "@/lib/api";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { HighlightedText } from "./HighlightedText";
@@ -81,13 +82,7 @@ export function SearchEverywhere({ onClose, recent = false }: { onClose: () => v
         setOpening(true);
         const project = root;
         try {
-            const state = useWorkspaceStore.getState();
-            const existing = [...state.leftTabs, ...state.rightTabs].find(tab => tab.path.replace(/\\/g, "/") === result.path.replace(/\\/g, "/"));
-            const content = existing?.content ?? await fsApi.readFile(result.path);
-            if (!alive.current || useWorkspaceStore.getState().rootPath !== project) return;
-            useWorkspaceStore.getState().openTab(existing ?? {
-                id: result.path, path: result.path, title: result.title, content, isDirty: false,
-            });
+            if (!await openWorkspaceFile(result.path, { title: result.title, isCurrent: () => alive.current && useWorkspaceStore.getState().rootPath === project })) return;
             if (result.matchStart != null && result.matchEnd != null) {
                 const current = useWorkspaceStore.getState();
                 useWorkspaceStore.setState({ editorJump: { path: result.path, line: 1, from: result.matchStart, to: result.matchEnd, pane: current.focusedPane } });

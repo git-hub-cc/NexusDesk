@@ -1,3 +1,4 @@
+import { samePath } from "@/lib/paths";
 import { isSnapshot } from "@/lib/snapshot";
 import { invoke } from "@tauri-apps/api/core";
 import { openNativePopup } from "@/lib/nativePopup";
@@ -18,7 +19,7 @@ import { wikiLinkRange } from "./wikiLink";
 import { wikiLinkCompletion } from "./wikiLinkCompletion";
 import { expandSelection } from "./expandSelection";
 import { formatCode } from "./formatCode";
-import { countTreeGraphNames } from "@/lib/treeGraph";
+import { useGraphData } from "@/hooks/useGraphData";
 import { readUI, writeUI, projectKey } from "@/lib/uiPersistence";
 import { getSpeechTarget, setSpeechTarget } from "@/lib/speechTarget";
 import { curlToHttp } from "@/lib/curlToHttp";
@@ -97,7 +98,6 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
   const setFocusedPane = useWorkspaceStore(state => state.setFocusedPane);
   const pushNavLocation = useWorkspaceStore(state => state.pushNavLocation);
   const editorJump = useWorkspaceStore(state => state.editorJump);
-  const rootPath = useWorkspaceStore(state => state.rootPath);
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
   const syncingContent = useRef(false);
@@ -112,7 +112,7 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
   const [dragging, setDragging] = useState(false);
   const [tableDialogOpen, setTableDialogOpen] = useState(false);
   const [assetError, setAssetError] = useState("");
-  const [sharedCounts, setSharedCounts] = useState<Map<string, number>>(new Map());
+  const { counts: sharedCounts } = useGraphData(/\.tree$/i.test(activeTab?.path ?? ""));
   const importing = useRef(false);
   const isMarkdown = /\.(md|markdown|mdown|mkd)$/i.test(activeTab?.path ?? "");
   const isHttp = /\.(http|rest)$/i.test(activeTab?.path ?? "");
@@ -147,20 +147,6 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
     }
   };
   const cancelDrag = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    if (!rootPath || !activeTab?.path.endsWith(".tree")) { setSharedCounts(new Map()); return; }
-    void (async () => {
-      try {
-        const categories = await fsApi.getGraphCategories();
-        const paths = [...new Set(categories.flatMap(category => category.files))];
-        const trees = await Promise.all(paths.map(async path => ({ path, content: [...useWorkspaceStore.getState().leftTabs, ...useWorkspaceStore.getState().rightTabs].find(tab => tab.path === path && !tab.revision && tab.diff === undefined)?.content ?? await fsApi.readTreeFile(path) })));
-        if (live) setSharedCounts(countTreeGraphNames(trees));
-      } catch { if (live) setSharedCounts(new Map()); }
-    })();
-    return () => { live = false; };
-  }, [rootPath, activeTab?.path]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -806,7 +792,7 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
       const detail = (e as CustomEvent).detail;
       const state = useWorkspaceStore.getState();
       const activeId = pane === "left" ? state.activeLeftTabId : state.activeRightTabId;
-      if (navigationEnabledRef.current && activeId === tabRef.current?.id && detail.path === tabRef.current?.path && viewRef.current) {
+      if (navigationEnabledRef.current && activeId === tabRef.current?.id && samePath(detail.path, tabRef.current?.path ?? "") && viewRef.current) {
         viewRef.current.dispatch({
           selection: { anchor: detail.pos },
           scrollIntoView: true
@@ -907,7 +893,7 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
   // Apply after the active document has synced, including newly mounted editors.
   useEffect(() => {
     const view = viewRef.current;
-    if (!navigationEnabled || !view || !editorJump || editorJump.path !== activeTab?.path || editorJump.pane !== pane) return;
+    if (!navigationEnabled || !view || !editorJump || !samePath(editorJump.path, activeTab?.path ?? "") || editorJump.pane !== pane) return;
     const line = view.state.doc.line(Math.max(1, Math.min(editorJump.line, view.state.doc.lines)));
     const from = Math.max(0, Math.min(editorJump.from ?? line.from, view.state.doc.length));
     const to = Math.max(from, Math.min(editorJump.to ?? line.to, view.state.doc.length));

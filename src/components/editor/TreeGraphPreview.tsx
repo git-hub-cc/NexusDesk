@@ -6,8 +6,10 @@ import { DialogShell } from "@/components/DialogShell";
 import { X } from "lucide-react";
 import { ReactFlow, Background, Controls, MiniMap, Handle, Position, useNodesState, type Node, type Edge, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { parseTreeGraph, layoutTreeMindMap, buildReverseTree, countTreeGraphNames, changeTreeNode, getTreeSubtree, type ReverseTreeNode } from "@/lib/treeGraph";
-import { fsApi, type GraphCategory } from "@/lib/api";
+import { parseTreeGraph, layoutTreeMindMap, buildReverseTree, changeTreeNode, getTreeSubtree, type ReverseTreeNode } from "@/lib/treeGraph";
+import { useGraphData } from "@/hooks/useGraphData";
+import { samePath } from "@/lib/paths";
+import { findWorkspaceFile } from "@/lib/workspaceFile";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 
 function MindMapNode({ data }: NodeProps) {
@@ -49,43 +51,25 @@ export function TreeGraphPreview({ content, path, pane, previewOnly, reverseTree
   const [flow, setFlow] = useState<ReactFlowInstance | null>(null);
   const [location, setLocation] = useState<{ path: string; line: number } | null>(null);
   useEffect(() => {
-    if (!jump || jump.path !== path || jump.pane !== pane) return;
+    if (!jump || !samePath(jump.path, path) || jump.pane !== pane) return;
     setLocation({ path, line: jump.line });
     // The source editor consumes the shared request in split mode.
     const editorJump = useWorkspaceStore.getState().editorJump;
-    if (previewOnly && editorJump?.path === jump.path && editorJump.line === jump.line && editorJump.pane === jump.pane) {
+    if (previewOnly && editorJump && samePath(editorJump.path, jump.path) && editorJump.line === jump.line && editorJump.pane === jump.pane) {
       useWorkspaceStore.setState({ editorJump: null });
     }
   }, [jump, path, pane, previewOnly]);
   const root = useWorkspaceStore(state => state.rootPath);
-  const [categories, setCategories] = useState<GraphCategory[]>([]);
-  const [counts, setCounts] = useState<Map<string, number>>(new Map());
-  const [treeSources, setTreeSources] = useState<{ path: string; content: string }[]>([]);
+  const { categories, counts, trees: treeSources, error } = useGraphData();
   const [contextNode, setContextNode] = useState<string | null>(null);
   const [nodeDialog, setNodeDialog] = useState<{ node: Node; mode: "edit" | "add"; value: string } | null>(null);
-  const [error, setError] = useState("");
   const [commentDialog, setCommentDialog] = useState<{ node: Node; value: string } | null>(null);
-  useEffect(() => {
-    let live = true;
-    const refresh = async () => {
-      try {
-        const value = await fsApi.getGraphCategories();
-        const paths = [...new Set(value.flatMap(category => category.files))];
-        const trees = await Promise.all(paths.map(async file => ({ path: file, content: useWorkspaceStore.getState().leftTabs.concat(useWorkspaceStore.getState().rightTabs).find(tab => tab.path === file && !tab.revision && tab.diff === undefined)?.content ?? await fsApi.readTreeFile(file) })));
-        if (live) { setCategories(value); setTreeSources(trees); setCounts(countTreeGraphNames(trees)); setError(""); }
-      } catch(cause) { if (live) setError(String(cause)); }
-    };
-    void refresh();
-    window.addEventListener("nexusdesk:graph-colors", refresh);
-    return () => { live = false; window.removeEventListener("nexusdesk:graph-colors", refresh); };
-  }, [root]);
-  const normalize = (value: string) => value.replace(/\\/g, "/").toLocaleLowerCase();
-  const color = categories.find(category => category.files.some(file => normalize(file) === normalize(path)))?.color ?? "#60a5fa";
+  const color = categories.find(category => category.files.some(file => samePath(file, path)))?.color ?? "#60a5fa";
   const graph = useMemo(() => reverseTree ? buildReverseTreeNetwork(reverseTree, color, counts) : buildTreeNetwork(content, path, color, counts), [content, path, color, counts, reverseTree]);
   const [nodes, setNodes, onNodesChange] = useNodesState(graph.nodes);
   useEffect(() => { setNodes(graph.nodes); }, [graph.nodes, setNodes]);
   useEffect(() => {
-    if (!flow || location?.path !== path) return;
+    if (!flow || !location || !samePath(location.path, path)) return;
     const id = `${path}#${location.line}`;
     const target = nodes.find(node => node.id === id);
     if (!target?.measured?.width || !target.measured.height) return;
@@ -145,7 +129,7 @@ export function TreeGraphPreview({ content, path, pane, previewOnly, reverseTree
     if (reverseTree) return;
     const state = useWorkspaceStore.getState();
     const tabs = pane === "left" ? state.leftTabs : state.rightTabs;
-    const tab = tabs.find(item => item.path === path && !item.revision && item.diff === undefined);
+    const tab = findWorkspaceFile(tabs, path);
     if (tab) state.updateTabContent(tab.id, changeTreeNode(tab.content ?? content, Number(node.data.line), action, value), pane);
   };
   const saveComment = () => {
@@ -161,7 +145,7 @@ export function TreeGraphPreview({ content, path, pane, previewOnly, reverseTree
     setContextNode(node?.id ?? null);
     if (!node && (!clipboard || reverseTree)) event.preventDefault();
   }}><div ref={containerRef} className="h-full min-h-0 relative" aria-label="Tree 网状图预览">
-    {error && <p role="alert" className="absolute top-2 left-2 z-10 text-xs text-red-400">读取目录颜色失败：{error}</p>}
+    {error && <p role="alert" className="absolute top-2 left-2 z-10 text-xs text-red-400">读取图谱数据失败：{error}</p>}
     {nodes.length ? <ReactFlow key={path} onInit={setFlow}
       onMoveStart={event => { if (event) userMoving.current = true; }}
       onMove={event => {
@@ -195,7 +179,7 @@ export function TreeGraphPreview({ content, path, pane, previewOnly, reverseTree
         if (!selectedNode) return;
         const state = useWorkspaceStore.getState();
         const tabs = pane === "left" ? state.leftTabs : state.rightTabs;
-        const tab = tabs.find(item => item.path === path && !item.revision && item.diff === undefined);
+        const tab = findWorkspaceFile(tabs, path);
         if (!tab) return;
         const subtree = getTreeSubtree(tab.content ?? content, Number(selectedNode.data.line));
         if (!subtree) return;
@@ -206,7 +190,7 @@ export function TreeGraphPreview({ content, path, pane, previewOnly, reverseTree
         if (!clipboard) return;
         const state = useWorkspaceStore.getState();
         const tabs = pane === "left" ? state.leftTabs : state.rightTabs;
-        const tab = tabs.find(item => item.path === path && !item.revision && item.diff === undefined);
+        const tab = findWorkspaceFile(tabs, path);
         if (!tab) return;
         if (selectedNode) updateNode(selectedNode, "paste", clipboard);
         else {

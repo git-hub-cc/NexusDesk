@@ -1,3 +1,5 @@
+import { isWithinPath, pathKey } from "@/lib/paths";
+import { openWorkspaceFile } from "@/lib/workspaceFile";
 import { FileIcon } from "./FileIcon";
 import { selectTreeNode, activateTreeFile } from "./treeInteraction";
 import { useTreeSpeedSearch } from "./useTreeSpeedSearch";
@@ -29,7 +31,6 @@ export const LogicalTree: React.FC = React.memo(() => {
   const logicalTreeData = useWorkspaceStore(state => state.logicalTreeData);
   const fetchLogicalTree = useWorkspaceStore(state => state.fetchLogicalTree);
   const moveLogicalNode = useWorkspaceStore(state => state.moveLogicalNode);
-  const openTab = useWorkspaceStore(state => state.openTab);
   const createLogicalFolder = useWorkspaceStore(state => state.createLogicalFolder);
   const locateSignal = useWorkspaceStore(state => state.locateSignal);
   const setSidebarMode = useWorkspaceStore(state => state.setSidebarMode);
@@ -73,7 +74,7 @@ export const LogicalTree: React.FC = React.memo(() => {
 
     const targetPath = activeTab.path;
 
-    const normalize = (path: string) => path.replace(/\\/g, "/").replace(/\/$/, "").toLocaleLowerCase();
+    const normalize = pathKey;
     for (const category of logicalTreeData) {
         let targetId: string | null = null;
         const ancestors: string[] = [];
@@ -85,7 +86,7 @@ export const LogicalTree: React.FC = React.memo(() => {
                     ancestors.push(...parents);
                     return true;
                 }
-                if (normalize(targetPath).startsWith(`${normalize(node.id)}/`) && node.children?.length && searchNode(node.children, [...parents, id])) return true;
+                if (isWithinPath(targetPath, node.id) && node.children?.length && searchNode(node.children, [...parents, id])) return true;
             }
             return false;
         };
@@ -116,14 +117,7 @@ export const LogicalTree: React.FC = React.memo(() => {
 
     if (node.isLeaf) {
       try {
-        const content = await fsApi.readFile(node.data.id);
-        openTab({
-          id: node.data.id,
-          title: node.data.name,
-          path: node.data.id,
-          content: content,
-          isDirty: false,
-        });
+        await openWorkspaceFile(node.data.id, { title: node.data.name });
       } catch (error) {
         console.error("Failed to read file:", error);
       }
@@ -221,8 +215,7 @@ export const LogicalTree: React.FC = React.memo(() => {
             if (directory) await openPath(filePath);
             else await revealItemInDir(filePath);
           })}>打开所在目录</ContextMenu.Item>}
-          {/* 路径比较按 Windows 规则处理，忽略大小写。 */}
-          {filePath && rootPath && !directory && filePath.replace(/\\/g, "/").toLocaleLowerCase().startsWith(`${rootPath.replace(/\\/g, "/").replace(/\/$/, "").toLocaleLowerCase()}/`) && <ContextMenu.Item className="ide-menu-item" disabled={missing || isRemotePath(filePath)} onSelect={() => {
+          {filePath && rootPath && !directory && isWithinPath(filePath, rootPath) && <ContextMenu.Item className="ide-menu-item" disabled={missing || isRemotePath(filePath)} onSelect={() => {
             setSidebarMode("physical");
             useWorkspaceStore.getState().triggerLocate(filePath);
           }}>定位当前文件（物理分区）</ContextMenu.Item>}

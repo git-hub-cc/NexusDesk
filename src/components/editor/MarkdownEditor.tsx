@@ -14,6 +14,7 @@ import { useLayoutStore } from "@/store/layoutStore";
 import { writeUI } from "@/lib/uiPersistence";
 import { GitComparison } from "./GitComparison";
 import { GitImageDiffEditor } from "./GitImageDiffEditor";
+import { openWorkspaceFile } from "@/lib/workspaceFile";
 import { fsApi } from "@/lib/api";
 import Plyr from "plyr";
 import "plyr/dist/plyr.css";
@@ -397,10 +398,7 @@ export function MarkdownEditor({ pane, tabId, active }: { pane: "left" | "right"
   };
 
   if (tab?.reverseTree) return <TreeGraphPreview content="" path={tab.path} pane={pane} previewOnly reverseTree={tab.reverseTree} onOpenSource={async (path, line) => {
-    const state = useWorkspaceStore.getState();
-    const existing = [...state.leftTabs, ...state.rightTabs].find(item => item.path === path && !item.revision && item.diff === undefined);
-    const content = existing?.content ?? await fsApi.readFile(path);
-    useWorkspaceStore.getState().openTab({ id: path, path, title: path.split(/[\\/]/).pop() || path, content });
+    if (!await openWorkspaceFile(path, { pane })) return;
     useWorkspaceStore.getState().locateGraph(path, line, useWorkspaceStore.getState().focusedPane);
   }} />;
 

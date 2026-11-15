@@ -1,3 +1,5 @@
+import { isWithinPath, normalizePath, pathKey, samePath } from "@/lib/paths";
+import { openWorkspaceFile } from "@/lib/workspaceFile";
 import { isSnapshot } from "@/lib/snapshot";
 import { fileOperationHistory } from "@/lib/fileOperationHistory";
 import { LocalHistoryDialog } from "@/components/editor/LocalHistoryDialog";
@@ -27,7 +29,6 @@ import { selectTreeNode, activateTreeFile } from "./treeInteraction";
 import { useTreeSpeedSearch } from "./useTreeSpeedSearch";
 import { useTreeOpenState } from "./useTreeOpenState";
 import { treeStatusFor, statusLabels } from "@/lib/fileTreeAppearance";
-import { isBinaryAsset, isImage, isVideo, isPreviewDocument } from "@/lib/assets";
 import { isRemotePath, remotePath, remoteUri } from "@/lib/remote";
 import { ANDROID_FILE_TYPE, downloadAndroidFiles, parseAndroidFiles, readAndroidClipboard, type AndroidFiles } from "@/lib/androidTransfer";
 
@@ -88,7 +89,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
 
     useEffect(() => {
         if (!pastedSelection || pastedSelection.project !== rootPath) return;
-        const normalize = (path: string) => path.replace(/\\/g, "/").toLowerCase();
+        const normalize = pathKey;
         let attempts = 0;
         const timer = window.setInterval(() => {
             const tree = treeRef.current;
@@ -156,12 +157,11 @@ export const PhysicalTree: React.FC = React.memo(() => {
         const expandParents = async () => {
             const ancestors: string[] = [];
             let curr = targetDir;
-            // 路径比较按 Windows 规则处理，忽略大小写。
-            const normalizedRoot = rootPath.replace(/\\/g, "/").toLowerCase();
+            const normalizedRoot = pathKey(rootPath);
 
             while (curr) {
-                const normalizedCurr = curr.replace(/\\/g, "/").toLowerCase();
-                if (!normalizedCurr.startsWith(normalizedRoot)) break;
+                const normalizedCurr = pathKey(curr);
+                if (!isWithinPath(curr, rootPath)) break;
                 ancestors.unshift(curr);
                 if (normalizedCurr === normalizedRoot) break;
                 const next = parent(curr);
@@ -323,11 +323,11 @@ export const PhysicalTree: React.FC = React.memo(() => {
         }
     };
 
-    const canOperatePath = (path: string) => path !== rootPath;
+    const canOperatePath = (path: string) => !rootPath || !samePath(path, rootPath);
     const operationPaths = (fallback: string) => {
         const paths: string[] = (treeRef.current?.selectedNodes ?? []).map((node: any) => node.data.id);
         const candidates = (paths.includes(fallback) ? paths : [fallback]).filter(canOperatePath);
-        const normalize = (path: string) => path.replace(/\\/g, "/").toLowerCase().replace(/\/$/, "");
+        const normalize = pathKey;
         // A selected parent already includes its selected descendants.
         return candidates.filter(path => !candidates.some(other => other !== path && normalize(path).startsWith(normalize(other) + "/")));
     };
@@ -428,27 +428,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
 
         if (node.isLeaf) {
             try {
-                if (remote && isPreviewDocument(node.data.id)) throw new Error("请先将文档保存到本地，再进行预览。");
-                if (remote && (isImage(node.data.id) || isVideo(node.data.id))) throw new Error("暂不支持远程媒体预览");
-                if ((isImage(node.data.id) && !/\.svg$/i.test(node.data.id)) || isVideo(node.data.id) || isPreviewDocument(node.data.id)) {
-                    openTab({
-                        id: node.data.id.replace(/\\/g, "/").replace(/\/$/, ""),
-                        title: node.data.name,
-                        path: node.data.id,
-                        content: "",
-                        isDirty: false,
-                    });
-                    return;
-                }
-                if (isBinaryAsset(node.data.id)) throw new Error("二进制文件暂不支持文本预览");
-                const content = await fsApi.readFile(node.data.id);
-                openTab({
-                    id: node.data.id.replace(/\\/g, "/").replace(/\/$/, ""),
-                    title: node.data.name,
-                    path: node.data.id,
-                    content: content,
-                    isDirty: false,
-                });
+                await openWorkspaceFile(node.data.id, { title: node.data.name });
             } catch (error) {
                 setError(`无法预览此文件，可通过“打开文件”使用系统程序打开：${String(error)}`);
             }
@@ -498,7 +478,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
                 const d = dragged.replace(/\\/g, "/");
                 const t = target.replace(/\\/g, "/");
                 const p = parent(d).replace(/\\/g, "/");
-                if (t === d || t.startsWith(d + "/") || t === p) {
+                if (isWithinPath(t, d) || samePath(t, p)) {
                     invalidTarget = true;
                     setDragOverPath(null);
                     e.dataTransfer.dropEffect = "none";
@@ -556,7 +536,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
                         const d = p.replace(/\\/g, "/");
                         const t = target.replace(/\\/g, "/");
                         const parentDir = parent(d).replace(/\\/g, "/");
-                        if (t === d || t.startsWith(d + "/") || t === parentDir) continue;
+                        if (isWithinPath(t, d) || samePath(t, parentDir)) continue;
                         await handleTransferWithConflict("move", p, target);
                     }
                 });
@@ -571,7 +551,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
         if (isCreating === "file") {
             await createPhysicalFile(path);
             if (useWorkspaceStore.getState().rootPath !== project) return;
-            openTab({ id: path.replace(/\\/g, "/").replace(/\/$/, ""), title: name, path, content: "", isDirty: false });
+            openTab({ id: normalizePath(path), title: name, path, content: "", isDirty: false });
         } else await createPhysicalFolder(path);
         if (useWorkspaceStore.getState().rootPath === project) treeRef.current?.get(targetDir)?.open();
     };

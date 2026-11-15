@@ -1,3 +1,4 @@
+import { pathDeclarations } from "./helpers/loadSource.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,7 +17,7 @@ globalThis.__browserTest = {
   create, debounce, persist: creator => creator, globalJsonStorage: undefined,
   fsApi: { readDirectory: async () => [], initProjectDb: async () => {}, syncProjectIndex: async () => {}, touchFile: async path => touched.push(path), writeFile: async path => written.push(path) },
 };
-const source = readFileSync(new URL("../src/store/workspaceStore.ts", import.meta.url), "utf8").replace(/^import .*;$/gm, "");
+const source = pathDeclarations + readFileSync(new URL("../src/store/workspaceStore.ts", import.meta.url), "utf8").replace(/^import .*;$/gm, "");
 const compiled = ts.transpileModule("const { create, debounce, persist, fsApi, isSnapshot, isRemotePath, useTerminalStore, useLayoutStore, showError, gitApi, globalJsonStorage } = globalThis.__browserTest;\n" + source,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
 const { useWorkspaceStore: store, flushPendingWrites } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
