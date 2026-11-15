@@ -16,6 +16,7 @@ let current: NavigationSyncState = { status: "disconnected", provider: "github",
 let token = "";
 let remoteSha: string | null = null;
 let remoteFileExists = false;
+let remoteData: NavigationData | null = null;
 let ready = false;
 let suppressSave = false;
 let saveTimer: number | undefined;
@@ -100,7 +101,54 @@ async function readRemote(): Promise<{ data: NavigationData | null; sha: string 
   return { data: legacyRemoteData(parsed), sha };
 }
 
+function navigationChanges(previous: NavigationData | null, next: NavigationData) {
+  const oldCategories = new Map((previous?.categories ?? []).map(category => [category.categoryId, category]));
+  const newCategories = new Map(next.categories.map(category => [category.categoryId, category]));
+  const oldSites = new Map<string, NavigationCategory["sites"][number]>();
+  const newSites = new Map<string, NavigationCategory["sites"][number]>();
+  for (const [id, category] of oldCategories) for (const site of category.sites) oldSites.set(`${id}:${site.id || site.url}`, site);
+  for (const [id, category] of newCategories) for (const site of category.sites) newSites.set(`${id}:${site.id || site.url}`, site);
+  let added = 0;
+  let modified = 0;
+  let deleted = 0;
+  for (const [key, site] of newSites) {
+    const old = oldSites.get(key);
+    if (!old) added++;
+    else if (JSON.stringify(old) !== JSON.stringify(site)) modified++;
+  }
+  for (const key of oldSites.keys()) if (!newSites.has(key)) deleted++;
+  for (const id of newCategories.keys()) if (!oldCategories.has(id)) added++;
+  for (const [id, category] of newCategories) {
+    const old = oldCategories.get(id);
+    if (old && old.categoryName !== category.categoryName) modified++;
+  }
+  for (const id of oldCategories.keys()) if (!newCategories.has(id)) deleted++;
+  return { added, modified, deleted };
+}
+
+function commitMessage(previous: NavigationData | null, next: NavigationData) {
+  const changes = navigationChanges(previous, next);
+  if (changes.added + changes.modified + changes.deleted === 0) return "同步导航：更新显示偏好";
+  return `同步导航：新增 ${changes.added} 项，修改 ${changes.modified} 项，删除 ${changes.deleted} 项`;
+}
+
+async function verifyPrivateRepository() {
+  const repoPath = current.repo.split("/").map(encodeURIComponent).join("/");
+  const headers: Record<string, string> = current.provider === "github"
+    ? { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
+    : current.provider === "gitlab" ? { "PRIVATE-TOKEN": token } : { Authorization: `token ${token}` };
+  const url = current.provider === "github" ? `https://api.github.com/repos/${repoPath}`
+    : current.provider === "gitlab" ? `https://gitlab.com/api/v4/projects/${encodeURIComponent(current.repo)}`
+      : `https://gitee.com/api/v5/repos/${repoPath}`;
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(SYNC_TIMEOUT_MS) });
+  if (!response.ok) throw new Error(`无法验证仓库隐私设置 (${response.status})`);
+  const repository = await response.json() as { private?: boolean; visibility?: string };
+  const isPrivate = current.provider === "gitlab" ? repository.visibility === "private" : repository.private === true;
+  if (!isPrivate) throw new Error("导航云同步仅允许写入私有仓库，请将仓库设为私有后重试。");
+}
+
 async function push(data: NavigationData) {
+  await verifyPrivateRepository();
   const content = {
     updatedAt: Date.now(),
     navigationData: data,
@@ -109,23 +157,26 @@ async function push(data: NavigationData) {
       proxyMode: localStorage.getItem("proxy-mode-preference") === "true",
     },
   };
-  const bytes = new TextEncoder().encode(JSON.stringify(content));
+  const serialized = JSON.stringify(content, null, 2);
+  const message = commitMessage(remoteData, data);
+  const bytes = new TextEncoder().encode(serialized);
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
   const encoded = btoa(binary);
   let sha = remoteSha;
   if (current.provider === "github") {
-    const result = await request<{ content: { sha: string } }>(`https://api.github.com/repos/${current.repo}/contents/${DATA_FILE}`, "PUT", { message: "同步 NexusDesk 导航数据", content: encoded, branch: "main", ...(remoteSha ? { sha: remoteSha } : {}) });
+    const result = await request<{ content: { sha: string } }>(`https://api.github.com/repos/${current.repo}/contents/${DATA_FILE}`, "PUT", { message, content: encoded, branch: "main", ...(remoteSha ? { sha: remoteSha } : {}) });
     sha = result.content.sha;
   } else if (current.provider === "gitlab") {
     const path = encodeURIComponent(DATA_FILE);
-    await request(`https://gitlab.com/api/v4/projects/${encodeURIComponent(current.repo)}/repository/files/${path}`, remoteFileExists ? "PUT" : "POST", { branch: "main", commit_message: "同步 NexusDesk 导航数据", content: JSON.stringify(content) });
+    await request(`https://gitlab.com/api/v4/projects/${encodeURIComponent(current.repo)}/repository/files/${path}`, remoteFileExists ? "PUT" : "POST", { branch: "main", commit_message: message, content: serialized });
   } else {
-    const result = await request<{ content: { sha: string } }>(`https://gitee.com/api/v5/repos/${current.repo}/contents/${encodeURIComponent(DATA_FILE)}`, remoteFileExists ? "PUT" : "POST", { message: "同步 NexusDesk 导航数据", content: encoded, branch: "master", ...(remoteSha ? { sha: remoteSha } : {}) });
+    const result = await request<{ content: { sha: string } }>(`https://gitee.com/api/v5/repos/${current.repo}/contents/${encodeURIComponent(DATA_FILE)}`, remoteFileExists ? "PUT" : "POST", { message, content: encoded, branch: "master", ...(remoteSha ? { sha: remoteSha } : {}) });
     sha = result.content.sha;
   }
   remoteSha = sha;
   remoteFileExists = true;
+  remoteData = data;
   update({ status: "connected", lastSync: Date.now(), error: "" });
 }
 
@@ -169,6 +220,11 @@ async function connect(tokenValue: string, repoValue: string, createIfMissing: b
       const repoName = repo.slice(repo.lastIndexOf("/") + 1);
       await request("https://api.github.com/user/repos", "POST", { name: repoName, description: "NexusDesk 导航数据", private: true, auto_init: true });
     } else if (!repoResponse.ok) throw new Error(`无法访问仓库 ${repo} (${repoResponse.status})`);
+    else {
+      const repository = await repoResponse.json() as { private?: boolean; visibility?: string };
+      const isPrivate = provider === "gitlab" ? repository.visibility === "private" : repository.private === true;
+      if (!isPrivate) throw new Error("导航云同步仅允许连接私有仓库，请将仓库设为私有后重试。");
+    }
     repo = repoPath;
     settingsStorage.setItem(TOKEN_KEYS[provider], token);
     settingsStorage.setItem(REPO_KEYS[provider], repo);
@@ -178,6 +234,7 @@ async function connect(tokenValue: string, repoValue: string, createIfMissing: b
     const remote = await readRemote();
     remoteSha = remote.sha;
     remoteFileExists = remote.sha !== null;
+    remoteData = remote.data;
     const merged = remote.data ? mergeNavigationData(local, remote.data) : local;
     if (remote.data) {
       suppressSave = true;
@@ -236,15 +293,21 @@ export async function syncNavigationNow() {
   window.clearTimeout(saveTimer);
   await syncQueue;
   update({ status: "syncing", error: "" });
-  const local = await loadNavigationData();
-  const remote = await readRemote();
-  remoteSha = remote.sha;
-  remoteFileExists = remote.sha !== null;
-  const merged = remote.data ? mergeNavigationData(local, remote.data) : local;
-  suppressSave = true;
-  saveNavigationData(merged);
-  suppressSave = false;
-  await push(merged);
+  try {
+    const local = await loadNavigationData();
+    const remote = await readRemote();
+    remoteSha = remote.sha;
+    remoteFileExists = remote.sha !== null;
+    remoteData = remote.data;
+    const merged = remote.data ? mergeNavigationData(local, remote.data) : local;
+    suppressSave = true;
+    try { saveNavigationData(merged); }
+    finally { suppressSave = false; }
+    await push(merged);
+  } catch (error) {
+    update({ status: String(error).includes("版本已变化") ? "conflict" : "error", error: String(error) });
+    throw error;
+  }
 }
 
 export function disconnectNavigationSync() {
@@ -252,6 +315,7 @@ export function disconnectNavigationSync() {
   token = "";
   remoteSha = null;
   remoteFileExists = false;
+  remoteData = null;
   ready = false;
   settingsStorage.setItem(TOKEN_KEYS[current.provider], "");
   settingsStorage.setItem(REPO_KEYS[current.provider], "");
