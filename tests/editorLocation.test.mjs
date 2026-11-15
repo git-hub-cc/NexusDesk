@@ -128,6 +128,7 @@ function textTabHarness() {
     useShallow: selector => selector, useDroppable: () => ({}),
     useWorkspaceStore: selector => selector(state),
     isImage: path => /\.(png|svg)$/.test(path), isVideo: path => path.endsWith(".mp4"),
+    isPreviewDocument: path => /\.(pdf|docx?|pptx?|xlsx?)$/i.test(path),
   };
   vm.runInNewContext(ts.transpile(source + "\nglobalThis.group = EditorGroupPanel; globalThis.panel = TextTabPanel;", { jsx: ts.JsxEmit.React }), context);
   const flatten = node => Array.isArray(node) ? node.flatMap(flatten)
@@ -193,13 +194,20 @@ test("source editors stay bound to their own document when the active tab change
 });
 
 test("source snapshots preserve a scrolled viewport even with the cursor at the start", () => {
-  const source = editor.slice(editor.indexOf("function saveLocation("), editor.indexOf("export const CodeMirrorEditor"));
+  const ast = ts.createSourceFile("CodeMirrorEditor.tsx", editor, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let saveLocation;
+  const visit = node => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === "saveLocation") saveLocation = node.getText(ast);
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  assert.ok(saveLocation, "saveLocation declaration exists");
   const positions = { left: new Map(), right: new Map() };
   const state = { rootPath: "project", leftTabs: [{ id: "code" }], rightTabs: [] };
   let persisted;
   const context = { paneLocations: positions, useWorkspaceStore: { getState: () => state },
     projectKey: value => value, writeUI: (root, key, value) => { persisted = value; } };
-  vm.runInNewContext(ts.transpile(source), context);
+  vm.runInNewContext(ts.transpile(saveLocation), context);
   const snapshot = { top: 3500, left: 400 };
   context.saveLocation("left", "code", { state: { selection: { main: { anchor: 0, head: 0 } } }, scrollSnapshot: () => snapshot,
     scrollDOM: { scrollTop: 3500, scrollLeft: 400 } });

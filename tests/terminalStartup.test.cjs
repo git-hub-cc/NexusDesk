@@ -92,9 +92,9 @@ test('terminal preserves early TUI probe replies and passes alternate-screen key
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX,
   } }).outputText, context);
-  context.exports.TerminalSession({ session: { id: 'session', command: 'codex', cwd: '/work' }, active: false });
-  effects[0]();
-  const cleanup = effects[1]();
+  context.exports.TerminalSession({ session: { id: 'session', command: 'codex', cwd: '/work' }, active: true, autoResize: true, resizeRequest: { sessionId: 'session', version: 0 } });
+  const cleanupEffects = effects.map(effect => effect()).filter(dispose => typeof dispose === 'function');
+  const cleanup = () => cleanupEffects.forEach(dispose => dispose());
   assert.equal(terminal.options.windowsPty.backend, 'conpty', 'local Windows PTY uses ConPTY resize and reflow compatibility');
   assert.equal(terminal.options.altClickMovesCursor, false, 'Alt-click cannot reposition the terminal cursor');
   assert.equal(terminal.keys({ type: 'keydown', key: 'Alt', altKey: true }), false, 'Alt does not activate xterm selection mode');
@@ -121,9 +121,9 @@ test('terminal preserves early TUI probe replies and passes alternate-screen key
   const finishFirst = finishStart;
   const firstTerminal = terminal;
   const nextEffect = effects.length;
-  context.exports.TerminalSession({ session: { id: 'second', command: 'codex', cwd: '/work' }, active: false });
-  effects[nextEffect]();
-  const cleanupSecond = effects[nextEffect + 1]();
+  context.exports.TerminalSession({ session: { id: 'second', command: 'codex', cwd: '/work' }, active: true, autoResize: true, resizeRequest: { sessionId: 'second', version: 0 } });
+  const cleanupSecondEffects = effects.slice(nextEffect).map(effect => effect()).filter(dispose => typeof dispose === 'function');
+  const cleanupSecond = () => cleanupSecondEffects.forEach(dispose => dispose());
   await flushLayout();
   assert.equal(starts.length, 2, 'a pending PTY startup must not block another session');
   finishStart();

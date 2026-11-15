@@ -28,6 +28,7 @@ function titleBar({ rootPath = null, exists = async () => true, confirmed = fals
     confirmAction: async (...args) => { prompts.push(args); return confirmed; }, showError: error => errors.push(error),
     DropdownMenu: Object.fromEntries(['Root', 'Trigger', 'Portal', 'Content', 'Item', 'Separator', 'CheckboxItem', 'ItemIndicator'].map(key => [key, `Menu.${key}`])),
     Dialog: Object.fromEntries(['Root', 'Portal', 'Overlay', 'Content', 'Title', 'Close'].map(key => [key, `Dialog.${key}`])),
+    DialogShell: 'DialogShell', CreateProjectDialog: 'CreateProjectDialog', CloneProjectDialog: 'CloneProjectDialog', SftpConnectDialog: 'SftpConnectDialog',
     ...Object.fromEntries(['Check', 'FolderTree', 'Link', 'PanelBottom', 'Minus', 'Square', 'X', 'ChevronDown', 'Trash2'].map(key => [key, key])),
     nexusdeskIcon: '', console,
   });

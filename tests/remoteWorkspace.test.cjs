@@ -13,7 +13,9 @@ test('existing file API routes SFTP tree entries, reads, writes and renames to t
     if (args.operation === 'read') return 'remote contents';
     if (args.operation === 'rename') return args.content;
   });
-  const context = { exports: {}, require: name => name === './remote' ? remote : {} };
+  const context = { exports: {}, require: name => name === './remote' ? remote
+    : name === './treeFileCache' ? { invalidateTreeFiles() {}, readCachedTreeFile: read => read() }
+      : {} };
   vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/api.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, context);
   const api = context.exports.fsApi;
   const tree = await api.readDirectory('sftp://server-1/home');
@@ -27,8 +29,13 @@ test('existing file API routes SFTP tree entries, reads, writes and renames to t
   assert.equal(calls.at(-1).args.path, '/home/a #%.txt');
   assert.equal(await api.renameEntry(tree[1].id, 'new.txt'), 'sftp://server-1/home/new.txt');
   assert.ok(calls.every(call => call.command === 'remote_files' && call.args.id === 'server-1'));
+  await api.copyFileToDir('C:/local.txt', 'sftp://server-1/home');
+  assert.equal(calls.at(-1).command, 'remote_files');
+  assert.equal(calls.at(-1).args.id, 'server-1');
+  assert.equal(calls.at(-1).args.operation, 'upload');
+  assert.equal(calls.at(-1).args.path, '/home/local.txt');
+  assert.equal(calls.at(-1).args.content, 'C:/local.txt');
   const count = calls.length;
-  await assert.rejects(api.copyFileToDir('C:/local.txt', 'sftp://server-1/home'), /不支持/);
   await assert.rejects(api.moveEntry('sftp://server-1/a', 'sftp://server-2/home'), /跨服务器/);
   await assert.rejects(api.moveEntry('C:/local.txt', 'sftp://server-1/home'), /本地与远程/);
   await assert.rejects(api.writeFileClipboard([tree[1].id], false), /不支持/);
@@ -39,11 +46,11 @@ test('existing file API routes SFTP tree entries, reads, writes and renames to t
 
 test('shared TerminalSession starts separate remote shells, preserves early replies, and only closes its own channel', async () => {
   const effects = [], calls = [], terminals = [], channels = [], starts = [];
-  const element = { clientWidth: 800, clientHeight: 300, addEventListener() {}, removeEventListener() {} };
+  const element = { clientWidth: 800, clientHeight: 300, addEventListener() {}, removeEventListener() {}, toggleAttribute() {} };
   class MockTerminal {
     constructor() {
       terminals.push(this); this.cols = 100; this.rows = 30;
-      this.buffer = { active: { type: 'normal' } };
+      this.buffer = { active: { type: 'normal', baseY: 0, cursorY: 0, cursorX: 0, getLine: () => ({ isWrapped: false, translateToString: () => '' }) } };
       this.parser = { registerCsiHandler: () => ({ dispose() {} }) };
     }
     unicode = {};
@@ -56,7 +63,9 @@ test('shared TerminalSession starts separate remote shells, preserves early repl
     writeln() {}
   }
   const mocks = {
-    react: { useRef: value => ({ current: value === null ? element : value }), useEffect: fn => effects.push(fn) },
+    '@/store/terminalStore': { useTerminalStore: selector => selector({ historyTransparency: 0 }) },
+    '@/lib/terminalHistory': { matchTerminalHistory: () => [], terminalPromptInput: () => undefined },
+    react: { useRef: value => ({ current: value === null ? element : value }), useState: value => [value, () => {}], useEffect: fn => effects.push(fn) },
     'react/jsx-runtime': { jsx() {}, jsxs() {} },
     '@tauri-apps/api/core': {
       Channel: class { constructor() { channels.push(this); } },
@@ -76,6 +85,9 @@ test('shared TerminalSession starts separate remote shells, preserves early repl
   let sequence = 0;
   const context = { exports: {}, require: name => mocks[name] ?? {}, crypto: { randomUUID: () => `shell-${++sequence}` },
     window: { addEventListener() {}, removeEventListener() {}, clearTimeout, setTimeout }, setTimeout, clearTimeout,
+    document: { fonts: { ready: Promise.resolve() } },
+    requestAnimationFrame: callback => { callback(); return 1; },
+    cancelAnimationFrame() {},
     ResizeObserver: class { observe() {} disconnect() {} } };
   vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/components/layout/TerminalSession.tsx', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText, context);
   const mount = id => {
@@ -86,9 +98,9 @@ test('shared TerminalSession starts separate remote shells, preserves early repl
   };
   const cleanup1 = mount('tab-1');
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(calls[0].command, 'start_remote_terminal');
-  assert.equal(calls[0].args.id, 'server-1');
-  assert.equal(calls[0].args.cwd, '/home');
+  const firstStart = calls.find(call => call.command === 'start_remote_terminal');
+  assert.equal(firstStart.args.id, 'server-1');
+  assert.equal(firstStart.args.cwd, '/home');
   assert.equal(calls.filter(call => call.command === 'write_remote_terminal').length, 0);
   starts[0]();
   await new Promise(resolve => setImmediate(resolve));
@@ -105,6 +117,7 @@ test('shared TerminalSession starts separate remote shells, preserves early repl
   const close = calls.find(call => call.command === 'close_remote_terminal');
   assert.equal(close.args.terminalId, startCalls[0].args.terminalId);
   terminals[1].input('echo still-alive\r');
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(calls.at(-1).args.terminalId, startCalls[1].args.terminalId);
   assert.ok(!calls.some(call => call.command === 'close_remote' || call.command === 'start_terminal'));
   cleanup2();

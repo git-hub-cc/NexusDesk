@@ -10,19 +10,62 @@ const compiled = ts.transpileModule(source.replace(/export /g, ""), {
 }).outputText;
 
 function setup(getUserMedia) {
-  const context = { navigator: { mediaDevices: { getUserMedia } }, Error };
+  const context = { navigator: { mediaDevices: { getUserMedia } }, Error, setTimeout, clearTimeout };
   vm.runInNewContext(compiled, context);
   return context;
 }
+
+test("audio startup resumes a suspended context and validates its state", async () => {
+  const env = setup();
+  const context = { state: "suspended", async resume() { this.state = "running"; } };
+  await env.resumeSpeechAudio(context);
+  await assert.rejects(env.resumeSpeechAudio({ state: "suspended", async resume() {} }), /音频引擎未运行/);
+});
+
+test("audio startup times out instead of leaving the listener stuck", async () => {
+  let timeout;
+  const env = { Error, navigator: {}, setTimeout: callback => { timeout = callback; return 1; }, clearTimeout() {} };
+  vm.runInNewContext(compiled, env);
+  const pending = env.resumeSpeechAudio({ state: "suspended", resume: () => new Promise(() => {}) });
+  timeout();
+  await assert.rejects(pending, /音频引擎未能启动/);
+});
 
 test("microphone opens without imposing the recognition sample rate on hardware", async () => {
   const stream = {};
   const env = setup(async constraints => {
     assert.equal(constraints.audio.channelCount, 1);
+    assert.equal(constraints.audio.echoCancellation, false);
+    assert.equal(constraints.audio.noiseSuppression, false);
+    assert.equal(constraints.audio.autoGainControl, false);
     assert.equal("sampleRate" in constraints.audio, false);
     return stream;
   });
   assert.equal(await env.openSpeechMicrophone(), stream);
+});
+
+test("selected microphone is preserved when audio constraints fall back", async () => {
+  let calls = 0;
+  const stream = {};
+  const env = setup(async constraints => {
+    assert.equal(constraints.audio.deviceId.exact, "usb-mic");
+    if (++calls === 1) throw Object.assign(new Error("unsupported"), { name: "OverconstrainedError" });
+    assert.equal("channelCount" in constraints.audio, false);
+    return stream;
+  });
+  assert.equal(await env.openSpeechMicrophone("usb-mic"), stream);
+  assert.equal(calls, 2);
+});
+
+test("microphone list excludes output devices and duplicate Windows aliases", async () => {
+  const env = setup();
+  env.navigator.mediaDevices.enumerateDevices = async () => [
+    { kind: "audioinput", deviceId: "default" },
+    { kind: "audioinput", deviceId: "communications" },
+    { kind: "audiooutput", deviceId: "speaker" },
+    { kind: "audioinput", deviceId: "usb-mic" },
+  ];
+  assert.equal((await env.listSpeechMicrophones()).map(device => device.deviceId).join(), "usb-mic");
 });
 
 test("device and constraint failures fall back to the default audio configuration", async () => {

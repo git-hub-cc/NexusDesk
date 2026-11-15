@@ -60,10 +60,11 @@ test("native speech shortcut toggles the workspace panel", async () => {
   const env = setup();
   await Promise.resolve();
   env.emit();
+  assert.equal(env.open, true);
+  assert.equal(env.toggles, 1);
+  env.emit();
   assert.equal(env.open, false);
   assert.equal(env.closes, 1);
-  env.emit();
-  assert.equal(env.open, true);
   assert.equal(env.toggles, 2);
   env.cleanup();
   assert.equal(env.stops, 1);
@@ -126,11 +127,13 @@ test("Ctrl+left click no longer toggles speech", () => {
   env.cleanup();
 });
 
-test("workspace handles Git speech while editor and terminal retain their own panels", () => {
-  for (const [target, opens] of [[{ kind: "git" }, true], [{ kind: "editor", pane: "left" }, false], [{ kind: "terminal" }, false]]) {
+test("workspace speech opens and closes for every input target", () => {
+  for (const target of [null, { kind: "git" }, { kind: "editor", pane: "left" }, { kind: "editor", pane: "right" }, { kind: "terminal" }]) {
     const env = setup({ native: false, target });
     env.window.dispatchEvent(new CustomEvent("nexusdesk-speech-toggle"));
-    assert.equal(env.open, opens);
+    assert.equal(env.open, true);
+    env.window.dispatchEvent(new CustomEvent("nexusdesk-speech-toggle"));
+    assert.equal(env.open, false);
     env.cleanup();
   }
 });

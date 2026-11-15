@@ -13,12 +13,18 @@ function createNavigation(stored) {
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(compiled, {
     exports, URL, crypto,
-    require: () => ({ default: '/bundled.json' }),
     localStorage: {
       getItem: key => values.get(key) ?? null,
       setItem: (key, value) => values.set(key, value),
       removeItem: key => values.delete(key),
     },
+    require: name => name === '@/lib/globalSettings'
+      ? { settingsStorage: {
+        getItem: key => values.get(key) ?? null,
+        setItem: (key, value) => values.set(key, value),
+        removeItem: key => values.delete(key),
+      } }
+      : { default: '/bundled.json' },
     window: { dispatchEvent: event => events.push(event) },
     CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
   });

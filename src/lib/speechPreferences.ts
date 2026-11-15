@@ -9,6 +9,7 @@ export const speechLanguages = [
   { id: "ja", label: "日语" }, { id: "ko", label: "韩语" },
 ];
 export type SpeechPreferences = {
+  inputDeviceId: string;
   model: string;
   filterNoise: boolean;
   language: string;
@@ -35,6 +36,7 @@ export function readSpeechPreferences(): SpeechPreferences {
     const parsed = JSON.parse(settingsStorage.getItem(speechPreferencesKey) || "null");
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return {
+        inputDeviceId: typeof parsed.inputDeviceId === "string" ? parsed.inputDeviceId : "",
         // 旧版 Whisper 模型自动迁移，保留仍受支持的语言与过滤偏好。
         model: "sensevoice-small",
         filterNoise: parsed.filterNoise !== false,
@@ -45,5 +47,5 @@ export function readSpeechPreferences(): SpeechPreferences {
       };
     }
   } catch { /* 损坏的配置使用默认值。 */ }
-  return { model: "sensevoice-small", filterNoise: true, language: "", ...defaults };
+  return { inputDeviceId: "", model: "sensevoice-small", filterNoise: true, language: "", ...defaults };
 }

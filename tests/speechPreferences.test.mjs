@@ -18,7 +18,7 @@ function read(value) {
 test("migrates every Whisper model while preserving supported preferences", () => {
   for (const model of ["tiny", "base", "small", "medium", "sensevoice-small"]) {
     assert.deepEqual(read(JSON.stringify({ model, acceleration: true, language: "zh", filterNoise: false })), {
-      model: "sensevoice-small", language: "zh", filterNoise: false,
+      inputDeviceId: "", model: "sensevoice-small", language: "zh", filterNoise: false,
       minVolume: 0.018, minDurationSeconds: 0.5, minTextLength: 2,
     });
   }
@@ -34,7 +34,7 @@ test("unsupported languages migrate to automatic detection and Cantonese is supp
 test("invalid stored values safely use SenseVoice defaults", () => {
   for (const value of [null, "null", "[]", "42", "invalid JSON"]) {
     assert.deepEqual(read(value), {
-      model: "sensevoice-small", filterNoise: true, language: "",
+      inputDeviceId: "", model: "sensevoice-small", filterNoise: true, language: "",
       minVolume: 0.018, minDurationSeconds: 0.5, minTextLength: 2,
     });
   }
@@ -42,8 +42,13 @@ test("invalid stored values safely use SenseVoice defaults", () => {
 
 test("clamps recognition thresholds and preserves valid custom values", () => {
   assert.deepEqual(read(JSON.stringify({ minVolume: 0.032, minDurationSeconds: 1.2, minTextLength: 4 })), {
-    model: "sensevoice-small", filterNoise: true, language: "",
+    inputDeviceId: "", model: "sensevoice-small", filterNoise: true, language: "",
     minVolume: 0.032, minDurationSeconds: 1.2, minTextLength: 4,
   });
   assert.equal(read(JSON.stringify({ minVolume: 2 })).minVolume, 0.1);
+});
+
+test("preserves a selected microphone and rejects invalid device preferences", () => {
+  assert.equal(read(JSON.stringify({ inputDeviceId: "usb-mic" })).inputDeviceId, "usb-mic");
+  assert.equal(read(JSON.stringify({ inputDeviceId: 42 })).inputDeviceId, "");
 });

@@ -320,6 +320,8 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
     let resizeQueue = Promise.resolve();
     let resizePending = false;
     let resizeTasks = 0;
+    let panelDragging = false;
+    let resizeAfterDrag = false;
     let deferredOutput: Uint8Array[] = [];
     let writeQueue: Promise<void> = Promise.resolve();
     let fontsReady = false;
@@ -339,6 +341,7 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
     };
     const resize = () => {
       if (disposed || exited || !fontsReady || !element.clientWidth || !element.clientHeight) return;
+      if (panelDragging) { resizeAfterDrag = true; return; }
       // Keep the grid at the PTY's size until the previous resize has completed.
       // Read the latest layout in the queue instead of replaying stale sizes.
       if (resizePending) return;
@@ -373,6 +376,14 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
         }
       }).catch(report);
     };
+    const onPanelDrag = (event: Event) => {
+      panelDragging = (event as CustomEvent<boolean>).detail === true;
+      if (!panelDragging && resizeAfterDrag) {
+        resizeAfterDrag = false;
+        resize();
+      }
+    };
+    window.addEventListener("terminal-panel-drag", onPanelDrag);
     autoFitRef.current = resize;
     fitRef.current = resize;
     // Wait for fonts and three equal, visible layout samples before opening PTY.
@@ -521,6 +532,7 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
       window.removeEventListener("keydown", onAltKey);
       window.removeEventListener("keyup", onAltKey);
       window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("terminal-panel-drag", onPanelDrag);
       setAltCursor(false);
       linkProvider.dispose();
       input.dispose();

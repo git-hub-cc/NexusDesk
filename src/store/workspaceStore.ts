@@ -516,9 +516,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const [left, right] = await Promise.all([restore(saved.left), restore(saved.right)]);
         if (get().rootPath !== root || projectVersion !== version) return;
         set(state => {
+          // 浏览器可能从另一项目保留在不同栏，恢复会话时优先复用现有实例。
+          const browserIds = new Set([...state.leftTabs, ...state.rightTabs]
+            .filter(tab => tab.browser).map(tab => tab.id));
           const merge = (current: Tab[], restored: Tab[]) => sortTabs([...current.map(tab =>
             restored.some(item => item.id === tab.id) ? { ...tab, isPinned: restored.find(item => item.id === tab.id)!.isPinned } : tab),
-            ...restored.filter(tab => !current.some(item => item.id === tab.id))]);
+            ...restored.filter(tab => {
+              if (current.some(item => item.id === tab.id)) return false;
+              if (tab.browser) {
+                if (browserIds.has(tab.id)) return false;
+                browserIds.add(tab.id);
+              }
+              return true;
+            })]);
           const leftTabs = merge(state.leftTabs, left);
           const rightTabs = merge(state.rightTabs, right);
           return { ...resolveSplitMode(state.isSplitMode || rightTabs.length > 0, leftTabs, rightTabs,
@@ -672,10 +682,17 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             const switching = state.rootPath !== path;
             const projectPinnedTabs = pinnedTabsByProject(state);
             const projectSessions = sessionsByProject(state);
-            const tabs = switching
-              ? resolveSplitMode(
-                  false, [], [], null, null, "left", path)
-              : resolveTabTitles(state.leftTabs, state.rightTabs, path);
+            let tabs;
+            if (switching) {
+              const browserTabs = [...state.leftTabs, ...state.rightTabs]
+                .filter(tab => tab.browser)
+                .filter((tab, index, all) => all.findIndex(candidate => candidate.id === tab.id) === index);
+              const activeBrowserId = [state.activeLeftTabId, state.activeRightTabId]
+                .find(id => id && browserTabs.some(tab => tab.id === id)) ?? browserTabs[0]?.id ?? null;
+              tabs = resolveSplitMode(false, browserTabs, [], activeBrowserId, null, "left", path);
+            } else {
+              tabs = resolveTabTitles(state.leftTabs, state.rightTabs, path);
+            }
             return { ...tabs, projectPinnedTabs, projectSessions, pinnedTabsRestored: switching ? false : state.pinnedTabsRestored, rootPath: path, searchScopePath: null, partitionSearchPaths: null, remoteLabel: isRemotePath(path) ? (settingsStorage.getItem(`sftp-label:${remotePath(path).id}`) || remotePath(path).id) : null, sidebarMode: "physical", fileTreeData: treeData, treeStatuses: {}, logicalTreeData: [], recentProjects: newRecent };
           });
 

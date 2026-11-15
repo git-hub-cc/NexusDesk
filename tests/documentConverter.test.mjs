@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
-import { read, utils, write } from 'xlsx';
+import { read, utils, write } from '@e965/xlsx';
 import JSZip from 'jszip';
 import { DOMParser } from '@xmldom/xmldom';
 import * as CFB from 'cfb';

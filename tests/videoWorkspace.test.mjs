@@ -36,6 +36,7 @@ test("workspace preserves media and browser component identity when opening and 
     MIRROR_HOME: "nexusdesk:mirror", AndroidMirrorWorkspace: "AndroidMirrorWorkspace",
     openAiIcon: "openai.svg",
     React: { createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }) },
+    DialogShell: "DialogShell", TerminalSettings: "TerminalSettings",
     useEffect() {}, useLayoutEffect() {}, useRef: () => ({ current: null }), useState: () => [null, () => {}],
     sidebarMaxSize: 80,
     useDroppable: () => ({}), useSensor() {}, useSensors() {},
@@ -45,7 +46,7 @@ test("workspace preserves media and browser component identity when opening and 
     isImage: () => false,
     Dialog: Object.fromEntries(["Root", "Portal", "Overlay", "Content", "Title", "Close", "Description"].map(name => [name, `Dialog.${name}`])),
   };
-  for (const name of ["Bot", "Mic", "Package", "Panel", "PanelGroup", "PanelResizeHandle", "DndContext", "PointerSensor", "closestCenter", "DragOverlay", "Sidebar", "BottomPanel", "EditorTabs", "TabUI", "MarkdownEditor", "RelationalView", "VideoTabPreview", "BrowserEditor", "WindowTitleBar", "ActivityBar", "GitSettings", "CodexSettings", "SpeechRecognitionSettings", "SoftwareSettings", "GitBranch", "X"]) bindings[name] = name;
+  for (const name of ["Bot", "Cloud", "Mic", "Package", "Terminal", "Panel", "PanelGroup", "PanelResizeHandle", "DndContext", "PointerSensor", "closestCenter", "DragOverlay", "Sidebar", "BottomPanel", "EditorTabs", "TabUI", "MarkdownEditor", "RelationalView", "VideoTabPreview", "BrowserEditor", "WindowTitleBar", "ActivityBar", "GitSettings", "CodexSettings", "SpeechRecognitionSettings", "SoftwareSettings", "GitBranch", "X"]) bindings[name] = name;
   globalThis.__workspaceVideoTest = bindings;
   const load = async path => {
     const source = readFileSync(new URL(path, import.meta.url), "utf8").replace(/^import .*;\r?$/gm, "");

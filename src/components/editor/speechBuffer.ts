@@ -33,6 +33,7 @@ export class SpeechBuffer {
 // Capture callbacks and Finish share one in-flight task.
 export class SpeechTask {
   private pending: Promise<void> | null = null;
+  get isRunning(): boolean { return this.pending !== null; }
   run(work: () => Promise<void>): Promise<void> {
     if (this.pending) return this.pending;
     this.pending = Promise.resolve().then(work).finally(() => { this.pending = null; });
