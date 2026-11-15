@@ -6,7 +6,7 @@ import { MirrorAudio } from "./mirrorAudio";
 import { AndroidFileManager } from "./AndroidFileManager";
 
 type Device = { serial: string; status: string; model: string };
-type Connection = { id: string; decoder?: VideoDecoder; worker?: Worker; audio?: MirrorAudio; config: Uint8Array; waiting: boolean; ended: boolean; queue: Promise<unknown>; statsTimer: ReturnType<typeof setInterval> | 0; stats: { packets: number; bytes: number; config: number; key: number; delta: number; waitingDrop: number; queueReset: number; submitted: number; output: number } };
+type Connection = { id: string; startup?: Promise<unknown>; decoder?: VideoDecoder; worker?: Worker; audio?: MirrorAudio; config: Uint8Array; waiting: boolean; ended: boolean; queue: Promise<unknown>; statsTimer: ReturnType<typeof setInterval> | 0; stats: { packets: number; bytes: number; config: number; key: number; delta: number; waitingDrop: number; queueReset: number; submitted: number; output: number } };
 function codecFromConfig(data: Uint8Array): string | undefined {
   for (let i = 0; i + 7 < data.length; i++) {
     const prefix = data[i] === 0 && data[i + 1] === 0
@@ -21,7 +21,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [serial, setSerial] = useState("");
   const [maxSize, setMaxSize] = useState(1080);
-  const [status, setStatus] = useState<"idle" | "connecting" | "connected">("idle");
+  const [status, setStatus] = useState<"idle" | "connecting" | "connected" | "stopping">("idle");
   const [error, setError] = useState("");
   const [audioStatus, setAudioStatus] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -42,6 +42,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const canvasTransferred = useRef(false);
   const connection = useRef<Connection | null>(null);
+  const stopping = useRef<Promise<void> | null>(null);
   const mirrorWorker = useRef<Worker | null>(null);
   const mounted = useRef(false);
   const visible = useRef(active && !document.hidden);
@@ -131,9 +132,22 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       clearInterval(current.statsTimer);
       if (current.decoder && current.decoder.state !== "closed") current.decoder.close();
       current.worker?.postMessage({ type: "stop" });
-      current.audio?.close();
-      void invoke("mirror_stop", { id: current.id }).catch(reason => {
+      const audioClosed = current.audio?.close();
+      console.info("[android-mirror] disconnect requested", { id: current.id, disposeWorker });
+      // 先取消正在启动的会话，再等待启动返回并兜底停止，防止停止命令早于会话注册。
+      const stopRequested = invoke("mirror_stop", { id: current.id });
+      stopping.current = (async () => {
+        const results = await Promise.allSettled([audioClosed, stopRequested, current.startup]);
+        await invoke("mirror_stop", { id: current.id });
+        const failure = results.slice(0, 2).find(result => result.status === "rejected");
+        if (failure?.status === "rejected") throw failure.reason;
+        console.info("[android-mirror] disconnect complete", { id: current.id });
+      })().catch(reason => {
+        console.error("[android-mirror] disconnect failed", { id: current.id, error: String(reason) });
         if (mounted.current) setError(String(reason));
+      }).finally(() => {
+        stopping.current = null;
+        if (mounted.current && !connection.current) setStatus("idle");
       });
     }
     if (disposeWorker) {
@@ -145,7 +159,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       canvas.current?.getContext("2d")?.clearRect(0, 0, canvas.current.width, canvas.current.height);
     }
     frameRate.current = { frames: 0, started: performance.now() };
-    if (mounted.current) { setFps(0); setStatus("idle"); setAudioStatus(""); setScreenOff(false); setDimensions({ width: 0, height: 0 }); }
+    if (mounted.current) { setFps(0); setStatus(stopping.current ? "stopping" : "idle"); setAudioStatus(""); setScreenOff(false); setDimensions({ width: 0, height: 0 }); }
   };
 
   useEffect(() => {
@@ -212,7 +226,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
   useEffect(() => () => setMirrorFullscreen(false), []);
   const toggleFullscreen = () => setMirrorFullscreen(!fullscreenRequested.current);
   useEffect(() => {
-    if (!active || status === "idle") setMirrorFullscreen(false);
+    if (!active || status === "idle" || status === "stopping") setMirrorFullscreen(false);
   }, [active, status]);
 
   // Hidden tabs keep the device session but stop delivering video over IPC.
@@ -234,8 +248,8 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
   }, [active]);
 
   const connect = async () => {
-    if (!serial || connection.current) {
-      console.info("[android-mirror] connect ignored", { serialSelected: Boolean(serial), connectionActive: Boolean(connection.current) });
+    if (!serial || connection.current || stopping.current) {
+      console.info("[android-mirror] connect ignored", { serialSelected: Boolean(serial), connectionActive: Boolean(connection.current), stopping: Boolean(stopping.current) });
       return;
     }
     console.info("[android-mirror] connect requested", { serial, maxSize });
@@ -312,17 +326,24 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
     }, 1000);
     const audioFailed = (reason: string) => {
       if (current.ended || connection.current !== current) return;
-      current.audio?.close();
+      console.warn("[android-mirror] audio failed", { id, serial, reason });
+      void current.audio?.close().catch(() => {});
       current.audio = undefined;
       if (mounted.current) setAudioStatus(reason);
     };
     // Resume during the connect button's user gesture to permit audio playback.
     let audioReady: Promise<void> = Promise.resolve();
     try {
-      current.audio = new MirrorAudio();
-      audioReady = current.audio.resume().catch(() => audioFailed("电脑音频播放失败，请检查声音设置后重新连接"));
+      current.audio = new MirrorAudio(id);
+      audioReady = current.audio.resume().catch(reason => {
+        console.warn("[android-mirror] audio resume failed", { id, serial, error: String(reason) });
+        audioFailed("电脑音频播放失败，请检查声音设置后重新连接");
+      });
       setAudioStatus("等待手机音频");
-    } catch { audioFailed("当前环境无法播放音频"); }
+    } catch (reason) {
+      console.warn("[android-mirror] audio initialization failed", { id, serial, error: String(reason) });
+      audioFailed("当前环境无法播放音频");
+    }
     const audioChannel = new Channel<ArrayBuffer>();
     audioChannel.onmessage = buffer => {
       if (current.ended || connection.current !== current) return;
@@ -388,9 +409,10 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       await audioReady;
       if (current.ended || connection.current !== current) return;
       console.info("[android-mirror] invoking mirror_start", { id, serial, maxSize });
-      await invoke("mirror_start", { id, serial, maxSize, channel, audioChannel });
+      current.startup = invoke("mirror_start", { id, serial, maxSize, channel, audioChannel });
+      await current.startup;
       // A tab can close or disconnect while adb is still starting.
-      if (current.ended || connection.current !== current) { await invoke("mirror_stop", { id }); return; }
+      if (current.ended || connection.current !== current) return;
       await invoke("mirror_visible", { id, visible: visible.current });
       if (connection.current === current && mounted.current) {
         console.info("[android-mirror] connect established", { id, serial });
@@ -489,8 +511,8 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       <select aria-label="投屏最长边像素" title="最长边像素，断开后可调整" className="rounded bg-ide-bg p-1 text-xs" value={maxSize} disabled={status !== "idle"} onChange={e => setMaxSize(Number(e.target.value))}>
         {[720, 1080, 1440].map(size => <option key={size} value={size}>{size}px</option>)}
       </select>
-      <button disabled={status === "idle" && !serial} onClick={() => status === "idle" ? void connect() : disconnect()}>
-        {status === "connecting" ? "取消连接" : connected ? "断开" : "连接"}
+      <button disabled={status === "stopping" || (status === "idle" && !serial)} onClick={() => status === "idle" ? void connect() : disconnect()}>
+        {status === "stopping" ? "正在断开…" : status === "connecting" ? "取消连接" : connected ? "断开" : "连接"}
       </button>
       {([["返回", ArrowLeft, () => key(4)], ["主页", House, () => key(3)], ["最近任务", Square, () => key(187)]] as const).map(([label, Icon, action]) =>
         <button key={label} aria-label={label} title={label} disabled={!connected} onClick={action}><Icon size={14} /></button>)}
@@ -650,7 +672,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       </div>}
       {!dimensions.width && <div role="status" className="max-w-sm p-4 text-center text-xs leading-6 text-gray-400">
         <Smartphone size={40} className="mx-auto mb-3 opacity-40" />
-        {status === "connecting" ? "正在连接设备…" : connected ? "等待手机画面…" : "连接 Android 手机，开启 USB 调试并在手机上允许此电脑。刷新设备列表后选择设备并连接。"}
+        {status === "stopping" ? "正在断开连接…" : status === "connecting" ? "正在连接设备…" : connected ? "等待手机画面…" : "连接 Android 手机，开启 USB 调试并在手机上允许此电脑。刷新设备列表后选择设备并连接。"}
         {status === "idle" && scanned && !devices.length && <p className="mt-2 text-amber-400">ADB 未发现设备。请重新插拔 USB 数据线，确认已开启 USB 调试并解锁手机；若出现授权弹窗，请选择允许。设备列表会自动更新，也可点击刷新尝试恢复连接。</p>}
         {status === "idle" && devices.some(device => device.status === "unauthorized") && <p className="mt-2 text-amber-400">请在手机上允许此电脑进行 USB 调试，授权后设备列表会自动更新。</p>}
         {status === "idle" && devices.some(device => device.status === "offline") && <p className="mt-2 text-amber-400">设备处于离线状态，请点击刷新恢复连接；若仍离线，请重新插拔数据线。</p>}
@@ -660,7 +682,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
     {filesOpen && serial && <div className={fullscreen ? "hidden" : "contents"}><AndroidFileManager key={serial} serial={serial} onClose={() => setFilesOpen(false)} /></div>}
     </div>
     <div className={`${fullscreen ? "hidden" : ""} shrink-0 border-t border-ide-panel-border px-2 py-1 text-[11px] text-gray-500`} role="status">
-      {connected ? `${serial} · ${dimensions.width} × ${dimensions.height} · 自适应` : status === "connecting" ? "正在启动 scrcpy" : "未连接"}
+      {connected ? `${serial} · ${dimensions.width} × ${dimensions.height} · 自适应` : status === "stopping" ? "正在断开连接" : status === "connecting" ? "正在启动 scrcpy" : "未连接"}
       {audioStatus && ` · ${audioStatus}`}
     </div>
   </div>;

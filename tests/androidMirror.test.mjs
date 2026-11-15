@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 
 const compile = path => ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8")
-  .replace(/^import .*;\r?$/gm, "").replace(/^export /gm, ""), {
+  .replace(/^import .*;\r?$/gm, "").replace(/^export /gm, "").replaceAll("import.meta.url", '"file:///androidMirror.test.mjs"'), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React },
 }).outputText;
 const React = { createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }) };
@@ -29,7 +29,7 @@ test("moving the mirror tab across panes preserves its React key and inactive ta
   assert.equal(panel(), undefined);
 });
 
-function harness({ delayedStart = false, discover = () => [{ serial: "phone", status: "device", model: "Phone" }], initiallyFullscreen = false, initiallyMaximized = false } = {}) {
+function harness({ delayedStart = false, delayedStop = false, delayedAudioClose = false, discover = () => [{ serial: "phone", status: "device", model: "Phone" }], initiallyFullscreen = false, initiallyMaximized = false } = {}) {
   const states = [], refs = [], effects = [], calls = [], decoders = [];
   const timers = new Set();
   const listeners = new Map(), fullscreenCalls = [];
@@ -57,10 +57,13 @@ function harness({ delayedStart = false, discover = () => [{ serial: "phone", st
   const panel = { async requestFullscreen() { throw new Error("DOM fullscreen must not be used by the mirror"); } };
   const drawnFrames = [];
   const canvas = { width: 300, height: 150, focus() {}, getContext: () => ({ drawImage: frame => drawnFrames.push(frame), clearRect() {} }) };
-  let si = 0, ri = 0, ei = 0, currentChannel, releaseStart, now = 0;
+  let si = 0, ri = 0, ei = 0, currentChannel, releaseStart, releaseStop, releaseAudioClose, now = 0;
   const start = delayedStart ? new Promise(resolve => { releaseStart = resolve; }) : Promise.resolve();
+  const stop = delayedStop ? new Promise(resolve => { releaseStop = resolve; }) : Promise.resolve();
+  const audioClose = delayedAudioClose ? new Promise(resolve => { releaseAudioClose = resolve; }) : Promise.resolve();
   const bindings = {
     React, TextEncoder, crypto, document, performance: { now: () => now }, getCurrentWindow: () => host,
+    MirrorAudio: class { async resume() {} play() {} close() { return audioClose; } },
     setInterval: callback => { timers.add(callback); return callback; },
     clearInterval: callback => timers.delete(callback),
     window: { VideoDecoder: true },
@@ -88,6 +91,7 @@ function harness({ delayedStart = false, discover = () => [{ serial: "phone", st
       if (command === "mirror_devices") return discover();
       if (command === "mirror_connect_wifi") return "192.168.1.20:5555";
       if (command === "mirror_start") return start;
+      if (command === "mirror_stop") return stop;
     },
     requestAnimationFrame: () => 1, cancelAnimationFrame() {},
   };
@@ -108,10 +112,40 @@ function harness({ delayedStart = false, discover = () => [{ serial: "phone", st
     new Uint8Array(buffer).set(bytes, 12);
     currentChannel.onmessage(buffer);
   };
-  return { render, calls, decoders, canvas, drawnFrames, releaseStart, packet, document, host, fullscreenCalls, advance: ms => { now += ms; }, poll: () => timers.forEach(callback => callback()), unmount: () => effects.forEach(effect => effect.cleanup?.()) };
+  return { render, calls, decoders, canvas, drawnFrames, releaseStart, releaseStop, releaseAudioClose, packet, document, host, fullscreenCalls, advance: ms => { now += ms; }, poll: () => timers.forEach(callback => callback()), unmount: () => effects.forEach(effect => effect.cleanup?.()) };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const connect = tree => tree.find(node => node.type === "button" && node.children.includes("连接")).props.onClick();
+
+test("audio close waits for context shutdown and repeated cleanup stops sources only once", async () => {
+  let releaseClose, closeCalls = 0, stopCalls = 0, disconnectCalls = 0;
+  const closed = new Promise(resolve => { releaseClose = resolve; });
+  const contexts = [];
+  class AudioContext {
+    state = "running"; currentTime = 0; sampleRate = 48000;
+    constructor() { contexts.push(this); }
+    createBuffer(channels, frames, rate) { return { duration: frames / rate, getChannelData: () => new Float32Array(frames) }; }
+    createBufferSource() { return { connect() {}, start() {}, stop() { stopCalls++; }, disconnect() { disconnectCalls++; } }; }
+    close() { closeCalls++; return closed.then(() => { this.state = "closed"; }); }
+  }
+  const MirrorAudio = new Function("AudioContext", "console", `${compile("../src/components/editor/mirrorAudio.ts")}\nreturn MirrorAudio;`)(AudioContext, { info() {}, warn() {} });
+  const audio = new MirrorAudio("test-session");
+  const packet = new ArrayBuffer(16);
+  new DataView(packet).setUint32(8, 4);
+  audio.play(packet);
+  const first = audio.close();
+  assert.equal(audio.close(), first);
+  let finished = false;
+  first.then(() => { finished = true; });
+  await tick();
+  assert.equal(finished, false);
+  assert.equal(stopCalls, 1);
+  assert.equal(disconnectCalls, 1);
+  assert.equal(closeCalls, 1);
+  releaseClose(); await first;
+  assert.equal(contexts[0].state, "closed");
+  assert.equal(contexts[0].onstatechange, null);
+});
 
 test("USB devices can switch to their discovered Wi-Fi address without manual input", async () => {
   const h = harness(); h.render(); await tick();
@@ -156,6 +190,7 @@ test("FPS measures drawn frames over elapsed time and resets on stalls, hiding a
   assert.equal(fps(), 1);
   h.render().find(node => node.type === "button" && node.children.includes("断开")).props.onClick();
   assert.equal(fps(), undefined);
+  await tick();
   connect(h.render()); await tick();
   assert.equal(fps(), 0);
   h.unmount();
@@ -181,6 +216,7 @@ test("reconnecting at the same resolution shows the first frame and ignores fram
     output(decoder, 720, 1280);
     assert.equal(h.drawnFrames.length, attempt + 1);
     assert.equal(h.canvas.width, 1080);
+    await tick();
   }
   h.unmount();
 });
@@ -295,9 +331,39 @@ test("cancelling startup closes the decoder and cleans up a session that finishe
   assert.equal(h.calls.filter(call => call.command === "mirror_start").length, 1);
   h.render().find(node => node.type === "button" && node.children.includes("取消连接")).props.onClick();
   assert.equal(h.decoders[0].state, "closed");
+  assert.equal(h.render().find(node => node.children.includes("正在断开…")).props.disabled, true);
+  await tick();
+  assert.equal(h.render().some(node => node.children.includes("连接")), false);
   h.releaseStart(); await tick();
   assert.equal(h.calls.filter(call => call.command === "mirror_stop").length, 2);
   h.unmount();
+});
+
+test("reconnect waits for both backend stop and audio context closure, including stale click handlers", async () => {
+  const h = harness({ delayedStop: true, delayedAudioClose: true });
+  h.render(); await tick();
+  const staleConnect = h.render().find(node => node.children.includes("连接")).props.onClick;
+  staleConnect(); await tick();
+  h.render().find(node => node.children.includes("断开")).props.onClick();
+  staleConnect(); await tick();
+  assert.equal(h.calls.filter(call => call.command === "mirror_start").length, 1);
+  assert.equal(h.render().find(node => node.children.includes("正在断开…")).props.disabled, true);
+  h.releaseStop(); await tick();
+  assert.equal(h.render().some(node => node.children.includes("连接")), false);
+  h.releaseAudioClose(); await tick();
+  connect(h.render()); await tick();
+  assert.equal(h.calls.filter(call => call.command === "mirror_start").length, 2);
+  h.unmount(); await tick();
+});
+
+test("closing a tab during startup still stops the late session without updating an unmounted panel", async () => {
+  const h = harness({ delayedStart: true });
+  h.render(); await tick(); connect(h.render()); await tick();
+  const id = h.calls.find(call => call.command === "mirror_start").args.id;
+  h.unmount(); await tick();
+  assert.equal(h.calls.filter(call => call.command === "mirror_stop" && call.args.id === id).length, 1);
+  h.releaseStart(); await tick();
+  assert.equal(h.calls.filter(call => call.command === "mirror_stop" && call.args.id === id).length, 2);
 });
 
 test("H.264 config, keyframe recovery, background skipping and pointer coordinates follow the scrcpy protocol", async () => {
@@ -312,7 +378,7 @@ test("H.264 config, keyframe recovery, background skipping and pointer coordinat
   const target = { width: 1080, height: 1920, focus() {}, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 10, top: 20, width: 270, height: 480 }) };
   const event = { pointerId: 1, button: 0, clientX: 145, clientY: 260, currentTarget: target, preventDefault() {} };
   canvas.props.onPointerDown(event); canvas.props.onPointerUp(event); await tick();
-  const controls = h.calls.filter(call => call.command === "mirror_control");
+  const controls = h.calls.filter(call => call.command === "mirror_control" && call.args.data[0] === 2);
   assert.equal(controls.length, 2);
   const down = new DataView(Uint8Array.from(controls[0].args.data).buffer);
   assert.equal(down.byteLength, 32); assert.equal(down.getUint8(0), 2); assert.equal(down.getUint8(1), 0);

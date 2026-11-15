@@ -1,12 +1,12 @@
 //! scrcpy 5.0.0+ 协议，统一转换为前端数据包格式。
 use std::{
     collections::HashMap,
-    io::{Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::{Shutdown, TcpStream},
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, Weak,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
     thread,
@@ -28,9 +28,22 @@ fn validate_version(version: &str) -> Result<(), String> {
     }
 }
 type Sessions = Arc<Mutex<HashMap<String, Arc<Session>>>>;
+
+fn remove_session(sessions: &Sessions, id: &str, session: &Arc<Session>) {
+    let mut map = sessions.lock().unwrap();
+    if map
+        .get(id)
+        .is_some_and(|current| Arc::ptr_eq(current, session))
+    {
+        map.remove(id);
+    }
+}
+
 #[derive(Default)]
-pub struct MirrorState(Sessions);
+pub struct MirrorState(Sessions, Mutex<HashMap<String, Weak<Mutex<()>>>>);
 struct Session {
+    id: String,
+    lifecycle: Arc<Mutex<()>>,
     owner: String,
     serial: String,
     port: Mutex<Option<String>>,
@@ -433,20 +446,50 @@ pub async fn mirror_copy_file(
 }
 
 impl Session {
+    fn initialize(
+        &self,
+        previous: &[Arc<Session>],
+        start: impl FnOnce() -> Result<(), String>,
+    ) -> Result<(), String> {
+        let started = Instant::now();
+        log::info!(target: "android_mirror", "connect waiting id={} serial={}", self.id, self.serial);
+        let _guard = self.lifecycle.lock().unwrap();
+        log::info!(target: "android_mirror", "connect lock acquired id={} serial={} waited_ms={}", self.id, self.serial, started.elapsed().as_millis());
+        for old in previous {
+            old.release_resources(true);
+        }
+        if self.stopped.load(Ordering::Acquire) {
+            return Err("连接已取消".into());
+        }
+        start()
+    }
+
     fn stop(&self) {
         self.stop_with_forward_cleanup(true);
     }
 
     fn stop_with_forward_cleanup(&self, cleanup_forward: bool) {
         self.stopped.store(true, Ordering::Release);
+        let _guard = self.lifecycle.lock().unwrap();
+        self.release_resources(cleanup_forward);
+    }
+
+    // 调用方持有设备锁，确保旧会话资源释放后才启动新会话。
+    fn release_resources(&self, cleanup_forward: bool) {
+        let started = Instant::now();
+        log::info!(target: "android_mirror", "stop begin id={} serial={} owner={} cleanup_forward={cleanup_forward}", self.id, self.serial, self.owner);
         for socket in [&self.video, &self.audio, &self.control] {
             if let Some(stream) = socket.lock().unwrap().take() {
                 let _ = stream.shutdown(Shutdown::Both);
             }
         }
         if let Some(mut child) = self.child.lock().unwrap().take() {
-            let _ = child.kill();
-            let _ = child.wait();
+            if let Err(error) = child.kill() {
+                log::warn!(target: "android_mirror", "stop child kill id={} error={error}", self.id);
+            }
+            if let Err(error) = child.wait() {
+                log::warn!(target: "android_mirror", "stop child wait id={} error={error}", self.id);
+            }
         }
         if let Some(port) = self.port.lock().unwrap().take().filter(|_| cleanup_forward) {
             let mut command = adb();
@@ -457,16 +500,70 @@ impl Session {
                 "--remove",
                 &format!("tcp:{port}"),
             ]);
-            let _ = output(command);
+            if let Err(error) = output(command) {
+                log::warn!(target: "android_mirror", "stop forward cleanup id={} serial={} port={port} error={error}", self.id, self.serial);
+            }
         }
+        log::info!(target: "android_mirror", "stop complete id={} serial={} elapsed_ms={}", self.id, self.serial, started.elapsed().as_millis());
     }
 }
 
 impl MirrorState {
+    fn reserve(
+        &self,
+        owner: &str,
+        id: &str,
+        serial: String,
+    ) -> Result<(Arc<Session>, Vec<Arc<Session>>), String> {
+        let mut map = self.0.lock().unwrap();
+        if map.contains_key(id) {
+            return Err("投屏会话已存在".into());
+        }
+        let previous: Vec<_> = map
+            .values()
+            .filter(|session| session.serial == serial)
+            .cloned()
+            .collect();
+        if previous
+            .iter()
+            .any(|session| !session.stopped.load(Ordering::Acquire))
+        {
+            log::warn!(target: "android_mirror", "connect rejected id={id} serial={serial} owner={owner} reason=device_busy");
+            return Err("该设备已有投屏会话，请先断开后再连接。".into());
+        }
+        let lifecycle = {
+            let mut locks = self.1.lock().unwrap();
+            locks.retain(|_, lock| lock.strong_count() > 0);
+            let lock = locks
+                .get(&serial)
+                .and_then(Weak::upgrade)
+                .unwrap_or_else(|| Arc::new(Mutex::new(())));
+            locks.insert(serial.clone(), Arc::downgrade(&lock));
+            lock
+        };
+        let session = Arc::new(Session {
+            id: id.into(),
+            lifecycle,
+            owner: owner.into(),
+            serial,
+            port: Mutex::new(None),
+            child: Mutex::new(None),
+            video: Mutex::new(None),
+            audio: Mutex::new(None),
+            control: Mutex::new(None),
+            stopped: AtomicBool::new(false),
+            visible: AtomicBool::new(true),
+        });
+        map.insert(id.into(), session.clone());
+        Ok((session, previous))
+    }
+
     pub fn close_window(&self, owner: &str) {
+        log::info!(target: "android_mirror", "window cleanup owner={owner}");
         self.close_matching(|s| s.owner == owner);
     }
     pub fn shutdown(&self) {
+        log::info!(target: "android_mirror", "application shutdown");
         let sessions = {
             let mut map = self.0.lock().unwrap();
             map.drain().map(|(_, session)| session).collect::<Vec<_>>()
@@ -477,18 +574,20 @@ impl MirrorState {
     }
     fn close_matching(&self, matches: impl Fn(&Session) -> bool) {
         let sessions = {
-            let mut map = self.0.lock().unwrap();
+            let map = self.0.lock().unwrap();
             let keys: Vec<_> = map
                 .iter()
                 .filter(|(_, s)| matches(s))
                 .map(|(k, _)| k.clone())
                 .collect();
             keys.iter()
-                .filter_map(|k| map.remove(k))
+                .filter_map(|k| map.get(k).map(|session| (k.clone(), session.clone())))
+                .inspect(|(_, session)| session.stopped.store(true, Ordering::Release))
                 .collect::<Vec<_>>()
         };
-        for session in sessions {
+        for (id, session) in sessions {
             session.stop();
+            remove_session(&self.0, &id, &session);
         }
     }
     fn session(&self, owner: &str, id: &str) -> Result<Arc<Session>, String> {
@@ -761,6 +860,27 @@ fn server_tools() -> Result<(PathBuf, String), String> {
 
 static NEXT_ID: AtomicU32 = AtomicU32::new(1);
 
+fn collect_server_logs(
+    reader: impl Read + Send + 'static,
+    id: String,
+    serial: String,
+    stream: &'static str,
+) {
+    thread::spawn(move || {
+        for line in BufReader::new(reader).lines() {
+            match line {
+                Ok(line) => {
+                    log::info!(target: "android_mirror", "server id={id} serial={serial} stream={stream} message={}", line.chars().take(2048).collect::<String>())
+                }
+                Err(error) => {
+                    log::warn!(target: "android_mirror", "server log ended id={id} serial={serial} stream={stream} error={error}");
+                    break;
+                }
+            }
+        }
+    });
+}
+
 fn start(
     session: &Arc<Session>,
     max_size: u32,
@@ -830,13 +950,19 @@ fn start(
             if session.stopped.load(Ordering::Acquire) {
                 return Err("连接已取消".into());
             }
-            *child = Some(
-                command
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-                    .map_err(|e| e.to_string())?,
-            );
+            let mut process = command
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            if let Some(stdout) = process.stdout.take() {
+                collect_server_logs(stdout, session.id.clone(), session.serial.clone(), "stdout");
+            }
+            if let Some(stderr) = process.stderr.take() {
+                collect_server_logs(stderr, session.id.clone(), session.serial.clone(), "stderr");
+            }
+            log::info!(target: "android_mirror", "server launched id={} serial={} child_pid={}", session.id, session.serial, process.id());
+            *child = Some(process);
         }
         let deadline = Instant::now() + Duration::from_secs(12);
         log::info!(target: "android_mirror", "stage=wait-video-socket serial={} port={port}", session.serial);
@@ -912,17 +1038,27 @@ fn start(
                     .set_read_timeout(Some(Duration::from_secs(10)))
                     .map_err(|e| e.to_string())?;
                 read_audio_header(&mut audio)?;
+                log::info!(target: "android_mirror", "audio ready id={} serial={} codec=raw sample_rate=48000 channels=2", audio_session.id, audio_session.serial);
                 audio.set_read_timeout(None).map_err(|e| e.to_string())?;
+                let mut stats_started = Instant::now();
+                let mut packets = 0u64;
+                let mut bytes = 0u64;
                 loop {
                     let packet = read_audio_packet(&mut audio)?;
+                    packets += 1;
+                    bytes += packet.len() as u64;
                     audio_channel
                         .send(Response::new(packet))
                         .map_err(|e| e.to_string())?;
+                    if stats_started.elapsed() >= Duration::from_secs(5) {
+                        log::info!(target: "android_mirror", "audio received id={} serial={} packets={packets} bytes={bytes} elapsed_ms={}", audio_session.id, audio_session.serial, stats_started.elapsed().as_millis());
+                        stats_started = Instant::now();
+                        packets = 0;
+                        bytes = 0;
+                    }
                 }
             })();
-            if !audio_session.stopped.load(Ordering::Acquire) {
-                log::info!("Android mirror audio ended: {result:?}");
-            }
+            log::info!(target: "android_mirror", "audio ended id={} serial={} stopped={} result={result:?}", audio_session.id, audio_session.serial, audio_session.stopped.load(Ordering::Acquire));
             if let Some(stream) = audio_session.audio.lock().unwrap().take() {
                 let _ = stream.shutdown(Shutdown::Both);
             }
@@ -1045,7 +1181,7 @@ pub async fn mirror_start(
     channel: Channel<Response>,
     audio_channel: Channel<Response>,
 ) -> Result<(), String> {
-    log::info!(target: "android_mirror", "connect request window={} serial={} max_size={max_size}", window.label(), serial);
+    log::info!(target: "android_mirror", "connect request id={id} window={} serial={} max_size={max_size}", window.label(), serial);
     if serial.is_empty()
         || serial.len() > 256
         || serial.starts_with('-')
@@ -1054,34 +1190,17 @@ pub async fn mirror_start(
         return Err("无效的设备或分辨率".into());
     }
     let sessions = state.0.clone();
-    let session = Arc::new(Session {
-        owner: window.label().into(),
-        serial,
-        port: Mutex::new(None),
-        child: Mutex::new(None),
-        video: Mutex::new(None),
-        audio: Mutex::new(None),
-        control: Mutex::new(None),
-        stopped: AtomicBool::new(false),
-        visible: AtomicBool::new(true),
-    });
-    {
-        let mut map = sessions.lock().unwrap();
-        if map.contains_key(&id) {
-            return Err("投屏会话已存在".into());
-        }
-        map.insert(id.clone(), session.clone());
-    }
+    let (session, previous) = state.reserve(window.label(), &id, serial)?;
     tauri::async_runtime::spawn_blocking(move || {
-        log::info!(target: "android_mirror", "connect worker started serial={}", session.serial);
-        let result = start(&session, max_size, channel, audio_channel);
+        let started = Instant::now();
+        let result = session.initialize(&previous, || start(&session, max_size, channel, audio_channel));
         match &result {
-            Ok(()) => log::info!(target: "android_mirror", "connect worker initialized serial={}", session.serial),
-            Err(error) => log::error!(target: "android_mirror", "connect worker failed serial={} error={error}", session.serial),
+            Ok(()) => log::info!(target: "android_mirror", "connect worker initialized id={id} serial={} elapsed_ms={}", session.serial, started.elapsed().as_millis()),
+            Err(error) => log::error!(target: "android_mirror", "connect worker failed id={id} serial={} error={error}", session.serial),
         }
         if result.is_err() {
             session.stop();
-            sessions.lock().unwrap().remove(&id);
+            remove_session(&sessions, &id, &session);
         }
         result
     })
@@ -1096,17 +1215,19 @@ pub async fn mirror_stop(
     id: String,
 ) -> Result<(), String> {
     let session = {
-        let mut map = state.0.lock().unwrap();
-        if map.get(&id).is_some_and(|s| s.owner == window.label()) {
-            map.remove(&id)
-        } else {
-            None
-        }
+        let map = state.0.lock().unwrap();
+        map.get(&id)
+            .filter(|s| s.owner == window.label())
+            .cloned()
+            .inspect(|session| session.stopped.store(true, Ordering::Release))
     };
     if let Some(session) = session {
-        tauri::async_runtime::spawn_blocking(move || session.stop())
+        log::info!(target: "android_mirror", "stop requested id={id} serial={} owner={}", session.serial, session.owner);
+        let stopping_session = session.clone();
+        tauri::async_runtime::spawn_blocking(move || stopping_session.stop())
             .await
             .map_err(|e| e.to_string())?;
+        remove_session(&state.0, &id, &session);
     }
     Ok(())
 }
@@ -1384,6 +1505,8 @@ mod tests {
 
     fn session(owner: &str) -> Arc<Session> {
         Arc::new(Session {
+            id: owner.into(),
+            lifecycle: Arc::new(Mutex::new(())),
             owner: owner.into(),
             serial: "test".into(),
             port: Mutex::new(None),
@@ -1576,6 +1699,80 @@ mod tests {
             invalid[8..12].copy_from_slice(&size.to_be_bytes());
             assert!(read_audio_packet(&mut Cursor::new(invalid)).is_err());
         }
+    }
+
+    #[test]
+    fn device_reservations_reject_active_sessions_and_serialize_reconnect_cleanup() {
+        let state = MirrorState::default();
+        let (old, _) = state.reserve("main", "old", "phone".into()).unwrap();
+        assert!(state.reserve("main", "duplicate", "phone".into()).is_err());
+        assert!(
+            state
+                .reserve("other-window", "foreign", "phone".into())
+                .is_err()
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut reader = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (_server, _) = listener.accept().unwrap();
+        *old.audio.lock().unwrap() = Some(reader.try_clone().unwrap());
+        old.stopped.store(true, Ordering::Release);
+        let (next, previous) = state.reserve("main", "next", "phone".into()).unwrap();
+        assert!(Arc::ptr_eq(&old.lifecycle, &next.lifecycle));
+        let (other, _) = state
+            .reserve("main", "other", "second-phone".into())
+            .unwrap();
+        let guard = old.lifecycle.lock().unwrap();
+        assert!(other.lifecycle.try_lock().is_ok());
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let worker = thread::spawn(move || {
+            next.initialize(&previous, || {
+                reader
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                let error = reader.read_exact(&mut [0]).unwrap_err();
+                assert!(!matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ));
+                sender.send(()).unwrap();
+                Ok(())
+            })
+        });
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_millis(100)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        drop(guard);
+        receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        worker.join().unwrap().unwrap();
+        state.shutdown();
+    }
+
+    #[test]
+    fn late_cleanup_does_not_remove_a_replacement_with_the_same_id() {
+        let state = MirrorState::default();
+        let (old, _) = state.reserve("main", "reused", "phone".into()).unwrap();
+        old.stop();
+        remove_session(&state.0, "reused", &old);
+        let (replacement, _) = state.reserve("main", "reused", "phone".into()).unwrap();
+        assert!(Arc::ptr_eq(&old.lifecycle, &replacement.lifecycle));
+        remove_session(&state.0, "reused", &old);
+        assert!(state.session("main", "reused").is_ok());
+        state.shutdown();
+    }
+
+    #[test]
+    fn cancelled_reservations_never_start_a_server() {
+        let state = MirrorState::default();
+        let (session, previous) = state.reserve("main", "cancelled", "phone".into()).unwrap();
+        session.stopped.store(true, Ordering::Release);
+        assert_eq!(
+            session
+                .initialize(&previous, || panic!("cancelled session started"))
+                .unwrap_err(),
+            "连接已取消"
+        );
+        state.shutdown();
     }
 
     #[test]
