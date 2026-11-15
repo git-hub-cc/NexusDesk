@@ -13,7 +13,8 @@
     "nexusdesk.navigation.gitlabRepo",
     "nexusdesk.navigation.giteeToken",
     "nexusdesk.navigation.giteeRepo",
-    "nexusdesk.navigation.provider"
+    "nexusdesk.navigation.provider",
+    "nexusdesk.navigation.syncEnabled"
   ],
   "prefixes": ["sftp-profile:", "sftp-label:", "nexusdesk-ui:"]
 }

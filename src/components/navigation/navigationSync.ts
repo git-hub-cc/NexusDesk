@@ -5,6 +5,7 @@ export type NavigationSyncProvider = "github" | "gitlab" | "gitee";
 const TOKEN_KEYS: Record<NavigationSyncProvider, string> = { github: "nexusdesk.navigation.githubToken", gitlab: "nexusdesk.navigation.gitlabToken", gitee: "nexusdesk.navigation.giteeToken" };
 const REPO_KEYS: Record<NavigationSyncProvider, string> = { github: "nexusdesk.navigation.githubRepo", gitlab: "nexusdesk.navigation.gitlabRepo", gitee: "nexusdesk.navigation.giteeRepo" };
 const PROVIDER_KEY = "nexusdesk.navigation.provider";
+const SYNC_ENABLED_KEY = "nexusdesk.navigation.syncEnabled";
 const LEGACY_TOKEN_KEY = "navhub-github-token";
 const LEGACY_REPO_KEY = "navhub-github-repo";
 const DATA_FILE = "navhub-data.json";
@@ -243,6 +244,7 @@ async function connect(tokenValue: string, repoValue: string, createIfMissing: b
     }
     await push(merged);
     ready = true;
+    settingsStorage.setItem(SYNC_ENABLED_KEY, "true");
     update({ status: "connected", lastSync: Date.now(), error: "" });
     return merged;
   } catch (error) {
@@ -258,7 +260,8 @@ export function initializeNavigationSync(): Promise<NavigationData | null> {
   initialized = (async () => {
     const storedProvider = settingsStorage.getItem(PROVIDER_KEY);
     let provider: NavigationSyncProvider = storedProvider === "gitlab" || storedProvider === "gitee" ? storedProvider : "github";
-    current = { ...current, provider };
+    update({ provider });
+    if (settingsStorage.getItem(SYNC_ENABLED_KEY) === "false") return null;
     let savedToken = settingsStorage.getItem(TOKEN_KEYS[provider]) || "";
     let savedRepo = settingsStorage.getItem(REPO_KEYS[provider]) || "";
     if (!savedToken) {
@@ -285,7 +288,8 @@ export function initializeNavigationSync(): Promise<NavigationData | null> {
 
 export async function connectNavigationSync(tokenValue: string, repoValue: string, provider: NavigationSyncProvider) {
   initialized = undefined;
-  return connect(tokenValue, repoValue, true, provider);
+  const savedToken = settingsStorage.getItem(TOKEN_KEYS[provider]) || "";
+  return connect(tokenValue.trim() || savedToken, repoValue, true, provider);
 }
 
 export async function syncNavigationNow() {
@@ -310,14 +314,15 @@ export async function syncNavigationNow() {
   }
 }
 
-export function disconnectNavigationSync() {
+export async function disconnectNavigationSync() {
   window.clearTimeout(saveTimer);
+  ready = false;
+  settingsStorage.setItem(SYNC_ENABLED_KEY, "false");
+  await syncQueue;
   token = "";
   remoteSha = null;
   remoteFileExists = false;
   remoteData = null;
   ready = false;
-  settingsStorage.setItem(TOKEN_KEYS[current.provider], "");
-  settingsStorage.setItem(REPO_KEYS[current.provider], "");
   update({ status: "disconnected", user: "", repo: "", lastSync: null, error: "" });
 }
