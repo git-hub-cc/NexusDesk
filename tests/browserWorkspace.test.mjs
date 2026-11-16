@@ -18,7 +18,7 @@ globalThis.__browserTest = {
   useLayoutStore: { setState: () => {} }, showError: () => {},
   gitApi: { status: async () => { throw new Error("No repository"); } },
   create, debounce, persist: creator => creator, globalJsonStorage: undefined,
-  fsApi: { readDirectory: async () => [], readFile: async () => "restored content", initProjectDb: async () => {}, syncProjectIndex: async () => {}, touchFile: async path => touched.push(path), writeFile: async path => written.push(path) },
+  fsApi: { readDirectory: async () => [], readFileSnapshot: async () => ({ content: "restored content", version: "restored-version" }), initProjectDb: async () => {}, syncProjectIndex: async () => {}, touchFile: async path => touched.push(path), writeFile: async path => written.push(path) },
 };
 const source = pathDeclarations + readFileSync(new URL("../src/store/workspaceStore.ts", import.meta.url), "utf8").replace(/^import .*;$/gm, "");
 const compiled = ts.transpileModule("const { create, debounce, persist, fsApi, isSnapshot, isRemotePath, isTauri, tauriInvoke, restoreProjectLayout, useTerminalStore, useLayoutStore, showError, gitApi, globalJsonStorage } = globalThis.__browserTest;\n" + source,

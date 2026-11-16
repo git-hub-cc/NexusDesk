@@ -75,10 +75,12 @@ async function boot() {
       event.preventDefault();
       if (closing) return;
       closing = true;
+      let savingFiles = true;
       try {
         snapshotUI();
         const { flushPendingWrites } = await import("./store/workspaceStore");
         await flushPendingWrites();
+        savingFiles = false;
         await flushSettingsAutosaves();
         snapshotUI();
         await flushGlobalSettings();
@@ -88,7 +90,7 @@ async function boot() {
       catch (error) {
         closeReady = false;
         const { showError } = await import("./lib/dialogs");
-        showError(`全局配置保存失败，请重试关闭窗口。\n${String(error)}`);
+        showError(`${savingFiles ? "文件保存失败，请先处理文件保存问题。" : "全局配置保存失败，请重试关闭窗口。"}\n${String(error)}`);
       } finally { closing = false; }
     });
   }

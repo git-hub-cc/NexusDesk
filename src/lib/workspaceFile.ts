@@ -23,9 +23,10 @@ export async function openWorkspaceFile(path: string, options: { title?: string;
   const existing = findWorkspaceFile(tabs, path);
   let changedProject = false;
   const stop = useWorkspaceStore.subscribe(state => { if (state.rootPath !== root) changedProject = true; });
-  let content: string;
+  let snapshot: { content: string; version?: string };
   try {
-    content = existing?.content ?? (canReadAsText(path) ? await fsApi.readFile(path) : "");
+    snapshot = existing?.content !== undefined ? { content: existing.content, version: existing.diskVersion }
+      : canReadAsText(path) ? await fsApi.readFileSnapshot(path) : { content: "" };
   } finally { stop(); }
   const current = useWorkspaceStore.getState();
   if (changedProject || current.rootPath !== root || options.isCurrent && !options.isCurrent()) return false;
@@ -34,7 +35,7 @@ export async function openWorkspaceFile(path: string, options: { title?: string;
   current.openTab({
     id: latest?.id ?? normalizePath(path), path: latest?.path ?? path,
     title: options.title ?? path.split(/[/\\]/).pop() ?? path,
-    content: latest?.content ?? content, isDirty: latest?.isDirty ?? false,
+    content: latest?.content ?? snapshot.content, diskVersion: latest?.diskVersion ?? snapshot.version, isDirty: latest?.isDirty ?? false,
     saveError: latest?.saveError, markdownMode: latest?.markdownMode,
   }, { ...options, pane });
   return true;

@@ -302,6 +302,76 @@ pub async fn read_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub async fn text_version(content: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::core::text_file::version(&content))
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextSnapshot {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    version: String,
+}
+
+#[tauri::command]
+pub async fn read_file_snapshot(
+    path: String,
+    allow_missing: Option<bool>,
+    known_version: Option<String>,
+) -> Result<TextSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if allow_missing == Some(true)
+            && crate::core::text_file::metadata(std::path::Path::new(&path))?.is_none()
+        {
+            return Ok(TextSnapshot {
+                content: Some(String::new()),
+                version: "missing".into(),
+            });
+        }
+        let content = fs::read_markdown_file(&path)?;
+        let version = crate::core::text_file::version(&content);
+        let content = if known_version.as_deref() == Some(&version) {
+            None
+        } else {
+            Some(content)
+        };
+        Ok(TextSnapshot { content, version })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextSaveResult {
+    logical_changed: bool,
+    version: String,
+}
+
+#[tauri::command]
+pub async fn write_file_snapshot(
+    path: String,
+    content: String,
+    expected_version: String,
+    state: State<'_, AppState>,
+) -> Result<TextSaveResult, String> {
+    let connection = state.db_conn.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let logical_changed =
+            write_file_checked(&path, &content, &connection, Some(&expected_version))?;
+        Ok(TextSaveResult {
+            logical_changed,
+            version: crate::core::text_file::version(&content),
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub async fn write_file(
     path: String,
     content: String,
@@ -318,6 +388,15 @@ fn write_file_blocking(
     content: &str,
     connection: &std::sync::Mutex<Option<rusqlite::Connection>>,
 ) -> Result<bool, String> {
+    write_file_checked(path, content, connection, None)
+}
+
+fn write_file_checked(
+    path: &str,
+    content: &str,
+    connection: &std::sync::Mutex<Option<rusqlite::Connection>>,
+    expected_version: Option<&str>,
+) -> Result<bool, String> {
     use std::sync::{Arc, Mutex, OnceLock, Weak};
     static WRITES: OnceLock<Mutex<std::collections::HashMap<String, Weak<Mutex<()>>>>> =
         OnceLock::new();
@@ -327,10 +406,15 @@ fn write_file_blocking(
             .lock()
             .map_err(|e| e.to_string())?;
         writes.retain(|_, lock| lock.strong_count() > 0);
+        let canonical = std::path::Path::new(path).canonicalize().ok();
+        let identity = canonical
+            .as_deref()
+            .unwrap_or(std::path::Path::new(path))
+            .to_string_lossy();
         let key = if cfg!(windows) {
-            path.replace('\\', "/").to_lowercase()
+            identity.replace('\\', "/").to_lowercase()
         } else {
-            path.to_owned()
+            identity.into_owned()
         };
         let lock = writes
             .get(&key)
@@ -340,11 +424,29 @@ fn write_file_blocking(
         lock
     };
     let _file_guard = file_lock.lock().map_err(|e| e.to_string())?;
+    let before = crate::core::text_file::metadata(std::path::Path::new(path))?;
     let (old, existed) = match std::fs::read_to_string(path) {
         Ok(text) => (text, true),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => (String::new(), false),
         Err(e) => return Err(e.to_string()),
     };
+    let disk_version = if existed {
+        crate::core::text_file::version(&old)
+    } else {
+        "missing".into()
+    };
+    if !crate::core::text_file::unchanged(
+        &before,
+        &crate::core::text_file::metadata(std::path::Path::new(path))?,
+    ) {
+        return Err(crate::core::text_file::CONFLICT.into());
+    }
+    if expected_version.is_some_and(|expected| expected != disk_version)
+        && (!existed || old != content)
+    {
+        return Err(crate::core::text_file::CONFLICT.into());
+    }
+    let content_changed = !existed || old != content;
     let original_time = std::fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()
@@ -355,15 +457,33 @@ fn write_file_blocking(
     let logical_type = markdown.then(|| fs::markdown_type(content)).flatten();
     let logical_changed = !existed || (markdown && fs::markdown_type(&old) != logical_type);
     let links = fs::collect_links(std::path::Path::new(path), content)?;
+    // 大文件写入临时文件时不占用项目数据库锁。
+    let prepared = if content_changed {
+        Some(crate::core::text_file::prepare_write(
+            std::path::Path::new(path),
+            content,
+            &before,
+        )?)
+    } else {
+        None
+    };
     {
         let guard = connection.lock().map_err(|e| e.to_string())?;
         if let Some(conn) = guard.as_ref() {
             let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-            crate::core::local_history::record(&tx, path, &old, content, original_time)?;
+            if content_changed {
+                crate::core::local_history::record(&tx, path, &old, content, original_time)?;
+                prepared
+                    .expect("changed content has a prepared write")
+                    .commit()?;
+            }
             tx.commit().map_err(|e| e.to_string())?;
+        } else {
+            if let Some(prepared) = prepared {
+                prepared.commit()?;
+            }
         }
     }
-    fs::write_markdown_file(path, content)?;
     let modified = std::fs::metadata(path)
         .and_then(|m| m.modified())
         .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
@@ -381,7 +501,249 @@ fn write_file_blocking(
         tx.commit().map_err(|e| e.to_string())?;
     }
     fs::invalidate_index_snapshot(path);
-    Ok(logical_changed)
+    Ok(logical_changed && content_changed)
+}
+
+#[cfg(test)]
+mod text_save_tests {
+    use super::*;
+    use crate::core::{local_history, text_file};
+    use std::sync::Mutex;
+
+    #[tokio::test]
+    async fn matching_versions_do_not_send_file_contents_back_to_the_watcher() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("note.txt");
+        std::fs::write(&path, "unchanged").unwrap();
+        let baseline = text_file::version("unchanged");
+        let snapshot = read_file_snapshot(
+            path.to_string_lossy().into_owned(),
+            None,
+            Some(baseline.clone()),
+        )
+        .await
+        .unwrap();
+        assert!(snapshot.content.is_none());
+        assert_eq!(snapshot.version, baseline);
+        let snapshot = read_file_snapshot(
+            path.to_string_lossy().into_owned(),
+            None,
+            Some("outdated".into()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(snapshot.content.as_deref(), Some("unchanged"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_replacement_rolls_back_history_and_can_be_retried() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("locked.md");
+        let connection = Mutex::new(Some(
+            db::init_db(Some(directory.path().to_str().unwrap())).unwrap(),
+        ));
+        std::fs::write(&path, "original").unwrap();
+        let baseline = text_file::version("original");
+        let locked = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&path)
+            .unwrap();
+        assert!(
+            write_file_checked(
+                path.to_str().unwrap(),
+                "local",
+                &connection,
+                Some(&baseline)
+            )
+            .is_err()
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "original");
+        assert!(
+            local_history::list(
+                connection.lock().unwrap().as_ref().unwrap(),
+                path.to_str().unwrap()
+            )
+            .unwrap()
+            .is_empty()
+        );
+        drop(locked);
+        write_file_checked(
+            path.to_str().unwrap(),
+            "local",
+            &connection,
+            Some(&baseline),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "local");
+    }
+
+    #[test]
+    fn same_size_external_changes_require_a_new_baseline_and_preserve_history() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("note.md");
+        let connection = Mutex::new(Some(
+            db::init_db(Some(directory.path().to_str().unwrap())).unwrap(),
+        ));
+        std::fs::write(&path, "first").unwrap();
+        let baseline = text_file::version("first");
+        std::fs::write(&path, "other").unwrap();
+        let error = write_file_checked(
+            path.to_str().unwrap(),
+            "local",
+            &connection,
+            Some(&baseline),
+        )
+        .unwrap_err();
+        assert!(error.contains("FILE_CONFLICT:"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "other");
+        assert!(
+            local_history::list(
+                connection.lock().unwrap().as_ref().unwrap(),
+                path.to_str().unwrap()
+            )
+            .unwrap()
+            .is_empty()
+        );
+        write_file_checked(
+            path.to_str().unwrap(),
+            "local",
+            &connection,
+            Some(&text_file::version("other")),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "local");
+        let guard = connection.lock().unwrap();
+        let conn = guard.as_ref().unwrap();
+        let entries = local_history::list(conn, path.to_str().unwrap()).unwrap();
+        assert!(entries.iter().any(|entry| {
+            local_history::content(conn, path.to_str().unwrap(), entry.id).unwrap() == "other"
+        }));
+        let count = entries.len();
+        write_file_checked(
+            path.to_str().unwrap(),
+            "local",
+            &Mutex::new(None),
+            Some(&baseline),
+        )
+        .unwrap();
+        assert_eq!(
+            local_history::list(conn, path.to_str().unwrap())
+                .unwrap()
+                .len(),
+            count
+        );
+    }
+
+    #[test]
+    fn retrying_an_already_written_file_repairs_link_metadata() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("note.md");
+        let connection = Mutex::new(Some(
+            db::init_db(Some(directory.path().to_str().unwrap())).unwrap(),
+        ));
+        std::fs::write(&path, "[[target.md]]").unwrap();
+        let version = text_file::version("[[target.md]]");
+        write_file_checked(
+            path.to_str().unwrap(),
+            "[[target.md]]",
+            &connection,
+            Some(&version),
+        )
+        .unwrap();
+        {
+            let guard = connection.lock().unwrap();
+            guard
+                .as_ref()
+                .unwrap()
+                .execute("DELETE FROM links", [])
+                .unwrap();
+        }
+        assert!(
+            !write_file_checked(
+                path.to_str().unwrap(),
+                "[[target.md]]",
+                &connection,
+                Some("stale-version"),
+            )
+            .unwrap()
+        );
+        let guard = connection.lock().unwrap();
+        assert_eq!(
+            db::get_links(guard.as_ref().unwrap(), path.to_str().unwrap(), false)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn deleted_files_are_not_recreated_without_explicit_missing_baseline() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("deleted.md");
+        let connection = Mutex::new(None);
+        let error = write_file_checked(
+            path.to_str().unwrap(),
+            "local",
+            &connection,
+            Some(&text_file::version("old")),
+        )
+        .unwrap_err();
+        assert!(error.contains("FILE_CONFLICT:"));
+        assert!(!path.exists());
+        write_file_checked(
+            path.to_str().unwrap(),
+            "local",
+            &connection,
+            Some("missing"),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "local");
+    }
+
+    #[test]
+    fn concurrent_windows_cannot_both_save_against_the_same_baseline() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("shared.md");
+        std::fs::write(&path, "baseline").unwrap();
+        let barrier = std::sync::Barrier::new(2);
+        let connection = Mutex::new(None);
+        let outcomes = std::thread::scope(|scope| {
+            let handles: Vec<_> = ["first edit", "second edit"]
+                .into_iter()
+                .map(|content| {
+                    let path = &path;
+                    let barrier = &barrier;
+                    let connection = &connection;
+                    scope.spawn(move || {
+                        barrier.wait();
+                        write_file_checked(
+                            path.to_str().unwrap(),
+                            content,
+                            connection,
+                            Some(&text_file::version("baseline")),
+                        )
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(outcomes.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|result| result
+                    .as_ref()
+                    .is_err_and(|error| error.contains("FILE_CONFLICT:")))
+                .count(),
+            1
+        );
+    }
 }
 
 #[tauri::command]

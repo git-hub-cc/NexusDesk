@@ -5,6 +5,7 @@ import { fsApi, type LocalHistoryEntry } from "@/lib/api";
 import { flushPendingWrites, restoreLocalVersion, useWorkspaceStore } from "@/store/workspaceStore";
 import { EditableGitDiff } from "./EditableGitDiff";
 import { isBinaryAsset } from "@/lib/assets";
+import { samePath } from "@/lib/paths";
 
 export function LocalHistoryDialog({ path, onClose }: { path: string; onClose: () => void }) {
   const [entries, setEntries] = useState<LocalHistoryEntry[]>([]);
@@ -16,6 +17,7 @@ export function LocalHistoryDialog({ path, onClose }: { path: string; onClose: (
   const [busy, setBusy] = useState(false);
   const request = useRef(0);
   const writes = useRef(Promise.resolve());
+  const diskVersion = useRef<string | undefined>(undefined);
   const load = async () => {
     if (isBinaryAsset(path)) throw new Error("二进制文件不支持本地文本历史");
     await flushPendingWrites();
@@ -31,10 +33,10 @@ export function LocalHistoryDialog({ path, onClose }: { path: string; onClose: (
     setPatch(""); setContents(undefined); setLoading(true);
     if (isBinaryAsset(path)) { setLoading(false); return; }
     if (selected === undefined) { setLoading(false); return; }
-    void Promise.all([fsApi.historyContent(path, selected), fsApi.readFile(path)])
-      .then(async ([left, right]) => {
-        const diff = await fsApi.compareText(left, right);
-        if (token === request.current) { setPatch(diff); setContents([left, right]); }
+    void Promise.all([fsApi.historyContent(path, selected), fsApi.readFileSnapshot(path)])
+      .then(async ([left, snapshot]) => {
+        const diff = await fsApi.compareText(left, snapshot.content);
+        if (token === request.current) { diskVersion.current = snapshot.version; setPatch(diff); setContents([left, snapshot.content]); }
       })
       .catch(e => { if (token === request.current) setError(String(e)); })
       .finally(() => { if (token === request.current) setLoading(false); });
@@ -53,13 +55,18 @@ export function LocalHistoryDialog({ path, onClose }: { path: string; onClose: (
 
   const handleChange = (newContent: string) => {
     const state = useWorkspaceStore.getState();
-    const tab = [...state.leftTabs, ...state.rightTabs].find(t => t.path === path && !t.revision);
+    const tab = [...state.leftTabs, ...state.rightTabs].find(t => samePath(t.path, path)
+      && !t.revision && !t.browser && !t.diffReadOnly && !t.diffStaged && !t.readOnly);
     if (tab) {
-      const pane = state.leftTabs.some(t => t.id === tab.id) ? "left" : "right";
+      const pane = state.leftTabs.includes(tab) ? "left" : "right";
       state.updateTabContent(tab.id, newContent, pane);
     } else {
       // Serialize writes so an older edit cannot overwrite a newer one.
-      writes.current = writes.current.then(async () => { await fsApi.writeFile(path, newContent); })
+      writes.current = writes.current.then(async () => {
+        if (!diskVersion.current) throw new Error("请重新加载当前文件后再编辑");
+        const result = await fsApi.writeFileSnapshot(path, newContent, diskVersion.current);
+        diskVersion.current = result.version;
+      })
         .catch(e => setError(String(e)));
     }
   };

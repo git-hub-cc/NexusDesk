@@ -51,7 +51,12 @@ export function GitComparison({ tab, pane, onChange }: { tab: Tab; pane: "left" 
   const props = { patch: tab.diff ?? "", title: tab.title, labels: tab.diffLabels, initialEdge: tab.diffEntry?.edge,
     onBoundary: tab.diffContext ? boundary : undefined, navigationBusy: busy };
   return <>
-    {editable ? <EditableGitDiff {...props} path={tab.path} onChange={onChange} /> : <GitDiffEditor {...props} staged={!!tab.diffStaged} />}
+    {editable ? <EditableGitDiff key={tab.reloadToken ?? 0} {...props} path={tab.path}
+      initialContent={tab.isDirty ? tab.content : undefined} onChange={onChange} onLoad={snapshot => {
+      const update = (tabs: Tab[]) => tabs.map(item => item.id === tab.id && !item.isDirty
+        ? { ...item, content: snapshot.content, diskVersion: snapshot.version } : item);
+      useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
+    }} /> : <GitDiffEditor {...props} staged={!!tab.diffStaged} />}
     {notice && <div role="status" className="git-diff-navigation-notice" onClick={() => setNotice("")}>{notice}</div>}
   </>;
 }

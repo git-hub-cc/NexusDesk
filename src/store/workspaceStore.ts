@@ -30,6 +30,8 @@ export interface Tab {
   revision?: string;
   isDirty?: boolean;
   saveError?: string;
+  diskVersion?: string;
+  reloadToken?: number;
   markdownMode?: "source" | "preview" | "split"; // 适用于 Markdown, Tree, HTTP 文件的视图模式
   htmlRoot?: string;
   browser?: { root: string; url: string; homeHistory?: { url: string; title: string } };
@@ -47,7 +49,7 @@ export const MIRROR_HOME = "nexusdesk:mirror";
 
 function persistedPinnedTabs(tabs: Tab[]): Tab[] {
   return tabs.filter(tab => tab.isPinned).map(tab => {
-    const { content, isDirty, saveError, suppressInitialDownloads, ...metadata } = tab;
+    const { content, isDirty, saveError, diskVersion, reloadToken, suppressInitialDownloads, ...metadata } = tab;
     // Virtual views need their snapshot; ordinary files are read again at startup.
     return tab.reverseTree || tab.revision || tab.diff !== undefined ? { ...metadata, content } : metadata;
   });
@@ -67,7 +69,7 @@ type ProjectSession = {
 function sessionsByProject(state: WorkspaceState) {
   if (!state.rootPath || !state.pinnedTabsRestored) return state.projectSessions;
   const metadata = (tabs: Tab[]) => tabs.map(tab => {
-    const { content, isDirty, saveError, suppressInitialDownloads, ...rest } = tab;
+    const { content, isDirty, saveError, diskVersion, reloadToken, suppressInitialDownloads, ...rest } = tab;
     return tab.reverseTree || tab.revision || tab.diff !== undefined ? { ...rest, content } : rest;
   });
   return { ...state.projectSessions, [savedPathKey(state.rootPath)]: {
@@ -82,7 +84,7 @@ type SidebarMode = "physical" | "logical" | "graph";
 
 // Keep immutable editor documents outside Zustand until typing pauses.
 const editorChanges = new Map<string, { id: string; pane: PaneType; doc: { toString(): string } }>();
-const syncEditorChanges = debounce(() => flushEditorContent(), 200);
+const syncEditorChanges = debounce(() => flushEditorContent(), 200, { maxWait: 1000 });
 
 export function hasPendingEditorContent(id: string, pane: PaneType) {
   return editorChanges.has(`${pane}:${id}`);
@@ -109,66 +111,136 @@ export function flushEditorContent() {
 // Serialize writes for each file so an older edit cannot overwrite a newer one.
 const pendingWrites = new Map<string, Promise<void>>();
 
-// Transient write provenance; never persisted in the workspace state.
-const recentlySavedPaths = new Map<string, ReturnType<typeof setTimeout>>();
 const savedPathKey = pathKey;
 
-function forgetRecentSave(path: string) {
-  const key = savedPathKey(path);
-  clearTimeout(recentlySavedPaths.get(key));
-  recentlySavedPaths.delete(key);
+type SaveEntry = { path: string; title: string; pane: PaneType; content: string; saved: string | undefined; version?: string; error?: string; schedule: ReturnType<typeof debounce> };
+const saves = new Map<string, SaveEntry>();
+
+function isEditableFile(tab: Tab) {
+  return !tab.revision && !tab.diffReadOnly && !tab.diffStaged && !tab.readOnly && !tab.browser && !tab.reverseTree;
 }
 
-function recordRecentSave(path: string) {
-  forgetRecentSave(path);
-  recentlySavedPaths.set(savedPathKey(path), setTimeout(() => forgetRecentSave(path), 1000));
+function ensureSaveEditor(entry: SaveEntry, focus = false) {
+  const state = useWorkspaceStore.getState();
+  const left = state.leftTabs.find(tab => samePath(tab.path, entry.path) && isEditableFile(tab));
+  const tab = left ?? state.rightTabs.find(tab => samePath(tab.path, entry.path) && isEditableFile(tab));
+  if (tab) {
+    if (focus) state.setActiveTab(tab.id, left ? "left" : "right");
+    return;
+  }
+  // 从内存恢复，文件已删除或无法读取时也不能丢失编辑入口。
+  state.openTab({ id: normalizePath(entry.path), path: entry.path, title: entry.title,
+    content: entry.content, diskVersion: entry.version, isDirty: true, saveError: entry.error }, { pane: entry.pane });
 }
 
-export function isRecentlySavedPath(path: string) {
-  return recentlySavedPaths.has(savedPathKey(path));
+export class FileSaveError extends Error {
+  constructor(public readonly issues: { path: string; kind: "conflict" | "write" | "unsaved"; message: string }[]) {
+    super(`以下文件尚未保存，请处理后重试：\n${issues.map(issue => `${issue.path}：${issue.message}`).join("\n")}`);
+    this.name = "FileSaveError";
+  }
 }
 
-const saves = new Map<string, { content: string; saved: string | undefined; error?: string; schedule: ReturnType<typeof debounce> }>();
+const CONFLICT_ERROR = "FILE_CONFLICT: 文件已被其他程序修改，自动保存已暂停。请查看差异、载入磁盘版本或确认覆盖保存。";
+
+export function isFileConflict(error?: string) {
+  return !!error?.includes("FILE_CONFLICT:");
+}
 
 function markFile(path: string, content: string, isDirty: boolean, saveError?: string) {
-  const update = (tabs: Tab[]) => tabs.map(tab => tab.path === path && !tab.revision && tab.content === content
+  const update = (tabs: Tab[]) => tabs.map(tab => samePath(tab.path, path) && !tab.revision && !tab.diffReadOnly && !tab.diffStaged && tab.content === content
     ? { ...tab, isDirty, saveError } : tab);
   useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
 }
 
 function saveFile(path: string) {
-  const entry = saves.get(path);
-  if (!entry) return;
-  const write = (pendingWrites.get(path) ?? Promise.resolve()).then(async () => {
-    const content = entry.content;
-    if (entry.saved === content && !entry.error) {
-      markFile(path, content, false);
-      return;
-    }
-    try {
-      // notify can arrive before the write command resolves.
-      recordRecentSave(path);
-      const logicalChanged = await fsApi.writeFile(path, content);
-      recordRecentSave(path);
-      entry.saved = content;
-      entry.error = undefined;
-      markFile(path, content, false);
-      if (logicalChanged) await useWorkspaceStore.getState().fetchLogicalTree();
-      else useWorkspaceStore.setState(state => ({ indexRevision: state.indexRevision + 1 }));
-    } catch (error) {
-      forgetRecentSave(path);
-      entry.error = String(error);
-      markFile(path, entry.content, true, entry.error);
-      console.error("Failed to save file:", path, error);
-    }
+  const key = pathKey(path);
+  const entry = saves.get(key);
+  if (!entry || pendingWrites.has(key) || isFileConflict(entry.error)) return;
+  const write = Promise.resolve().then(async () => {
+    do {
+      const content = entry.content;
+      if (entry.saved === content && !entry.error) {
+        markFile(path, content, false);
+        return;
+      }
+      try {
+        let logicalChanged: boolean;
+        if (isRemotePath(path)) {
+          logicalChanged = await fsApi.writeFile(path, content);
+        } else {
+          entry.version ??= await fsApi.textVersion(entry.saved ?? "");
+          const result = await fsApi.writeFileSnapshot(path, content, entry.version);
+          entry.version = result.version;
+          logicalChanged = result.logicalChanged;
+        }
+        entry.saved = content;
+        entry.error = undefined;
+        const updateVersion = (tabs: Tab[]) => tabs.map(tab => samePath(tab.path, path) && !tab.revision && !tab.diffReadOnly && !tab.diffStaged
+          ? { ...tab, diskVersion: entry.version } : tab);
+        useWorkspaceStore.setState(state => ({ leftTabs: updateVersion(state.leftTabs), rightTabs: updateVersion(state.rightTabs) }));
+        markFile(path, content, false);
+        if (logicalChanged) await useWorkspaceStore.getState().fetchLogicalTree();
+        else useWorkspaceStore.setState(state => ({ indexRevision: state.indexRevision + 1 }));
+      } catch (error) {
+        entry.error = isFileConflict(String(error)) ? CONFLICT_ERROR : String(error);
+        entry.schedule.cancel();
+        markFile(path, entry.content, true, entry.error);
+        ensureSaveEditor(entry);
+        console.error("Failed to save file:", path, error);
+        return;
+      }
+    } while (entry.content !== entry.saved && !entry.error);
   }).finally(() => {
-    if (pendingWrites.get(path) === write) pendingWrites.delete(path);
+    if (pendingWrites.get(key) === write) pendingWrites.delete(key);
   });
-  pendingWrites.set(path, write);
+  pendingWrites.set(key, write);
+}
+
+export async function resolveFileConflict(path: string, action: "reload" | "overwrite" | "compare") {
+  flushEditorContent();
+  await pendingWrites.get(pathKey(path));
+  const entry = saves.get(pathKey(path));
+  if (!entry || !isFileConflict(entry.error)) return;
+  ensureSaveEditor(entry, true);
+  const snapshot = await fsApi.readFileSnapshot(entry.path, true);
+  flushEditorContent();
+  if (saves.get(pathKey(path)) !== entry || !isFileConflict(entry.error)) return;
+  if (action === "compare") {
+    const content = entry.content;
+    const diff = await fsApi.compareText(snapshot.content, content);
+    useWorkspaceStore.getState().openTab({
+      id: `conflict:${entry.path}:${Date.now()}`, path: entry.path, title: `${entry.title} · 保存冲突`,
+      content, diff, diffReadOnly: true, diffLabels: ["磁盘版本", "编辑版本"],
+    });
+    return;
+  }
+  entry.schedule.cancel();
+  entry.version = snapshot.version;
+  entry.saved = snapshot.content;
+  entry.error = undefined;
+  if (action === "reload") entry.content = snapshot.content;
+  const update = (tabs: Tab[]) => tabs.map(item => samePath(item.path, entry.path) && isEditableFile(item)
+    ? { ...item, content: entry.content, diskVersion: snapshot.version, reloadToken: action === "reload" ? (item.reloadToken ?? 0) + 1 : item.reloadToken,
+      isDirty: action === "overwrite", saveError: undefined } : item);
+  useWorkspaceStore.setState(current => ({ leftTabs: update(current.leftTabs), rightTabs: update(current.rightTabs) }));
+  if (action === "overwrite") {
+    saveFile(entry.path);
+    await pendingWrites.get(pathKey(entry.path));
+    if (entry.error) throw new Error(entry.error);
+  }
+}
+
+function markExternalConflict(path: string) {
+  const entry = saves.get(pathKey(path));
+  if (entry) {
+    entry.error = CONFLICT_ERROR;
+    entry.schedule.cancel();
+    markFile(path, entry.content, true, entry.error);
+  }
 }
 
 export function retryFileSave(path: string) {
-  saves.get(path)?.schedule.cancel();
+  saves.get(pathKey(path))?.schedule.cancel();
   saveFile(path);
 }
 
@@ -176,18 +248,28 @@ export async function flushPendingWrites() {
   flushEditorContent();
   for (const entry of saves.values()) entry.schedule.flush();
   while (pendingWrites.size) await Promise.all([...pendingWrites.values()]);
-  if ([...saves.values()].some(entry => entry.error || entry.content !== entry.saved)) {
-    throw new Error("Files have unsaved changes or save errors. Retry saving before continuing.");
+  const failed = [...saves.values()].filter(entry => entry.error || entry.content !== entry.saved);
+  if (failed.length) {
+    for (const entry of failed) ensureSaveEditor(entry);
+    ensureSaveEditor(failed[0], true);
+    throw new FileSaveError(failed.map(entry => ({ path: entry.path,
+      kind: isFileConflict(entry.error) ? "conflict" : entry.error ? "write" : "unsaved",
+      message: entry.error ?? "仍有未保存的编辑" })));
   }
 }
 
 export async function restoreLocalVersion(path: string, content: string) {
   await flushPendingWrites();
-  await fsApi.writeFile(path, content);
-  const entry = saves.get(path);
-  if (entry) { entry.schedule.cancel(); entry.content = content; entry.saved = content; entry.error = undefined; }
+  let version: string | undefined;
+  if (isRemotePath(path)) await fsApi.writeFile(path, content);
+  else {
+    const snapshot = await fsApi.readFileSnapshot(path, true);
+    version = (await fsApi.writeFileSnapshot(path, content, snapshot.version!)).version;
+  }
+  const entry = saves.get(pathKey(path));
+  if (entry) { entry.schedule.cancel(); entry.content = content; entry.saved = content; entry.version = version; entry.error = undefined; }
   const update = (tabs: Tab[]) => tabs.map(tab => tab.path === path && !tab.revision && tab.diff === undefined
-    ? { ...tab, content, isDirty: false, saveError: undefined } : tab);
+    ? { ...tab, content, diskVersion: version, isDirty: false, saveError: undefined } : tab);
   useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
   await useWorkspaceStore.getState().fetchLogicalTree();
 }
@@ -438,6 +520,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         flushEditorContent();
         set(update);
       };
+      const closeTabs = (update: (state: WorkspaceState) => Partial<WorkspaceState>) => {
+        flushEditorContent();
+        const state = get();
+        const next = update(state);
+        const remaining = [...(next.leftTabs ?? state.leftTabs), ...(next.rightTabs ?? state.rightTabs)];
+        const orphaned = [...state.leftTabs, ...state.rightTabs].find(tab => isFileConflict(tab.saveError)
+          && !remaining.some(item => samePath(item.path, tab.path) && isEditableFile(item)));
+        if (orphaned) {
+          showError(`请先处理「${orphaned.title}」的保存冲突，再关闭标签页。`);
+          return;
+        }
+        set(next);
+      };
       return ({
       rootPath: null,
       partitionSearchPaths: null,
@@ -454,7 +549,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         for (const session of useTerminalStore.getState().sessions) {
           if (session.remoteId === id) useTerminalStore.getState().removeSession(session.id);
         }
-        for (const [path, entry] of saves) if (path.startsWith(prefix)) { entry.schedule.cancel(); saves.delete(path); }
+        for (const [key, entry] of saves) if (entry.path.startsWith(prefix)) { entry.schedule.cancel(); saves.delete(key); }
         ++projectVersion;
         loadedDirectories.clear();
         set(state => {
@@ -504,9 +599,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const saved = session ?? get().projectPinnedTabs[normalizePath(root)] ?? { left: [], right: [] };
         const restore = async (tabs: Tab[]) => (await Promise.all(tabs.map(async tab => {
           try {
-            const content = tab.browser || tab.reverseTree || tab.revision || tab.diff !== undefined || tab.path === MUSIC_HOME || tab.path === VIDEO_HOME
-              ? tab.content : await fsApi.readFile(tab.path);
-            return { ...tab, content, isPinned: session ? !!tab.isPinned : true, isDirty: false, saveError: undefined,
+            const snapshot = tab.browser || tab.reverseTree || tab.revision || tab.diff !== undefined || tab.path === MUSIC_HOME || tab.path === VIDEO_HOME
+              ? { content: tab.content, version: undefined } : await fsApi.readFileSnapshot(tab.path);
+            return { ...tab, content: snapshot.content, diskVersion: snapshot.version, isPinned: session ? !!tab.isPinned : true, isDirty: false, saveError: undefined,
               suppressInitialDownloads: !!tab.browser };
           } catch (error) {
             console.error("Failed to restore pinned tab:", tab.path, error);
@@ -580,11 +675,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
         const isOpened = [...state.leftTabs, ...state.rightTabs].some(t => t.path === target.path);
         if (!isOpened) {
-           const content = await fsApi.readFile(target.path).catch(() => "");
-           if (content) {
+           const snapshot = await fsApi.readFileSnapshot(target.path).catch(() => null);
+           if (snapshot) {
              get().openTab({
                id: target.path, path: target.path, title: target.path.split(/[/\\]/).pop() || target.path,
-               content, isDirty: false
+               content: snapshot.content, diskVersion: snapshot.version, isDirty: false
              });
            }
         } else {
@@ -803,7 +898,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           });
         }
         const contains = (candidate: string) => isWithinPath(candidate, path);
-        for (const [key, entry] of saves) if (contains(key)) { entry.schedule.cancel(); saves.delete(key); }
+        for (const [key, entry] of saves) if (contains(entry.path)) { entry.schedule.cancel(); saves.delete(key); }
         set(state => {
           const leftTabs = state.leftTabs.filter(tab => !contains(tab.path));
           const rightTabs = state.rightTabs.filter(tab => !contains(tab.path));
@@ -837,8 +932,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             const source = normalizePath(sourcePath);
             return isWithinPath(path, sourcePath) ? target + (target.includes("\\") ? normalized.slice(source.length).replace(/\//g, "\\") : normalized.slice(source.length)) : path;
           };
-          for (const [path, entry] of [...saves]) {
-            if (remap(path) !== path) { entry.schedule.cancel(); saves.delete(path); }
+          for (const [key, entry] of [...saves]) {
+            if (remap(entry.path) !== entry.path) { entry.schedule.cancel(); saves.delete(key); }
           }
           set(state => {
             const nextLeft = state.leftTabs.map(tab => ({ ...tab, id: remap(tab.id), path: remap(tab.path), title: remap(tab.path) !== tab.path && !tab.diff && !tab.revision ? remap(tab.path).split(/[/\\]/).pop()! : tab.title }));
@@ -888,6 +983,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       openTab: (tab, options) =>
         setTabs((state) => {
+          const entry = saves.get(pathKey(tab.path));
+          if (entry && !tab.revision && !tab.diffReadOnly && !tab.diffStaged && !tab.readOnly && !tab.browser
+            && (entry.error || entry.content !== entry.saved || pendingWrites.has(pathKey(tab.path)))) {
+            tab = { ...tab, content: entry.content, diskVersion: entry.version, isDirty: true, saveError: entry.error };
+          }
           if (tab.diff === undefined && !tab.revision && !tab.reverseTree && !tab.browser && !tab.readOnly) void fsApi.touchFile(tab.path).catch(console.error);
           const pane = options?.pane ?? state.focusedPane;
           const tabs = pane === "left" ? state.leftTabs : state.rightTabs;
@@ -939,7 +1039,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }),
 
       closeTab: (id, pane) =>
-        setTabs((state) => {
+        closeTabs((state) => {
           const isLeft = pane === "left";
           const tabs = isLeft ? state.leftTabs : state.rightTabs;
           const activeId = isLeft ? state.activeLeftTabId : state.activeRightTabId;
@@ -968,7 +1068,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }),
 
       closeOtherTabs: (id, pane) =>
-        setTabs((state) => {
+        closeTabs((state) => {
           const isLeft = pane === "left";
           const tabs = isLeft ? state.leftTabs : state.rightTabs;
           const targetTab = tabs.find((t) => t.id === id);
@@ -992,7 +1092,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }),
 
       closeLeftTabs: (id, pane) =>
-        setTabs((state) => {
+        closeTabs((state) => {
           const isLeft = pane === "left";
           const tabs = isLeft ? state.leftTabs : state.rightTabs;
           const activeId = isLeft ? state.activeLeftTabId : state.activeRightTabId;
@@ -1021,7 +1121,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }),
 
       closeRightTabs: (id, pane) =>
-        setTabs((state) => {
+        closeTabs((state) => {
           const isLeft = pane === "left";
           const tabs = isLeft ? state.leftTabs : state.rightTabs;
           const activeId = isLeft ? state.activeLeftTabId : state.activeRightTabId;
@@ -1062,29 +1162,31 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         if (isSnapshot) return;
         const tabs = pane === "left" ? get().leftTabs : get().rightTabs;
         const tab = tabs.find((t) => t.id === id);
-        if (!tab || tab.revision || tab.browser) return;
+        if (!tab || tab.revision || tab.browser || tab.diffReadOnly || tab.diffStaged || tab.readOnly) return;
 
         if (tab.content === content) return;
-        let entry = saves.get(tab.path);
+        const key = pathKey(tab.path);
+        let entry = saves.get(key);
         if (!entry) {
-          entry = { content, saved: tab.content, schedule: debounce(() => saveFile(tab.path), 500) };
-          saves.set(tab.path, entry);
-        } else if (!tab.isDirty && !pendingWrites.has(tab.path)) {
+          entry = { path: tab.path, title: tab.title, pane, content, saved: tab.content, version: tab.diskVersion, schedule: debounce(() => saveFile(tab.path), 500, { maxWait: 2000 }) };
+          saves.set(key, entry);
+        } else if (!tab.isDirty && !pendingWrites.has(key)) {
           entry.saved = tab.content;
+          entry.version = tab.diskVersion;
         }
         entry.content = content;
-        const dirty = content !== entry.saved || pendingWrites.has(tab.path) || !!entry.error;
+        const dirty = content !== entry.saved || pendingWrites.has(key) || !!entry.error;
         const updateMatchingTabs = (tabs: Tab[]) => {
           let changed = false;
           const updated = tabs.map(t => {
-            if (t.path !== tab.path || t.revision || (t.content === content && t.isDirty === dirty && t.saveError === entry.error)) return t;
+            if (!samePath(t.path, tab.path) || t.revision || t.diffReadOnly || t.diffStaged || t.readOnly || (t.content === content && t.isDirty === dirty && t.saveError === entry.error)) return t;
             changed = true;
             return { ...t, content, isDirty: dirty, saveError: entry.error };
           });
           return changed ? updated : tabs;
         };
         set(state => ({ leftTabs: updateMatchingTabs(state.leftTabs), rightTabs: updateMatchingTabs(state.rightTabs) }));
-        entry.schedule();
+        if (!isFileConflict(entry.error)) entry.schedule();
       },
 
       setMarkdownMode: (id, pane, mode) => setTabs(state => pane === "left"
@@ -1212,16 +1314,36 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
 export async function refreshOpenFiles(paths: string[]) {
   flushEditorContent();
+  const unchangedPaths = new Set<string>();
   const root = useWorkspaceStore.getState().rootPath;
   const tabs = [...useWorkspaceStore.getState().leftTabs, ...useWorkspaceStore.getState().rightTabs];
   await Promise.all([...new Set(tabs.filter(t => !t.revision && t.diff === undefined && paths.some(p => isWithinPath(t.path, p))).map(t => t.path))].map(async path => {
     const before = tabs.find(t => t.path === path)!;
-    if (before.isDirty || pendingWrites.has(path)) return;
+    const pendingBeforeRead = pendingWrites.get(pathKey(path));
+    const versionBeforeRead = saves.get(pathKey(path))?.version;
     try {
-      const content = await fsApi.readFile(path);
+      const snapshot = await fsApi.inspectFileSnapshot(path, before.isDirty ? versionBeforeRead : before.diskVersion);
       if (useWorkspaceStore.getState().rootPath !== root) return;
-      const update = (items: Tab[]) => items.map(t => t.path === path && !t.revision && t.diff === undefined && !t.isDirty && t.content === before.content ? { ...t, content } : t);
+      flushEditorContent();
+      // 正在写入时交给保存接口校验；自身保存通知不能被误判为外部冲突。
+      const entry = saves.get(pathKey(path));
+      if (pendingBeforeRead || pendingWrites.has(pathKey(path)) || entry?.version !== versionBeforeRead) return;
+      if (snapshot.content === undefined) {
+        unchangedPaths.add(pathKey(path));
+        return;
+      }
+      const current = [...useWorkspaceStore.getState().leftTabs, ...useWorkspaceStore.getState().rightTabs].find(t => t.path === path && !t.revision && t.diff === undefined);
+      if (snapshot.content === (current?.isDirty ? entry?.saved : current?.content)) {
+        unchangedPaths.add(pathKey(path));
+      }
+      if (current?.isDirty) {
+        if (!isRemotePath(path) && snapshot.content !== entry?.saved && snapshot.content !== entry?.content) markExternalConflict(path);
+        return;
+      }
+      const update = (items: Tab[]) => items.map(t => t.path === path && !t.revision && t.diff === undefined && !t.isDirty && t.content === before.content
+        ? { ...t, content: snapshot.content, diskVersion: snapshot.version } : t);
       useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
-    } catch { /* Deleted files stay open so their contents can be recovered. */ }
+    } catch { /* 删除或读取失败时保留编辑内容，后续保存仍需通过版本校验。 */ }
   }));
+  return paths.filter(path => !unchangedPaths.has(pathKey(path)));
 }

@@ -8,7 +8,7 @@ let read = async () => "disk";
 let flush = () => {};
 const store = create(() => ({}));
 globalThis.__workspaceFileTest = {
-  useWorkspaceStore: store, fsApi: { readFile: path => read(path) }, flushEditorContent: () => flush(),
+  useWorkspaceStore: store, fsApi: { readFileSnapshot: async path => ({ content: await read(path), version: "disk-version" }) }, flushEditorContent: () => flush(),
 };
 const runtime = "data:text/javascript,export const { useWorkspaceStore, fsApi, flushEditorContent } = globalThis.__workspaceFileTest;";
 const { openWorkspaceFile: open } = await import(moduleUrl("lib/workspaceFile.ts", {

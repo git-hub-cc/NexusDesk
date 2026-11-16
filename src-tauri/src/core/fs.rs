@@ -51,7 +51,7 @@ pub fn read_dir_shallow<P: AsRef<Path>>(path: P) -> Result<Vec<FileNode>, String
             }
             let is_dir = file_type.is_dir();
 
-            if name == ".git" {
+            if name == ".git" || name.starts_with(".nexusdesk-save-") {
                 continue;
             }
 
@@ -106,7 +106,9 @@ pub fn read_markdown_file<P: AsRef<Path>>(path: P) -> Result<String, String> {
 }
 
 pub fn write_markdown_file<P: AsRef<Path>>(path: P, content: &str) -> Result<(), String> {
-    fs::write(path, content).map_err(|e| e.to_string())
+    let path = path.as_ref();
+    let before = crate::core::text_file::metadata(path)?;
+    crate::core::text_file::prepare_write(path, content, &before)?.commit()
 }
 
 pub fn index_links<P: AsRef<Path>>(
@@ -196,6 +198,12 @@ pub struct WatcherState(
 );
 
 fn should_emit_workspace_path(root: &Path, path: &Path) -> bool {
+    if path
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().starts_with(".nexusdesk-save-"))
+    {
+        return false;
+    }
     let Ok(relative) = path.strip_prefix(root) else {
         return false;
     };
@@ -505,6 +513,8 @@ mod workspace_watcher_tests {
             assert!(should_emit_workspace_path(root, &root.join(relative)));
         }
         for relative in [
+            ".nexusdesk-save-temporary",
+            "docs/.nexusdesk-save-temporary",
             ".git/index",
             "nested/.git/HEAD",
             ".nexus/index.db",

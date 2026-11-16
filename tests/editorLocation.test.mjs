@@ -150,7 +150,7 @@ test("all text formats retain the same editor identity across text, media and br
     const view = harness.render(active);
     assert.equal(view.props.style.visibility, "visible");
     assert.equal(view.props.inert, false);
-    const editor = view.children[0];
+    const editor = view.children[1].children[0];
     if (editor.type === "MarkdownEditor") assert.equal(editor.props.tabId, tab.props.tab.id);
     else assert.equal(editor.props.tab.id, tab.props.tab.id);
     for (const next of ["ts", "video", "image", "web"]) {
@@ -159,9 +159,9 @@ test("all text formats retain the same editor identity across text, media and br
       assert.equal(retained.type, active.type);
       assert.equal(retained.props.key, active.props.key);
       const hidden = harness.render(retained);
-      assert.equal(hidden.children[0].type, editor.type);
+      assert.equal(hidden.children[1].children[0].type, editor.type);
       assert.equal(hidden.props.style.visibility, next === tab.props.tab.id ? "visible" : "hidden");
-      assert.equal(hidden.props.style.display, next === tab.props.tab.id ? "block" : "none");
+      assert.equal(hidden.props.style.display, next === tab.props.tab.id ? "flex" : "none");
     }
   }
   harness.state.leftTabs = harness.state.leftTabs.filter(tab => tab.id !== "txt");

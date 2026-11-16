@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useLayoutStore } from "@/store/layoutStore";
 import { flushPendingWrites, useWorkspaceStore } from "@/store/workspaceStore";
+import { showError } from "@/lib/dialogs";
 
 export const useShortcuts = (openSearch: () => void, openRecent: () => void) => {
   const { toggleLeftSidebar } = useLayoutStore();
@@ -17,7 +18,7 @@ export const useShortcuts = (openSearch: () => void, openRecent: () => void) => 
 
       if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        void flushPendingWrites().catch(console.error);
+        void flushPendingWrites().catch(error => showError(String(error)));
         return;
       }
 

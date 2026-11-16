@@ -25,6 +25,8 @@ export const searchApi = {
 };
 
 export interface LocalHistoryEntry { id: number; created_at: number }
+export interface TextSnapshot { content: string; version?: string }
+export interface TextSaveResult { logicalChanged: boolean; version: string }
 const musicCovers = new Map<string, Promise<string | null>>();
 export interface MusicTrack { id: string; title: string; artist: string; album: string; duration: number; path: string | null; coverPath: string | null }
 export type MusicPlaylistTrack = Pick<MusicTrack, "title" | "artist" | "album" | "duration">;
@@ -105,6 +107,18 @@ export const fsApi = {
     initProjectDb: (path: string): Promise<void> => invoke("init_project_db", { path }),
 
     readFile: (path: string): Promise<string> => !isRemotePath(path) && !canReadAsText(path) ? Promise.resolve("") : invoke("read_file", { path }),
+    readFileSnapshot: async (path: string, allowMissing = false): Promise<TextSnapshot> =>
+        isRemotePath(path) || !canReadAsText(path) ? { content: await fsApi.readFile(path) }
+            : invoke("read_file_snapshot", { path, allowMissing }),
+    inspectFileSnapshot: async (path: string, knownVersion?: string): Promise<{ content?: string; version?: string }> =>
+        isRemotePath(path) || !canReadAsText(path) ? fsApi.readFileSnapshot(path)
+            : invoke("read_file_snapshot", { path, knownVersion }),
+    textVersion: (content: string): Promise<string> => invoke("text_version", { content }),
+    writeFileSnapshot: async (path: string, content: string, expectedVersion: string): Promise<TextSaveResult> => {
+        const result = await invoke<TextSaveResult>("write_file_snapshot", { path, content, expectedVersion });
+        invalidateTreeFiles([path]);
+        return result;
+    },
 
     readTreeFile: (path: string): Promise<string> => readCachedTreeFile(path, fsApi.readFile),
     invalidateTreeFiles,

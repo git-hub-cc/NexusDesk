@@ -23,13 +23,18 @@ globalThis.__saveTest = { fileOperationHistory: { selectProject() {}, clear() {}
   useTerminalStore: { getState: () => ({ sessions, removeSession: id => { removedSessions.push(id); sessions = sessions.filter(session => session.id !== id); } }) },
   persist: (creator, options) => { globalThis.__saveTest.persistOptions = options; return creator; }, fsApi: {
   writeFile: (...args) => write(...args), getLogicalTree: async () => [{ id: "updated" }],
+  textVersion: async content => `version:${content}`,
+  readFileSnapshot: async path => ({ content: await globalThis.__saveTest.fsApi.readFile(path), version: "read-version" }),
+  inspectFileSnapshot: (...args) => globalThis.__saveTest.fsApi.readFileSnapshot(...args),
+  writeFileSnapshot: async (path, content, version) => ({ logicalChanged: await write(path, content, version), version: `version:${content}` }),
+  touchFile: async () => {},
   readDirectory: async path => [{ id: `${path}/child.txt`, name: 'child.txt' }],
 } };
 const source = pathDeclarations + readFileSync(new URL("../src/store/workspaceStore.ts", import.meta.url), "utf8")
   .replace(/^import .*;$/gm, "");
 const compiled = ts.transpileModule("const isSnapshot = false; const isTauri = () => false; const window = { dispatchEvent() {} }; const globalJsonStorage = undefined; const settingsStorage = { getItem: () => null }; const { fileOperationHistory, create, debounce, fsApi, persist, isRemotePath, remotePath, tauriInvoke, useTerminalStore, useLayoutStore, restoreProjectLayout, showError } = globalThis.__saveTest;\n" + source,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { useWorkspaceStore: store, flushPendingWrites, retryFileSave, queueEditorContent } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+const { useWorkspaceStore: store, flushPendingWrites, retryFileSave, queueEditorContent, refreshOpenFiles, resolveFileConflict, restoreLocalVersion } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
 const edit = content => store.getState().updateTabContent("a", content, "left");
 const current = () => store.getState().leftTabs[0];
 store.setState({ leftTabs: [{ id: "a", path: "a.md", title: "a", content: "initial" }], rightTabs: [{ id: "a", path: "a.md", title: "a", content: "initial" }] });
@@ -145,14 +150,14 @@ test("autosave coalesces edits, serializes writes, preserves dirty state and ret
   await flushPendingWrites();
   assert.equal(writes.length, 1, "returning to saved content avoids I/O");
   let release;
-  write = async (path, content) => { writes.push([path, content]); await new Promise(resolve => { release = resolve; }); };
+  write = async (path, content) => { writes.push([path, content]); if (content === "older") await new Promise(resolve => { release = resolve; }); };
   edit("older");
   const flushing = flushPendingWrites();
   await new Promise(resolve => setTimeout(resolve, 0));
   edit("newer");
   release();
-  await assert.rejects(flushing, /unsaved/);
-  assert.equal(current().isDirty, true);
+  await flushing;
+  assert.equal(current().isDirty, false);
   write = async (path, content) => { writes.push([path, content]); };
   await flushPendingWrites();
   assert.equal(current().isDirty, false);
@@ -336,4 +341,231 @@ test("file tabs reuse Windows aliases without merging case-sensitive remote or P
       }
     }
   } finally { api.touchFile = originalTouch; }
+});
+
+test("conflicts pause autosave, preserve further edits and require an explicit resolution", async () => {
+  const api = globalThis.__saveTest.fsApi;
+  const original = { write: api.writeFileSnapshot, read: api.readFileSnapshot, compare: api.compareText };
+  const originalError = console.error;
+  let disk = "initial";
+  let attempts = 0;
+  const tab = { id: "conflict", path: "conflict.md", title: "conflict", content: disk, diskVersion: `version:${disk}` };
+  store.setState({ rootPath: "conflict-project", leftTabs: [tab], rightTabs: [], focusedPane: "left" });
+  api.readFileSnapshot = async () => ({ content: disk, version: `version:${disk}` });
+  api.compareText = async (left, right) => `${left} -> ${right}`;
+  api.writeFileSnapshot = async (_path, content, expected) => {
+    attempts++;
+    if (expected !== `version:${disk}` && disk !== content) throw new Error("FILE_CONFLICT: external edit");
+    disk = content;
+    return { logicalChanged: false, version: `version:${disk}` };
+  };
+  console.error = () => {};
+  try {
+    store.getState().updateTabContent(tab.id, "local edit", "left");
+    disk = "external edit";
+    await assert.rejects(flushPendingWrites(), /尚未保存/);
+    assert.match(current().saveError, /FILE_CONFLICT/);
+    assert.equal(disk, "external edit");
+    store.getState().updateTabContent(tab.id, "further edit", "left");
+    retryFileSave(tab.path);
+    await assert.rejects(flushPendingWrites());
+    assert.equal(attempts, 1, "typing and retry cannot override a conflict");
+    await resolveFileConflict(tab.path, "compare");
+    const comparison = store.getState().leftTabs.find(item => item.diff !== undefined);
+    assert.equal(comparison.diff, "external edit -> further edit");
+    assert.equal(comparison.diffReadOnly, true);
+    assert.equal(disk, "external edit");
+    await resolveFileConflict(tab.path, "overwrite");
+    assert.equal(disk, "further edit");
+    const resolved = store.getState().leftTabs.find(item => item.id === tab.id);
+    assert.equal(resolved.isDirty, false);
+    assert.equal(resolved.saveError, undefined);
+  } finally {
+    api.writeFileSnapshot = original.write; api.readFileSnapshot = original.read; api.compareText = original.compare;
+    console.error = originalError;
+  }
+});
+
+test("closing tabs preserves the last conflict editor, including batch closes", async () => {
+  const api = globalThis.__saveTest.fsApi;
+  const original = { write: api.writeFileSnapshot, read: api.readFileSnapshot };
+  const originalError = console.error;
+  const tab = { id: "close-conflict", path: "close-conflict.md", title: "conflict", content: "initial" };
+  const other = { id: "other", path: "other.md", title: "other", content: "other" };
+  api.writeFileSnapshot = async () => { throw new Error("FILE_CONFLICT: external edit"); };
+  api.readFileSnapshot = async () => ({ content: "external", version: "external-version" });
+  console.error = () => {};
+  store.setState({ leftTabs: [tab, other], rightTabs: [], isSplitMode: false });
+  try {
+    store.getState().updateTabContent(tab.id, "local edit", "left");
+    await assert.rejects(flushPendingWrites());
+    for (const [method, id, tabs] of [
+      ["closeTab", tab.id, [tab, other]],
+      ["closeOtherTabs", other.id, [tab, other]],
+      ["closeLeftTabs", other.id, [tab, other]],
+      ["closeRightTabs", other.id, [other, tab]],
+    ]) {
+      const conflict = store.getState().leftTabs.find(item => item.id === tab.id);
+      store.setState({ leftTabs: tabs.map(item => item.id === tab.id ? conflict : item) });
+      assert.throws(() => store.getState()[method](id, "left"), /请先处理.*保存冲突/);
+      assert.equal(store.getState().leftTabs.find(item => item.id === tab.id).content, "local edit");
+    }
+    await resolveFileConflict(tab.path, "reload");
+    await flushPendingWrites();
+    store.getState().closeTab(tab.id, "left");
+    assert.ok(!store.getState().leftTabs.some(item => item.id === tab.id));
+  } finally {
+    api.writeFileSnapshot = original.write; api.readFileSnapshot = original.read;
+    console.error = originalError;
+  }
+});
+
+test("a conflict returned after closing the last tab restores an actionable editor", async () => {
+  const api = globalThis.__saveTest.fsApi;
+  const original = { write: api.writeFileSnapshot, read: api.readFileSnapshot, touch: api.touchFile };
+  const originalError = console.error;
+  const tab = { id: "late-conflict", path: "late-conflict.md", title: "late", content: "initial" };
+  let rejectWrite;
+  api.writeFileSnapshot = () => new Promise((_resolve, reject) => { rejectWrite = reject; });
+  api.readFileSnapshot = async () => ({ content: "external", version: "external-version" });
+  api.touchFile = async () => {};
+  console.error = () => {};
+  store.setState({ leftTabs: [tab], rightTabs: [], isSplitMode: false });
+  try {
+    store.getState().updateTabContent(tab.id, "recoverable edit", "left");
+    const saving = assert.rejects(flushPendingWrites());
+    await new Promise(resolve => setImmediate(resolve));
+    store.getState().closeTab(tab.id, "left");
+    rejectWrite(new Error("FILE_CONFLICT: external edit"));
+    await saving;
+    assert.equal(current().content, "recoverable edit");
+    assert.match(current().saveError, /FILE_CONFLICT/);
+    assert.equal(current().isDirty, true);
+    store.getState().closeTab(tab.id, "left");
+    await assert.rejects(store.getState().setProject("next-project"), /late-conflict.md/);
+    assert.ok(store.getState().leftTabs.some(item => item.path === tab.path), "blocked project changes restore and focus the failed file");
+    await resolveFileConflict(tab.path, "reload");
+    await flushPendingWrites();
+    assert.equal(current().content, "external");
+  } finally {
+    api.writeFileSnapshot = original.write; api.readFileSnapshot = original.read; api.touchFile = original.touch;
+    console.error = originalError;
+  }
+});
+
+test("watcher checks content after own saves and reloads a conflict with the latest disk version", async () => {
+  const api = globalThis.__saveTest.fsApi;
+  const original = { write: api.writeFileSnapshot, read: api.readFileSnapshot };
+  let disk = "baseline";
+  const tab = { id: "watched", path: "watched.md", title: "watched", content: disk, diskVersion: `version:${disk}` };
+  store.setState({ rootPath: "watched-project", leftTabs: [tab], rightTabs: [] });
+  api.readFileSnapshot = async () => ({ content: disk, version: `version:${disk}` });
+  api.writeFileSnapshot = async (_path, content, expected) => {
+    assert.equal(expected, `version:${disk}`);
+    disk = content;
+    return { logicalChanged: false, version: `version:${disk}` };
+  };
+  try {
+    store.getState().updateTabContent(tab.id, "saved", "left");
+    await flushPendingWrites();
+    assert.deepEqual(await refreshOpenFiles([tab.path]), [], "own saves do not trigger duplicate indexing");
+    disk = "other";
+    assert.deepEqual(await refreshOpenFiles([tab.path]), [tab.path]);
+    assert.equal(current().content, "other", "same-size edits immediately after a save remain visible");
+    store.getState().updateTabContent(tab.id, "unsaved", "left");
+    disk = "third";
+    await refreshOpenFiles([tab.path]);
+    assert.equal(current().content, "unsaved");
+    assert.match(current().saveError, /FILE_CONFLICT/);
+    await resolveFileConflict(tab.path, "reload");
+    assert.equal(current().content, "third");
+    assert.equal(current().isDirty, false);
+    store.getState().updateTabContent(tab.id, "after reload", "left");
+    await flushPendingWrites();
+    assert.equal(disk, "after reload");
+  } finally { api.writeFileSnapshot = original.write; api.readFileSnapshot = original.read; }
+});
+
+test("slow saves coalesce pending edits and use the version returned by the previous write", async () => {
+  const api = globalThis.__saveTest.fsApi;
+  const original = api.writeFileSnapshot;
+  const tab = { id: "slow", path: "C:/slow.md", title: "slow", content: "initial", diskVersion: "v0" };
+  store.setState({ rootPath: "slow-project", leftTabs: [tab], rightTabs: [{ ...tab, id: "alias", path: "c:\\SLOW.md" }] });
+  const calls = [];
+  let release;
+  api.writeFileSnapshot = async (path, content, expected) => {
+    calls.push({ path, content, expected });
+    if (calls.length === 1) await new Promise(resolve => { release = resolve; });
+    return { logicalChanged: false, version: `v${calls.length}` };
+  };
+  try {
+    store.getState().updateTabContent(tab.id, "first", "left");
+    const saving = flushPendingWrites();
+    await new Promise(resolve => setImmediate(resolve));
+    for (let i = 0; i < 20; i++) store.getState().updateTabContent("alias", `edit ${i}`, "right");
+    retryFileSave(tab.path);
+    release();
+    await saving;
+    assert.deepEqual(calls.map(({ content, expected }) => [content, expected]), [["first", "v0"], ["edit 19", "v1"]]);
+    assert.ok(store.getState().leftTabs.every(item => !item.isDirty && item.diskVersion === "v2"));
+    assert.ok(store.getState().rightTabs.every(item => !item.isDirty && item.diskVersion === "v2"));
+  } finally { api.writeFileSnapshot = original; }
+});
+
+test("a watcher read started before saving cannot overwrite edits or report a stale conflict", async () => {
+  const api = globalThis.__saveTest.fsApi;
+  const original = { write: api.writeFileSnapshot, read: api.readFileSnapshot };
+  const tab = { id: "race", path: "race.md", title: "race", content: "initial", diskVersion: "v0" };
+  store.setState({ rootPath: "race-project", leftTabs: [tab], rightTabs: [] });
+  let releaseRead;
+  api.readFileSnapshot = () => new Promise(resolve => { releaseRead = resolve; });
+  let version = 0;
+  api.writeFileSnapshot = async (_path, _content, expected) => {
+    assert.equal(expected, `v${version}`);
+    return { logicalChanged: false, version: `v${++version}` };
+  };
+  try {
+    const refreshing = refreshOpenFiles([tab.path]);
+    store.getState().updateTabContent(tab.id, "first", "left");
+    await flushPendingWrites();
+    store.getState().updateTabContent(tab.id, "second", "left");
+    releaseRead({ content: "initial", version: "v0" });
+    await refreshing;
+    assert.equal(current().content, "second");
+    assert.equal(current().saveError, undefined);
+    await flushPendingWrites();
+    assert.equal(version, 2);
+  } finally { api.writeFileSnapshot = original.write; api.readFileSnapshot = original.read; }
+});
+
+test("local history recreates deleted files and rejects concurrent external creation", async () => {
+  const api = globalThis.__saveTest.fsApi;
+  const original = { read: api.readFileSnapshot, write: api.writeFileSnapshot };
+  const tab = { id: "deleted-history", path: "deleted-history.md", title: "deleted", content: "old" };
+  let disk;
+  let createDuringRestore = false;
+  store.setState({ rootPath: "history-project", leftTabs: [tab], rightTabs: [] });
+  api.readFileSnapshot = async (_path, allowMissing) => {
+    if (disk === undefined && !allowMissing) throw new Error("File not found");
+    return { content: disk ?? "", version: disk === undefined ? "missing" : `version:${disk}` };
+  };
+  api.writeFileSnapshot = async (_path, content, expected) => {
+    if (createDuringRestore) disk = "external";
+    const version = disk === undefined ? "missing" : `version:${disk}`;
+    if (expected !== version) throw new Error("FILE_CONFLICT: external creation");
+    disk = content;
+    return { logicalChanged: true, version: `version:${content}` };
+  };
+  try {
+    await restoreLocalVersion(tab.path, "restored");
+    assert.equal(disk, "restored");
+    assert.equal(current().content, "restored");
+    assert.equal(current().diskVersion, "version:restored");
+    assert.equal(current().isDirty, false);
+    disk = undefined;
+    createDuringRestore = true;
+    await assert.rejects(restoreLocalVersion(tab.path, "older history"), /FILE_CONFLICT/);
+    assert.equal(disk, "external");
+    assert.equal(current().content, "restored");
+  } finally { api.readFileSnapshot = original.read; api.writeFileSnapshot = original.write; }
 });

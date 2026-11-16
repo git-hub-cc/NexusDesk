@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import debounce from "lodash/debounce.js";
 
-async function fixture() {
+async function fixture(refreshFiles = paths => paths) {
   const listeners = new Map();
   const calls = [];
   let cleanup;
@@ -18,8 +18,7 @@ async function fixture() {
     useEffect: fn => { cleanup = fn(); }, debounce,
     listen: async (name, fn) => { listeners.set(name, fn); return () => listeners.delete(name); },
     useWorkspaceStore: { getState: () => state },
-    isRecentlySavedPath: path => path === "project/own.md",
-    refreshOpenFiles: async paths => calls.push(["files", paths]),
+    refreshOpenFiles: async paths => { calls.push(["files", paths]); return refreshFiles(paths); },
     fsApi: { invalidateTreeFiles() {}, syncProjectIndex: async (root, paths) => calls.push(["index", root, paths]) },
     gitApi: { invalidateStatus() {} },
     isSnapshot: false,
@@ -34,17 +33,28 @@ async function fixture() {
 }
 const settle = () => new Promise(resolve => setTimeout(resolve, 350));
 
-test("watcher skips own saves, merges external paths and cancels pending work", async () => {
+test("matching saved content skips directory reload and duplicate indexing", async () => {
+  const f = await fixture(() => []);
+  try {
+    f.emit(["project/own.md"]);
+    await settle();
+    assert.deepEqual(f.calls, [["files", ["project/own.md"]]]);
+  } finally { f.cleanup(); }
+});
+
+test("watcher retains same-path events after saving, merges paths and cancels pending work", async () => {
   const f = await fixture();
   try {
     f.emit(["project/own.md"]);
     await settle();
-    assert.deepEqual(f.calls, []);
+    assert.deepEqual(f.calls, [["files", ["project/own.md"]], ["directory", "project"],
+      ["index", "project", ["project/own.md"]], "logical"]);
+    f.calls.length = 0;
     f.emit(["project/own.md", "project/external.md"]);
     f.emit(["project/external.md", "project/other.md"]);
     await settle();
-    assert.deepEqual(f.calls, [["directory", "project"], ["files", ["project/external.md", "project/other.md"]],
-      ["index", "project", ["project/external.md", "project/other.md"]], "logical"]);
+    assert.deepEqual(f.calls, [["files", ["project/own.md", "project/external.md", "project/other.md"]], ["directory", "project"],
+      ["index", "project", ["project/own.md", "project/external.md", "project/other.md"]], "logical"]);
     f.calls.length = 0;
     f.emit(["project/later.md"]);
     f.cleanup();

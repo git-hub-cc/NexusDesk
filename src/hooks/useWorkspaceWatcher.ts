@@ -3,7 +3,7 @@ import { isSnapshot } from "@/lib/snapshot";
 import { listen } from "@tauri-apps/api/event";
 import debounce from "lodash/debounce";
 import { fsApi, gitApi } from "@/lib/api";
-import { isRecentlySavedPath, refreshOpenFiles, useWorkspaceStore } from "@/store/workspaceStore";
+import { refreshOpenFiles, useWorkspaceStore } from "@/store/workspaceStore";
 
 export function useWorkspaceWatcher() {
   useEffect(() => {
@@ -25,30 +25,31 @@ export function useWorkspaceWatcher() {
           const state = useWorkspaceStore.getState();
           if (state.rootPath !== root) continue;
           const paths = [...changed];
-          const affected = new Set(paths.map(normalize));
-          const parents = new Set([...affected].map(path => path.slice(0, path.lastIndexOf("/"))));
-          const loaded = new Set<string>([root]);
-          const walk = (nodes: any[]) => nodes.forEach(node => {
-            if (!node.isLeaf && Array.isArray(node.children)) { loaded.add(node.id); walk(node.children); }
-          });
-          walk(state.fileTreeData);
-          const directories = [...loaded].filter(directory => {
-            let candidate = normalize(directory);
-            if (!paths.length || parents.has(candidate)) return true;
-            while (candidate) {
-              if (affected.has(candidate)) return true;
-              const separator = candidate.lastIndexOf("/");
-              if (separator < 0) break;
-              candidate = candidate.slice(0, separator);
-            }
-            return false;
-          });
           try {
+            const externalPaths = await refreshOpenFiles(paths);
+            if (disposed || useWorkspaceStore.getState().rootPath !== root) continue;
+            if (paths.length && !externalPaths.length) continue;
+            const affected = new Set(externalPaths.map(normalize));
+            const parents = new Set([...affected].map(path => path.slice(0, path.lastIndexOf("/"))));
+            const loaded = new Set<string>([root]);
+            const walk = (nodes: any[]) => nodes.forEach(node => {
+              if (!node.isLeaf && Array.isArray(node.children)) { loaded.add(node.id); walk(node.children); }
+            });
+            walk(state.fileTreeData);
+            const directories = [...loaded].filter(directory => {
+              let candidate = normalize(directory);
+              if (!externalPaths.length || parents.has(candidate)) return true;
+              while (candidate) {
+                if (affected.has(candidate)) return true;
+                const separator = candidate.lastIndexOf("/");
+                if (separator < 0) break;
+                candidate = candidate.slice(0, separator);
+              }
+              return false;
+            });
             await Promise.all(directories.map(path => state.loadDirectory(path, false, true)));
             if (disposed || useWorkspaceStore.getState().rootPath !== root) continue;
-            await refreshOpenFiles(paths);
-            if (disposed || useWorkspaceStore.getState().rootPath !== root) continue;
-            await fsApi.syncProjectIndex(root, paths.length ? paths : undefined);
+            await fsApi.syncProjectIndex(root, externalPaths.length ? externalPaths : undefined);
             if (!disposed && useWorkspaceStore.getState().rootPath === root) await state.fetchLogicalTree();
           } catch (error) { console.error(error); }
         }
@@ -60,12 +61,8 @@ export function useWorkspaceWatcher() {
       fsApi.invalidateTreeFiles(payload.paths);
       gitApi.invalidateStatus(payload.root);
       void useWorkspaceStore.getState().refreshTreeStatuses();
-      // Classify on arrival, before debounce/queued work can outlive the 1s window.
-      // Autosave already updates the matching tabs' dirty/error state silently.
-      const externalPaths = payload.paths.filter(path => !isRecentlySavedPath(path));
-      if (payload.paths.length && !externalPaths.length) return;
       const paths = pending.get(payload.root) ?? new Set<string>();
-      externalPaths.forEach(path => paths.add(path));
+      payload.paths.forEach(path => paths.add(path));
       pending.set(payload.root, paths);
       flush();
     });

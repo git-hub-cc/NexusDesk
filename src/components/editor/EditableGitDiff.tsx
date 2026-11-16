@@ -3,14 +3,15 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { Decoration, EditorView, drawSelection, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
-import { fsApi } from "@/lib/api";
+import { fsApi, type TextSnapshot } from "@/lib/api";
 import { diffChanges, originalFromPatch, parseGitDiff, type DiffChange } from "@/lib/gitDiff";
 import { DiffOverview } from "./DiffOverview";
 import { useDiffSplit } from "./useDiffSplit";
 
-export function EditableGitDiff({ path, patch, contents, title, labels, onChange, initialEdge, onBoundary, navigationBusy }: {
-  path: string; patch: string; contents?: [string, string]; title: string;
+export function EditableGitDiff({ path, patch, contents, initialContent, title, labels, onChange, onLoad, initialEdge, onBoundary, navigationBusy }: {
+  path: string; patch: string; contents?: [string, string]; initialContent?: string; title: string;
   labels?: [string, string]; onChange: (text: string) => void;
+  onLoad?: (snapshot: TextSnapshot) => void;
   initialEdge?: "first" | "last"; onBoundary?: (direction: number) => void; navigationBusy?: boolean;
 }) {
   const { splitStyle, splitHandle } = useDiffSplit();
@@ -49,9 +50,12 @@ export function EditableGitDiff({ path, patch, contents, title, labels, onChange
     let firstRefresh = true;
     setReady(false); setError("");
     const init = async () => {
-      const right = contents?.[1] ?? await fsApi.readFile(path);
-      const left = contents?.[0] ?? originalFromPatch(patch, right);
+      const snapshot = contents ? { content: contents[1] } : await fsApi.readFileSnapshot(path, initialContent !== undefined);
+      // 补丁对应磁盘版本；保留的编辑只用于右侧，不能替换保存校验基线。
+      const right = initialContent ?? snapshot.content;
+      const left = contents?.[0] ?? originalFromPatch(patch, snapshot.content);
       if (disposed) return;
+      onLoad?.(snapshot);
       const refresh = async () => {
         const token = ++generation;
         const text = views[1].state.doc.toString();

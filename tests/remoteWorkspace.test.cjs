@@ -24,6 +24,9 @@ test('existing file API routes SFTP tree entries, reads, writes and renames to t
   assert.equal(tree[1].id, 'sftp://server-1/home/a #%.txt');
   assert.equal(tree[1].children, undefined, 'Arborist must treat remote files as leaves');
   assert.equal(await api.readFile(tree[1].id), 'remote contents');
+  const snapshot = await api.readFileSnapshot(tree[1].id);
+  assert.equal(snapshot.content, 'remote contents');
+  assert.equal(snapshot.version, undefined);
   await api.writeFile(tree[1].id, 'sftp://literal-content/keep-this');
   assert.equal(calls.at(-1).args.content, 'sftp://literal-content/keep-this');
   assert.equal(calls.at(-1).args.path, '/home/a #%.txt');
