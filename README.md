@@ -130,3 +130,9 @@ Set-Service -Name camsvc -StartupType Manual
 ```powershell
 npm run tauri dev -- -- -- --project "C:\Users\user\Desktop\Final-DebugData"
 ```
+
+## 统一 LF 换行
+
+仓库通过 `.gitattributes` 统一文本文件的换行为 LF，二进制文件不进行换行转换。该规则优先于 Git 的 `core.autocrlf` 配置，无需为此修改全局 Git 配置。
+
+支持 EditorConfig 的编辑器会按照 `.editorconfig` 使用 UTF-8 编码和 LF 换行，并在文件末尾保留换行。
