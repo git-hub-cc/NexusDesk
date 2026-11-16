@@ -29,7 +29,7 @@ test("moving the mirror tab across panes preserves its React key and inactive ta
   assert.equal(panel(), undefined);
 });
 
-function harness({ delayedStart = false, delayedStop = false, delayedAudioClose = false, discover = () => [{ serial: "phone", status: "device", model: "Phone" }], initiallyFullscreen = false, initiallyMaximized = false } = {}) {
+function harness({ delayedStart = false, delayedStop = false, delayedAudioClose = false, delayedScreenOff = false, delayedKey = false, discover = () => [{ serial: "phone", status: "device", model: "Phone" }], initiallyFullscreen = false, initiallyMaximized = false } = {}) {
   const states = [], refs = [], effects = [], calls = [], decoders = [];
   const timers = new Set();
   const listeners = new Map(), fullscreenCalls = [];
@@ -57,10 +57,12 @@ function harness({ delayedStart = false, delayedStop = false, delayedAudioClose 
   const panel = { async requestFullscreen() { throw new Error("DOM fullscreen must not be used by the mirror"); } };
   const drawnFrames = [];
   const canvas = { width: 300, height: 150, focus() {}, getContext: () => ({ drawImage: frame => drawnFrames.push(frame), clearRect() {} }) };
-  let si = 0, ri = 0, ei = 0, currentChannel, releaseStart, releaseStop, releaseAudioClose, now = 0;
+  let si = 0, ri = 0, ei = 0, currentChannel, releaseStart, releaseStop, releaseAudioClose, releaseScreenOff, releaseKey, now = 0;
   const start = delayedStart ? new Promise(resolve => { releaseStart = resolve; }) : Promise.resolve();
   const stop = delayedStop ? new Promise(resolve => { releaseStop = resolve; }) : Promise.resolve();
   const audioClose = delayedAudioClose ? new Promise(resolve => { releaseAudioClose = resolve; }) : Promise.resolve();
+  const screenOff = delayedScreenOff ? new Promise(resolve => { releaseScreenOff = resolve; }) : Promise.resolve();
+  const key = delayedKey ? new Promise(resolve => { releaseKey = resolve; }) : Promise.resolve();
   const bindings = {
     React, TextEncoder, crypto, document, performance: { now: () => now }, getCurrentWindow: () => host,
     MirrorAudio: class { async resume() {} play() {} close() { return audioClose; } },
@@ -92,6 +94,8 @@ function harness({ delayedStart = false, delayedStop = false, delayedAudioClose 
       if (command === "mirror_connect_wifi") return "192.168.1.20:5555";
       if (command === "mirror_start") return start;
       if (command === "mirror_stop") return stop;
+      if (command === "mirror_control" && args.data[0] === 10 && args.data[1] === 0) return screenOff;
+      if (command === "mirror_control" && args.data[0] === 0) return key;
     },
     requestAnimationFrame: () => 1, cancelAnimationFrame() {},
   };
@@ -112,7 +116,7 @@ function harness({ delayedStart = false, delayedStop = false, delayedAudioClose 
     new Uint8Array(buffer).set(bytes, 12);
     currentChannel.onmessage(buffer);
   };
-  return { render, calls, decoders, canvas, drawnFrames, releaseStart, releaseStop, releaseAudioClose, packet, document, host, fullscreenCalls, advance: ms => { now += ms; }, poll: () => timers.forEach(callback => callback()), unmount: () => effects.forEach(effect => effect.cleanup?.()) };
+  return { render, calls, decoders, canvas, drawnFrames, releaseStart, releaseStop, releaseAudioClose, releaseScreenOff, releaseKey, packet, document, host, fullscreenCalls, advance: ms => { now += ms; }, poll: () => timers.forEach(callback => callback()), unmount: () => effects.forEach(effect => effect.cleanup?.()) };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const connect = tree => tree.find(node => node.type === "button" && node.children.includes("连接")).props.onClick();
@@ -224,20 +228,102 @@ test("reconnecting at the same resolution shows the first frame and ignores fram
 test("one screen power button alternates off and on, then resets after disconnect", async () => {
   const h = harness(); h.render(); await tick(); connect(h.render()); await tick();
   let tree = h.render();
+  assert.deepEqual(h.calls.filter(call => call.command === "mirror_control").map(call => call.args.data), [[10, 0]]);
+  assert.ok(tree.find(node => node.props["aria-label"] === "点亮手机屏幕"));
   assert.equal(tree.filter(node => node.type === "button" && ["关闭手机屏幕（投屏继续）", "点亮手机屏幕"].includes(node.props["aria-label"])).length, 1);
   assert.equal(tree.some(node => node.props["aria-label"] === "旋转"), false);
+  tree.find(node => node.props["aria-label"] === "点亮手机屏幕").props.onClick();
+  tree = h.render();
   tree.find(node => node.props["aria-label"] === "关闭手机屏幕（投屏继续）").props.onClick();
+  await tick();
+  assert.deepEqual(h.calls.filter(call => call.command === "mirror_control").map(call => call.args.data), [[10, 0], [10, 2], [10, 0]]);
   tree = h.render();
   tree.find(node => node.props["aria-label"] === "点亮手机屏幕").props.onClick();
-  await tick();
-  assert.deepEqual(h.calls.filter(call => call.command === "mirror_control").map(call => call.args.data), [[10, 0], [10, 2]]);
-  tree = h.render();
-  tree.find(node => node.props["aria-label"] === "关闭手机屏幕（投屏继续）").props.onClick();
   tree = h.render();
   tree.find(node => node.type === "button" && node.children.includes("断开")).props.onClick();
   assert.ok(h.render().find(node => node.props["aria-label"] === "关闭手机屏幕（投屏继续）"));
   h.unmount();
 });
+
+test("disconnect wakes an automatically darkened phone before stopping the mirror", async () => {
+  const h = harness(); h.render(); await tick(); connect(h.render()); await tick();
+  h.render().find(node => node.type === "button" && node.children.includes("断开")).props.onClick();
+  await tick(); await tick();
+  const commands = h.calls.filter(call => ["mirror_control", "mirror_stop"].includes(call.command)).map(call => call.command);
+  assert.deepEqual(commands, ["mirror_control", "mirror_control", "mirror_stop", "mirror_stop"]);
+  assert.deepEqual(h.calls.filter(call => call.command === "mirror_control").map(call => call.args.data), [[10, 0], [10, 2]]);
+  await new Promise(resolve => setTimeout(resolve, 350));
+  assert.equal(h.calls.filter(call => call.command === "mirror_refresh_brightness").length, 1);
+  h.unmount();
+});
+
+test("unmount wakes an automatically darkened phone before stopping the mirror", async () => {
+  const h = harness(); h.render(); await tick(); connect(h.render()); await tick();
+  h.unmount();
+  await tick(); await tick();
+  const commands = h.calls.filter(call => ["mirror_control", "mirror_stop"].includes(call.command)).map(call => call.command);
+  assert.deepEqual(commands, ["mirror_control", "mirror_control", "mirror_stop", "mirror_stop"]);
+  assert.deepEqual(h.calls.filter(call => call.command === "mirror_control").map(call => call.args.data), [[10, 0], [10, 2]]);
+  await new Promise(resolve => setTimeout(resolve, 350));
+  assert.equal(h.calls.filter(call => call.command === "mirror_refresh_brightness").length, 1);
+});
+
+for (const turnOffAgain of [false, true]) {
+  test(`completed wake ${turnOffAgain ? "followed by screen-off retains" : "clears"} disconnect restoration`, async () => {
+    const h = harness(); h.render(); await tick(); connect(h.render()); await tick();
+    h.render().find(node => node.props["aria-label"] === "点亮手机屏幕").props.onClick();
+    if (turnOffAgain) h.render().find(node => node.props["aria-label"] === "关闭手机屏幕（投屏继续）").props.onClick();
+    await tick();
+    h.render().find(node => node.type === "button" && node.children.includes("断开")).props.onClick();
+    await tick(); await tick();
+    assert.deepEqual(h.calls.filter(call => call.command === "mirror_control").map(call => call.args.data),
+      turnOffAgain ? [[10, 0], [10, 2], [10, 0], [10, 2]] : [[10, 0], [10, 2]]);
+    h.unmount();
+  });
+}
+
+for (const unmount of [false, true]) {
+  test(`${unmount ? "unmounting" : "disconnecting"} while wake is queued still restores the phone`, async () => {
+    const h = harness({ delayedKey: true });
+    h.render(); await tick(); connect(h.render()); await tick();
+    h.render().find(node => node.props["aria-label"] === "主页").props.onClick();
+    await tick();
+    h.render().find(node => node.props["aria-label"] === "点亮手机屏幕").props.onClick();
+    await tick();
+    if (unmount) h.unmount();
+    else h.render().find(node => node.type === "button" && node.children.includes("断开")).props.onClick();
+    h.releaseKey(); await tick(); await tick();
+    assert.deepEqual(h.calls.filter(call => call.command === "mirror_stop" || (call.command === "mirror_control" && call.args.data[0] === 10))
+      .map(call => [call.command, call.args.data]), [
+      ["mirror_control", [10, 0]], ["mirror_control", [10, 2]],
+      ["mirror_stop", undefined], ["mirror_stop", undefined],
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 350));
+    assert.ok(h.calls.some(call => call.command === "mirror_refresh_brightness"));
+    if (!unmount) h.unmount();
+  });
+}
+
+for (const unmount of [false, true]) {
+  test(`${unmount ? "unmounting" : "cancelling startup"} while screen-off is pending still restores the phone`, async () => {
+    const h = harness({ delayedScreenOff: true });
+    h.render(); await tick(); connect(h.render()); await tick();
+    assert.deepEqual(h.calls.filter(call => call.command === "mirror_control").map(call => call.args.data), [[10, 0]]);
+    if (unmount) h.unmount();
+    else h.render().find(node => node.type === "button" && node.children.includes("取消连接")).props.onClick();
+    await tick();
+    assert.equal(h.calls.some(call => call.command === "mirror_stop"), false);
+    h.releaseScreenOff(); await tick(); await tick();
+    assert.deepEqual(h.calls.filter(call => ["mirror_control", "mirror_stop"].includes(call.command))
+      .map(call => [call.command, call.args.data]), [
+      ["mirror_control", [10, 0]], ["mirror_control", [10, 2]],
+      ["mirror_stop", undefined], ["mirror_stop", undefined],
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 350));
+    assert.deepEqual(h.calls.filter(call => call.command === "mirror_refresh_brightness").map(call => call.args), [{ serial: "phone" }]);
+    if (!unmount) h.unmount();
+  });
+}
 
 test("mirror fullscreen covers the monitor and Escape restores the window without sending Android Back", async () => {
   const h = harness(); h.render(); await tick(); connect(h.render()); await tick();
@@ -251,7 +337,7 @@ test("mirror fullscreen covers the monitor and Escape restores the window withou
   await tick();
   assert.equal(h.host.fullscreen, false);
   assert.equal(h.document.fullscreenElement, null);
-  assert.equal(h.calls.filter(call => call.command === "mirror_control").length, 0);
+  assert.deepEqual(h.calls.filter(call => call.command === "mirror_control").map(call => call.args.data), [[10, 0]]);
   assert.equal(h.calls.filter(call => call.command === "mirror_stop").length, 0);
   h.unmount();
 });

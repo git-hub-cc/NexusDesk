@@ -6,7 +6,7 @@ import { MirrorAudio } from "./mirrorAudio";
 import { AndroidFileManager } from "./AndroidFileManager";
 
 type Device = { serial: string; status: string; model: string };
-type Connection = { id: string; startup?: Promise<unknown>; decoder?: VideoDecoder; worker?: Worker; audio?: MirrorAudio; config: Uint8Array; waiting: boolean; ended: boolean; queue: Promise<unknown>; statsTimer: ReturnType<typeof setInterval> | 0; stats: { packets: number; bytes: number; config: number; key: number; delta: number; waitingDrop: number; queueReset: number; submitted: number; output: number } };
+type Connection = { id: string; serial: string; startup?: Promise<unknown>; decoder?: VideoDecoder; worker?: Worker; audio?: MirrorAudio; config: Uint8Array; waiting: boolean; ended: boolean; queue: Promise<unknown>; statsTimer: ReturnType<typeof setInterval> | 0; stats: { packets: number; bytes: number; config: number; key: number; delta: number; waitingDrop: number; queueReset: number; submitted: number; output: number } };
 function codecFromConfig(data: Uint8Array): string | undefined {
   for (let i = 0; i + 7 < data.length; i++) {
     const prefix = data[i] === 0 && data[i + 1] === 0
@@ -15,6 +15,13 @@ function codecFromConfig(data: Uint8Array): string | undefined {
       return `avc1.${Array.from(data.slice(i + prefix + 1, i + prefix + 4), b => b.toString(16).padStart(2, "0")).join("")}`;
     }
   }
+}
+
+async function wakeMirrorScreen(serial: string, sendControl: () => Promise<unknown>, onRefreshError: (reason: unknown) => void) {
+  await sendControl();
+  void new Promise(resolve => setTimeout(resolve, 300))
+    .then(() => invoke("mirror_refresh_brightness", { serial }))
+    .catch(onRefreshError);
 }
 
 export function AndroidMirrorPanel({ active }: { active: boolean }) {
@@ -35,6 +42,8 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
   const fullscreenQueue = useRef(Promise.resolve());
   const previousWindow = useRef<{ fullscreen: boolean; maximized: boolean } | null>(null);
   const [screenOff, setScreenOff] = useState(false);
+  const screenOffRef = useRef(false);
+  const screenPowerRequest = useRef(0);
   const panel = useRef<HTMLDivElement>(null);
   const mirrorStage = useRef<HTMLDivElement>(null);
   const refreshRequest = useRef(0);
@@ -128,6 +137,8 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
     if (pendingMove.current !== null) cancelAnimationFrame(pendingMove.current);
     pendingMove.current = null; lastMove.current = null;
     if (current) {
+      const restoreScreen = screenOffRef.current;
+      screenOffRef.current = false;
       current.ended = true;
       clearInterval(current.statsTimer);
       if (current.decoder && current.decoder.state !== "closed") current.decoder.close();
@@ -135,7 +146,18 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       const audioClosed = current.audio?.close();
       console.info("[android-mirror] disconnect requested", { id: current.id, disposeWorker });
       // 先取消正在启动的会话，再等待启动返回并兜底停止，防止停止命令早于会话注册。
-      const stopRequested = invoke("mirror_stop", { id: current.id });
+      const stopRequested = (async () => {
+        await current.queue.catch(() => {});
+        try {
+          if (restoreScreen) {
+            await wakeMirrorScreen(current.serial,
+              () => invoke("mirror_control", { id: current.id, data: [10, 2] }),
+              reason => { if (mounted.current) setError(`手机亮度恢复失败：${String(reason)}`); });
+          }
+        } finally {
+          await invoke("mirror_stop", { id: current.id });
+        }
+      })();
       stopping.current = (async () => {
         const results = await Promise.allSettled([audioClosed, stopRequested, current.startup]);
         await invoke("mirror_stop", { id: current.id });
@@ -316,7 +338,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       setError(String(reason));
       return;
     }
-    const current: Connection = { id, decoder, worker, config: new Uint8Array(), waiting: true, ended: false, queue: Promise.resolve(), statsTimer: 0, stats: { packets: 0, bytes: 0, config: 0, key: 0, delta: 0, waitingDrop: 0, queueReset: 0, submitted: 0, output: 0 } };
+    const current: Connection = { id, serial, decoder, worker, config: new Uint8Array(), waiting: true, ended: false, queue: Promise.resolve(), statsTimer: 0, stats: { packets: 0, bytes: 0, config: 0, key: 0, delta: 0, waitingDrop: 0, queueReset: 0, submitted: 0, output: 0 } };
     connection.current = current;
     current.statsTimer = setInterval(() => {
       if (current.ended || connection.current !== current) return;
@@ -415,6 +437,11 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
       if (current.ended || connection.current !== current) return;
       await invoke("mirror_visible", { id, visible: visible.current });
       if (connection.current === current && mounted.current) {
+        // 先记录恢复责任，确保熄屏命令尚未返回时取消连接也能点亮手机。
+        screenOffRef.current = true;
+        await send(new Uint8Array([10, 0]));
+        if (current.ended || connection.current !== current) return;
+        setScreenOff(true);
         console.info("[android-mirror] connect established", { id, serial });
         setStatus("connected");
       }
@@ -518,12 +545,19 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
         <button key={label} aria-label={label} title={label} disabled={!connected} onClick={action}><Icon size={14} /></button>)}
       <button aria-label={screenOff ? "点亮手机屏幕" : "关闭手机屏幕（投屏继续）"} title={screenOff ? "点亮手机屏幕" : "关闭手机屏幕（投屏继续）"} disabled={!connected} onClick={() => {
         const waking = screenOff;
-        const queued = send(new Uint8Array([10, waking ? 2 : 0]));
+        const current = connection.current;
+        const request = ++screenPowerRequest.current;
+        const queued = waking
+          ? wakeMirrorScreen(serial, () => send(new Uint8Array([10, 2])), reason => { if (mounted.current) setError(`手机亮度恢复失败：${String(reason)}`); })
+          : send(new Uint8Array([10, 0]));
+        if (!waking) screenOffRef.current = true;
         setScreenOff(!screenOff);
-        if (waking) void queued.then(async () => {
-          await new Promise(resolve => setTimeout(resolve, 300));
-          if (connection.current && !connection.current.ended) await invoke("mirror_refresh_brightness", { serial });
-        }).catch(reason => { if (mounted.current) setError(`手机亮度恢复失败：${String(reason)}`); });
+        void queued.then(() => {
+          // 点亮命令完成前保留恢复责任，且旧请求不能覆盖后续熄屏或新会话。
+          if (waking && current && !current.ended && connection.current === current && screenPowerRequest.current === request) {
+            screenOffRef.current = false;
+          }
+        }).catch(reason => { if (mounted.current) setError(String(reason)); });
       }}><Power size={14} /></button>
       <button aria-label="投屏全屏" title="投屏全屏（Esc 退出）" disabled={!connected} onClick={toggleFullscreen}><Maximize size={14} /></button>
       <button aria-label="文件管理" title="文件管理" aria-pressed={filesOpen} disabled={!serial} onClick={() => setFilesOpen(!filesOpen)}><FolderOpen size={14} /><span>文件管理</span></button>
