@@ -72,7 +72,7 @@ export function LocalHistoryDialog({ path, onClose }: { path: string; onClose: (
   };
 
   return <Dialog.Root open onOpenChange={open => { if (!open && !busy) onClose(); }}>
-    <DialogShell purpose="detail" aria-describedby="local-history-description">
+    <DialogShell purpose="detail" className="history-dialog" aria-describedby="local-history-description">
       <div className="flex items-center gap-4 border-b border-ide-panel-border p-3 text-sm">
         <Dialog.Title>本地历史</Dialog.Title>
         <span className="flex-1 truncate" title={path}>{path}</span>

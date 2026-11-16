@@ -537,6 +537,7 @@
 .dialog-shell[data-purpose="detail"] { display: flex; flex-direction: column; overflow: hidden; }
 .dialog-shell[data-purpose="settings"] { width: min(960px, calc(100vw - 32px)); height: min(680px, calc(100dvh - 64px)); }
 .dialog-shell[data-purpose="detail"] { width: min(1100px, calc(100vw - 32px)); height: calc(100dvh - 64px); }
+.dialog-shell[data-purpose="detail"].history-dialog { width: calc(100vw - 64px); }
 .dialog-shell[data-purpose="search"] { top: min(15dvh, 100px); width: min(760px, calc(100vw - 32px)); max-height: calc(100dvh - min(15dvh, 100px) - 16px); display: flex; flex-direction: column; overflow: hidden; }
 .dialog-shell :focus-visible:not(input, textarea, select),
 .dialog-shell input:is([type="checkbox"], [type="radio"], [type="range"], [type="file"]):focus-visible { outline: 2px solid var(--ide-control-focus); outline-offset: 2px; }

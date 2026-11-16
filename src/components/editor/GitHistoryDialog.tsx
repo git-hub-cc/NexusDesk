@@ -64,7 +64,7 @@ export function GitHistoryDialog({ path, onClose }: { path: string; onClose: () 
   }, [history, selected, file]);
   const filtered = history?.entries.filter(({ commit }) => `${commit.id} ${commit.author} ${commit.message}`.toLowerCase().includes(query.toLowerCase())) ?? [];
   return <Dialog.Root open onOpenChange={open => { if (!open) onClose(); }}>
-    <DialogShell purpose="detail" aria-describedby="git-history-description">
+    <DialogShell purpose="detail" className="history-dialog" aria-describedby="git-history-description">
       <div className="flex items-center gap-4 p-3 border-b border-ide-panel-border text-sm">
         <Dialog.Title className="shrink-0">Git 历史</Dialog.Title>
         <span className="truncate flex-1" title={path}>{path}</span>
