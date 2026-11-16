@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isRemotePath, uploadLocal } from "@/lib/remote";
+import { openWorkspaceFile } from "@/lib/workspaceFile";
 import { fsApi } from "@/lib/api";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { terminalDropEvent, type TerminalDropDetail } from "@/lib/terminalDrop";
@@ -50,18 +51,7 @@ export function useFileDrop() {
             openedDirectory = true;
             useWorkspaceStore.getState().setSidebarMode("physical");
           } else {
-            // Reuse an open buffer so dropping a file cannot replace unsaved edits.
-            const state = useWorkspaceStore.getState();
-            const existing = [...state.leftTabs, ...state.rightTabs].find(tab => tab.path === path);
-            const content = existing ? existing.content : await fsApi.readFile(path);
-            if (disposed) return;
-            useWorkspaceStore.getState().openTab(existing ?? {
-              id: path,
-              path,
-              title: path.split(/[/\\]/).pop() || path,
-              content,
-              isDirty: false,
-            });
+            await openWorkspaceFile(path, { isCurrent: () => !disposed });
           }
         } catch (cause) {
           failures.push(`${path}：${String(cause)}`);

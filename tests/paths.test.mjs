@@ -8,6 +8,37 @@ import { paths, assetsUrl } from "./helpers/loadSource.mjs";
 const { samePath, isWithinPath, normalizePath } = paths;
 const { isImage, canReadAsText, canPreview, canCompareAsText } = await import(assetsUrl);
 
+test("Windows extended paths share identity, containment and display with ordinary paths", () => {
+  for (const [extended, ordinary, root] of [
+    [String.raw`\\?\C:\Users\user\md\md.md`, "C:/Users/user/md/md.md", "c:/users/user/md"],
+    [String.raw`\\?\UNC\Server\Share\md.md`, "//Server/Share/md.md", "//server/share"],
+    ["//?/C:/Users/user/md/md.md", "C:/Users/user/md/md.md", "C:/Users/user/md"],
+  ]) {
+    assert.ok(samePath(extended, ordinary));
+    assert.ok(isWithinPath(extended, root));
+    assert.equal(paths.displayPath(extended), ordinary);
+    assert.equal(paths.pathName(extended), "md.md");
+  }
+  assert.equal(normalizePath("C:/"), "C:/");
+  assert.equal(normalizePath("C:"), "C:");
+  assert.equal(normalizePath("\\\\?\\C:\\"), "C:/");
+  assert.equal(paths.displayPath(String.raw`C:/Users/user\md.md`), "C:/Users/user/md.md");
+});
+
+test("titles deduplicate file identities and distinguish actual namesakes", () => {
+  const ordinary = "C:/Project/notes/a.md";
+  const alias = String.raw`\\?\c:\project\notes\a.md`;
+  const key = paths.pathKey(ordinary);
+  assert.deepEqual([...paths.pathTitles([ordinary, alias]).values()], ["a.md"]);
+  const titles = paths.pathTitles([ordinary, alias, "C:/Project/drafts/a.md"]);
+  assert.equal(titles.size, 2);
+  assert.equal(titles.get(key), "notes/a.md");
+  assert.equal(titles.get(paths.pathKey("C:/Project/drafts/a.md")), "drafts/a.md");
+  assert.equal(paths.pathTitles(["/notes/A.md", "/notes/a.md"]).size, 2);
+  const nested = paths.pathTitles(["C:/one/notes/a.md", "C:/two/notes/a.md"]);
+  assert.equal(nested.get(paths.pathKey("C:/one/notes/a.md")), "one/../a.md");
+});
+
 test("Windows and UNC paths ignore case; POSIX and SFTP paths preserve it", () => {
   assert.ok(samePath("C:\\Project\\A.md", "c:/project/a.md/"));
   assert.ok(samePath("\\\\Server\\Share\\A.md", "//server/share/a.md"));

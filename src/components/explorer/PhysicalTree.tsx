@@ -204,7 +204,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
         try {
             const read = async (file: string) => {
                 const state = useWorkspaceStore.getState();
-                const tab = [...state.leftTabs, ...state.rightTabs].find(tab => tab.path === file && tab.diff === undefined && !tab.revision);
+                const tab = [...state.leftTabs, ...state.rightTabs].find(tab => samePath(tab.path, file) && tab.diff === undefined && !tab.revision);
                 return tab?.content ?? await fsApi.readFile(file);
             };
             const [left, right] = await Promise.all([read(source), read(path)]);

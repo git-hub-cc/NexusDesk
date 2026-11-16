@@ -39,6 +39,24 @@ const edit = content => store.getState().updateTabContent("a", content, "left");
 const current = () => store.getState().leftTabs[0];
 store.setState({ leftTabs: [{ id: "a", path: "a.md", title: "a", content: "initial" }], rightTabs: [{ id: "a", path: "a.md", title: "a", content: "initial" }] });
 
+test("store deduplicates Windows aliases and resolves split titles by file identity", () => {
+  const path = "C:/project/notes/a.md";
+  const alias = String.raw`\\?\C:\project\notes\a.md`;
+  const tab = { id: "ordinary", path, title: "a.md", content: "unsaved", isDirty: true };
+  store.setState({ rootPath: "C:/project", focusedPane: "left", leftTabs: [tab], rightTabs: [], activeLeftTabId: tab.id });
+  store.getState().openTab({ id: alias, path: alias, title: "a.md", content: "disk" });
+  assert.equal(store.getState().leftTabs.length, 1);
+  assert.equal(store.getState().activeLeftTabId, tab.id);
+  assert.equal(store.getState().leftTabs[0].content, "unsaved");
+  store.getState().openTab({ id: alias, path: alias, title: "a.md", content: "unsaved" }, { pane: "right" });
+  assert.equal(store.getState().rightTabs[0].title, "a.md");
+  assert.equal(store.getState().rightTabs[0].isExternal, false);
+  store.getState().openTab({ id: "other", path: "C:/project/drafts/a.md", title: "a.md", content: "other" });
+  assert.equal(store.getState().rightTabs[0].title, "notes/a.md");
+  assert.equal(store.getState().leftTabs.find(tab => tab.id === "ordinary").title, "notes/a.md");
+  store.setState({ rootPath: null, leftTabs: [{ id: "a", path: "a.md", title: "a", content: "initial" }], rightTabs: [{ id: "a", path: "a.md", title: "a", content: "initial" }] });
+});
+
 test("closing a project flushes edits, preserves its session and clears the workspace", async () => {
   store.setState({ rootPath: "close-project", pinnedTabsRestored: true, recentProjects: ["close-project"],
     leftTabs: [{ id: "close", path: "close.md", title: "close", content: "initial", isPinned: true }],

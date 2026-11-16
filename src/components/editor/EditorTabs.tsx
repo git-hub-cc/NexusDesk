@@ -1,3 +1,4 @@
+import { displayPath } from "@/lib/paths";
 import { isImage } from "@/lib/assets";
 import { shallow } from "zustand/vanilla/shallow";
 import { useShallow } from "zustand/react/shallow";
@@ -108,7 +109,7 @@ export const TabUI = forwardRef<HTMLDivElement, {
           }`}
           {...props}
       >
-        <span className="truncate flex-1 flex items-center gap-1" title={(tab.isTemporary ?? !!tab.reverseTree) ? "临时视图 · 反向生成树" : tab.isExternal ? `不属于当前项目\n${tab.path}` : tab.path}>
+        <span className="truncate flex-1 flex items-center gap-1" title={(tab.isTemporary ?? !!tab.reverseTree) ? "临时视图 · 反向生成树" : tab.isExternal ? `不属于当前项目\n${displayPath(tab.path)}` : displayPath(tab.path)}>
           {(tab.isVersionControl ?? (tab.diff !== undefined || !!tab.revision)) && <GitBranch size={12} aria-label="版本控制" className="shrink-0" />}
           {!(tab.isTemporary ?? !!tab.reverseTree) && tab.isExternal && <ExternalLink size={12} aria-hidden="true" className="shrink-0 text-amber-400" />}
           {(tab.isTemporary ?? !!tab.reverseTree) && <Clock size={12} aria-label="临时视图" className="shrink-0 text-sky-400" />}
@@ -340,7 +341,7 @@ export function EditorTabList({ pane }: EditorTabsProps) {
                           setActiveTab(tab.id, pane);
                         }}
                     >
-                      <span className="truncate flex-1 flex items-center gap-1" title={tab.isTemporary ? "临时视图 · 反向生成树" : tab.isExternal ? `不属于当前项目\n${tab.path}` : tab.path}>
+                      <span className="truncate flex-1 flex items-center gap-1" title={tab.isTemporary ? "临时视图 · 反向生成树" : tab.isExternal ? `不属于当前项目\n${displayPath(tab.path)}` : displayPath(tab.path)}>
                         {tab.isVersionControl && <GitBranch size={12} aria-label="版本控制" className="shrink-0" />}
                         {!tab.isTemporary && tab.isExternal && <ExternalLink size={12} aria-label="不属于当前项目" className="shrink-0 text-amber-400" />}
                         {tab.isTemporary && <Clock size={12} aria-label="临时视图" className="shrink-0 text-sky-400" />}

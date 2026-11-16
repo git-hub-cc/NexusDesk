@@ -1,4 +1,4 @@
-import { isWithinPath, normalizePath, pathKey, samePath } from "@/lib/paths";
+import { isWithinPath, normalizePath, pathKey, pathName, pathTitles, samePath } from "@/lib/paths";
 import { isSnapshot } from "@/lib/snapshot";
 import { fileOperationHistory } from "@/lib/fileOperationHistory";
 import { showError } from "@/lib/dialogs";
@@ -268,7 +268,7 @@ export async function restoreLocalVersion(path: string, content: string) {
   }
   const entry = saves.get(pathKey(path));
   if (entry) { entry.schedule.cancel(); entry.content = content; entry.saved = content; entry.version = version; entry.error = undefined; }
-  const update = (tabs: Tab[]) => tabs.map(tab => tab.path === path && !tab.revision && tab.diff === undefined
+  const update = (tabs: Tab[]) => tabs.map(tab => samePath(tab.path, path) && !tab.revision && tab.diff === undefined
     ? { ...tab, content, diskVersion: version, isDirty: false, saveError: undefined } : tab);
   useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
   await useWorkspaceStore.getState().fetchLogicalTree();
@@ -276,65 +276,11 @@ export async function restoreLocalVersion(path: string, content: string) {
 
 function resolveTabTitles(leftTabs: Tab[], rightTabs: Tab[], rootPath: string | null): { leftTabs: Tab[], rightTabs: Tab[] } {
   const allTabs = [...leftTabs, ...rightTabs];
-  const titleMap = new Map<string, string>();
-
   const normalTabs = allTabs.filter(t => t.diff === undefined && !t.revision && !t.reverseTree && !t.browser);
-  const groups = new Map<string, Tab[]>();
-  for (const tab of normalTabs) {
-    const filename = tab.path.split(/[/\\]/).pop() || tab.path;
-    if (!groups.has(filename)) groups.set(filename, []);
-    groups.get(filename)!.push(tab);
-  }
-
-  for (const [filename, groupTabs] of groups.entries()) {
-    if (groupTabs.length === 1) {
-      titleMap.set(groupTabs[0].id, filename);
-      continue;
-    }
-
-    const uniquePaths = Array.from(new Set(groupTabs.map(t => t.path)));
-    if (uniquePaths.length === 1) {
-      for (const tab of groupTabs) titleMap.set(tab.id, filename);
-      continue;
-    }
-
-    const parsedPaths = uniquePaths.map(path => ({
-      path,
-      parts: path.split(/[/\\]/).reverse()
-    }));
-
-    for (let i = 0; i < parsedPaths.length; i++) {
-      const P = parsedPaths[i];
-      let k_max = 0;
-      for (let j = 0; j < parsedPaths.length; j++) {
-        if (i === j) continue;
-        const Q = parsedPaths[j];
-        let k = 0;
-        while (k < P.parts.length && k < Q.parts.length && P.parts[k] === Q.parts[k]) {
-          k++;
-        }
-        if (k > k_max) k_max = k;
-      }
-
-      let title = filename;
-      if (k_max >= P.parts.length) {
-        title = P.parts.slice().reverse().join('/');
-      } else if (k_max === 1) {
-        title = `${P.parts[1]}/${filename}`;
-      } else if (k_max > 1) {
-        title = `${P.parts[k_max]}/../${filename}`;
-      }
-
-      for (const tab of groupTabs) {
-        if (tab.path === P.path) {
-          titleMap.set(tab.id, title);
-        }
-      }
-    }
-  }
+  const titleMap = pathTitles(normalTabs.map(tab => tab.path));
 
   const updateTabs = (tabs: Tab[]) => tabs.map(tab => {
-    const newTitle = tab.diff !== undefined || tab.revision || tab.reverseTree || tab.browser ? tab.title : titleMap.get(tab.id) || (tab.path.split(/[/\\]/).pop() || tab.path);
+    const newTitle = tab.diff !== undefined || tab.revision || tab.reverseTree || tab.browser ? tab.title : titleMap.get(pathKey(tab.path)) || pathName(tab.path);
     // Git comparisons and temporary generated views do not represent external files.
     const isExternal = tab.diff === undefined && !tab.revision && !tab.reverseTree && !tab.browser && rootPath ? !isPathInProject(tab.path, rootPath) : false;
     if (tab.title === newTitle && tab.isExternal === isExternal) return tab;
@@ -654,7 +600,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       pushNavLocation: (path, pos) => set(state => {
         const last = state.navHistory[state.navIndex];
-        if (last && last.path === path && Math.abs(last.pos - pos) < 15) return state;
+        if (last && samePath(last.path, path) && Math.abs(last.pos - pos) < 15) return state;
 
         const newHistory = state.navHistory.slice(0, state.navIndex + 1);
         newHistory.push({ path, pos });
@@ -673,7 +619,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const target = state.navHistory[newIndex];
         set({ navIndex: newIndex });
 
-        const isOpened = [...state.leftTabs, ...state.rightTabs].some(t => t.path === target.path);
+        const isOpened = [...state.leftTabs, ...state.rightTabs].some(t => samePath(t.path, target.path));
         if (!isOpened) {
            const snapshot = await fsApi.readFileSnapshot(target.path).catch(() => null);
            if (snapshot) {
@@ -1319,7 +1265,7 @@ export async function refreshOpenFiles(paths: string[]) {
   const root = useWorkspaceStore.getState().rootPath;
   const tabs = [...useWorkspaceStore.getState().leftTabs, ...useWorkspaceStore.getState().rightTabs];
   await Promise.all([...new Set(tabs.filter(t => !t.revision && t.diff === undefined && paths.some(p => isWithinPath(t.path, p))).map(t => t.path))].map(async path => {
-    const before = tabs.find(t => t.path === path)!;
+    const before = tabs.find(t => samePath(t.path, path))!;
     const pendingBeforeRead = pendingWrites.get(pathKey(path));
     const versionBeforeRead = saves.get(pathKey(path))?.version;
     try {
@@ -1333,7 +1279,7 @@ export async function refreshOpenFiles(paths: string[]) {
         unchangedPaths.add(pathKey(path));
         return;
       }
-      const current = [...useWorkspaceStore.getState().leftTabs, ...useWorkspaceStore.getState().rightTabs].find(t => t.path === path && !t.revision && t.diff === undefined);
+      const current = [...useWorkspaceStore.getState().leftTabs, ...useWorkspaceStore.getState().rightTabs].find(t => samePath(t.path, path) && !t.revision && t.diff === undefined);
       if (snapshot.content === (current?.isDirty ? entry?.saved : current?.content)) {
         unchangedPaths.add(pathKey(path));
       }
@@ -1341,7 +1287,7 @@ export async function refreshOpenFiles(paths: string[]) {
         if (!isRemotePath(path) && snapshot.content !== entry?.saved && snapshot.content !== entry?.content) markExternalConflict(path);
         return;
       }
-      const update = (items: Tab[]) => items.map(t => t.path === path && !t.revision && t.diff === undefined && !t.isDirty && t.content === before.content
+      const update = (items: Tab[]) => items.map(t => samePath(t.path, path) && !t.revision && t.diff === undefined && !t.isDirty && t.content === before.content
         ? { ...t, content: snapshot.content, diskVersion: snapshot.version } : t);
       useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
     } catch { /* 删除或读取失败时保留编辑内容，后续保存仍需通过版本校验。 */ }

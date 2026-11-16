@@ -36,6 +36,17 @@ test("opening reuses buffered content across panes and ignores revision tabs", a
   assert.equal(opened[0].options.pane, "left");
 });
 
+test("opening an extended Windows alias preserves the existing unsaved buffer", async () => {
+  reset();
+  read = () => { throw new Error("unexpected read"); };
+  store.setState({ leftTabs: [{ id: "existing", path: "C:/project/a.md", content: "unsaved", isDirty: true }] });
+  assert.equal(await open(String.raw`\\?\C:\project\a.md`), true);
+  assert.equal(opened[0].tab.id, "existing");
+  assert.equal(opened[0].tab.path, "C:/project/a.md");
+  assert.equal(opened[0].tab.content, "unsaved");
+  assert.ok(opened[0].tab.isDirty);
+});
+
 test("previews skip text reads, SVG remains editable, remote and unsupported binaries reject", async () => {
   reset();
   const reads = [];

@@ -234,7 +234,7 @@ const CodeMirrorEditorImpl: React.FC<CodeMirrorEditorProps> = ({ pane, tabId, na
       if (destination.title === undefined) {
         try {
           const state = useWorkspaceStore.getState();
-          const content = [...state.leftTabs, ...state.rightTabs].find(tab => tab.path === destination.path)?.content ?? await fsApi.readFile(destination.path);
+          const content = [...state.leftTabs, ...state.rightTabs].find(tab => samePath(tab.path, destination.path))?.content ?? await fsApi.readFile(destination.path);
           const headings = fileHeadings(content);
           if (headings.length) {
             const escapeHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");

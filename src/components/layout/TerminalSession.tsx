@@ -1,3 +1,4 @@
+import { samePath } from "@/lib/paths";
 // src/components/layout/TerminalSession.tsx
 import { useEffect, useRef, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
@@ -316,7 +317,7 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
               await revealItemInDir(path);
               return;
             }
-            const existing = [...state.leftTabs, ...state.rightTabs].find(tab => resolveTerminalPath(tab.path, state.rootPath) === path && !tab.revision && tab.diff === undefined);
+            const existing = [...state.leftTabs, ...state.rightTabs].find(tab => samePath(resolveTerminalPath(tab.path, state.rootPath), path) && !tab.revision && tab.diff === undefined);
             const content = existing?.content ?? diskContent;
             if (disposed) return;
             const targetPath = existing?.path ?? path;

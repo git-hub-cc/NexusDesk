@@ -1,3 +1,4 @@
+import { samePath } from "@/lib/paths";
 import { useEffect, useRef, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { fsApi } from "@/lib/api";
@@ -118,7 +119,7 @@ export function ImageEditor({ path, sourceContent, sourceUrl }: { path: string; 
   const publishDraft = () => {
     // Pixels stay on the local canvas; undo snapshots stay in history.current.
     const store = useWorkspaceStore.getState();
-    const matches = (tab: typeof store.leftTabs[number]) => tab.path === path && !tab.revision && tab.diff === undefined;
+    const matches = (tab: typeof store.leftTabs[number]) => samePath(tab.path, path) && !tab.revision && tab.diff === undefined;
     if ([...store.leftTabs, ...store.rightTabs].some(tab => matches(tab) && !tab.isDirty)) {
       const update = (tabs: typeof store.leftTabs) => tabs.map(tab => matches(tab) && !tab.isDirty ? { ...tab, isDirty: true } : tab);
       useWorkspaceStore.setState({ leftTabs: update(store.leftTabs), rightTabs: update(store.rightTabs) });
@@ -227,7 +228,7 @@ export function ImageEditor({ path, sourceContent, sourceUrl }: { path: string; 
       await useWorkspaceStore.getState().loadDirectory(target.replace(/[/\\][^/\\]+$/, ""), false, true);
       if (target === path) {
         setDirty(false);
-        const update = (tabs: ReturnType<typeof useWorkspaceStore.getState>["leftTabs"]) => tabs.map(tab => tab.path === path && !tab.revision && tab.diff === undefined ? { ...tab, isDirty: false } : tab);
+        const update = (tabs: ReturnType<typeof useWorkspaceStore.getState>["leftTabs"]) => tabs.map(tab => samePath(tab.path, path) && !tab.revision && tab.diff === undefined ? { ...tab, isDirty: false } : tab);
         useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
       }
     } catch (e) { setError(`保存失败：${String(e)}`); }

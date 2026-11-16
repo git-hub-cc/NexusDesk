@@ -1,6 +1,6 @@
 import { fsApi } from "./api";
 import { canPreview, canReadAsText, isPreviewDocument } from "./assets";
-import { normalizePath, samePath } from "./paths";
+import { normalizePath, pathName, samePath } from "./paths";
 import { isRemotePath } from "./remote";
 import { flushEditorContent, useWorkspaceStore, type Tab } from "@/store/workspaceStore";
 
@@ -34,7 +34,7 @@ export async function openWorkspaceFile(path: string, options: { title?: string;
   const latest = findWorkspaceFile(latestTabs, path);
   current.openTab({
     id: latest?.id ?? normalizePath(path), path: latest?.path ?? path,
-    title: options.title ?? path.split(/[/\\]/).pop() ?? path,
+    title: options.title ?? pathName(path),
     content: latest?.content ?? snapshot.content, diskVersion: latest?.diskVersion ?? snapshot.version, isDirty: latest?.isDirty ?? false,
     saveError: latest?.saveError, markdownMode: latest?.markdownMode,
   }, { ...options, pane });
