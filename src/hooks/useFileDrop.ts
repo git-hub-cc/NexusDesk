@@ -1,19 +1,31 @@
 import { useEffect, useState } from "react";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isRemotePath, uploadLocal } from "@/lib/remote";
 import { fsApi } from "@/lib/api";
 import { useWorkspaceStore } from "@/store/workspaceStore";
+import { terminalDropEvent, type TerminalDropDetail } from "@/lib/terminalDrop";
 
 export function useFileDrop() {
   const [isDragging, setIsDragging] = useState(false);
+  const [isTerminalDragging, setIsTerminalDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isTauri()) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
+    let unlistenNative: (() => void) | undefined;
     let pending = Promise.resolve();
+    void getCurrentWebview().listen<TerminalDropDetail>("nexusdesk-terminal-native-drop", ({ payload }) => {
+      if (!disposed) window.dispatchEvent(new CustomEvent(terminalDropEvent, { detail: payload }));
+    }).then(async stop => {
+      if (disposed) { stop(); return; }
+      unlistenNative = stop;
+      await invoke("enable_terminal_file_drop");
+    }).catch(cause => {
+      if (!disposed) setError(`无法启用终端文件拖拽：${String(cause)}`);
+    });
 
     const openPaths = async (paths: string[]) => {
       const failures: string[] = [];
@@ -62,6 +74,8 @@ export function useFileDrop() {
       if (disposed) return;
       if (payload.type === "enter" || payload.type === "over" || payload.type === "drop") {
         const target = document.elementFromPoint(payload.position.x / window.devicePixelRatio, payload.position.y / window.devicePixelRatio);
+        const terminalTarget = target?.closest<HTMLElement>("[data-terminal-drop-target]");
+        setIsTerminalDragging(Boolean(terminalTarget) && payload.type !== "drop");
         if (target?.closest("[data-graph-root]")) {
           setIsDragging(false);
           if (payload.type === "drop" && useWorkspaceStore.getState().rootPath) {
@@ -73,10 +87,21 @@ export function useFileDrop() {
           return;
         }
       }
-      setIsDragging(payload.type === "enter" || payload.type === "over");
+      if (payload.type !== "drop") setIsDragging(payload.type === "enter" || payload.type === "over");
       if (payload.type === "drop") {
         setError(null);
-        pending = pending.then(() => openPaths(payload.paths));
+        const target = document.elementFromPoint(payload.position.x / window.devicePixelRatio, payload.position.y / window.devicePixelRatio);
+        const terminalTarget = target?.closest<HTMLElement>("[data-terminal-drop-target]");
+        setIsDragging(false);
+        setIsTerminalDragging(false);
+        if (terminalTarget) {
+          window.dispatchEvent(new CustomEvent(terminalDropEvent, { detail: {
+            sessionId: terminalTarget.dataset.sessionId,
+            paths: payload.paths,
+          } }));
+        } else {
+          pending = pending.then(() => openPaths(payload.paths));
+        }
       }
     }).then(stop => {
       if (disposed) stop();
@@ -88,8 +113,9 @@ export function useFileDrop() {
     return () => {
       disposed = true;
       unlisten?.();
+      unlistenNative?.();
     };
   }, []);
 
-  return { isDragging, error, dismissError: () => setError(null) };
+  return { isDragging: isDragging && !isTerminalDragging, error, dismissError: () => setError(null) };
 }

@@ -224,6 +224,7 @@ pub fn run() {
                 return true;
             }
             let handler: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool> = Box::new(tauri::generate_handler![
+            commands::terminal_drop::enable_terminal_file_drop,
             commands::android_mirror::mirror_devices,
             commands::android_mirror::mirror_connect_wifi,
             commands::android_mirror::mirror_list_files,

@@ -12,10 +12,11 @@ import { useTerminalStore, type SessionInfo } from "@/store/terminalStore";
 import { fsApi } from "@/lib/api";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { resolveTerminalPath, terminalBufferFileLinks } from "@/lib/terminalLinks";
-import { isRemotePath, remotePath, remoteUri, shellQuote } from "@/lib/remote";
+import { isRemotePath, remotePath, remoteUri } from "@/lib/remote";
 import { matchTerminalHistory, terminalPromptInput } from "@/lib/terminalHistory";
 import { codexComposerInput, fillCodexCommitMessage } from "@/lib/codexCommitMessage";
 import { codexProxyLaunchCommand, getCodexProxyStatus } from "@/lib/codexProxy";
+import { terminalDropEvent, terminalDropText, type TerminalDropDetail } from "@/lib/terminalDrop";
 
 export function TerminalSession({ session, active, autoResize, resizeRequest, onExit }: {
   session: SessionInfo;
@@ -32,6 +33,7 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
   const queryRef = useRef(query);
   queryRef.current = query;
   const [historyError, setHistoryError] = useState("");
+  const [draggingFiles, setDraggingFiles] = useState(false);
   const terminalRef = useRef<Terminal | null>(null);
   const clearScrollbackAfterCommand = useRef(false);
   const fillHistory = useRef<(command: string, execute?: boolean) => void>(() => {});
@@ -190,40 +192,54 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
       }
     };
     const dragTypes = ['application/x-nexusdesk-files', 'application/x-nexusdesk-file', 'application/x-nexusdesk-logical-file'];
+    const pastePaths = (paths: unknown) => {
+      if (!started || exited || disposed) throw new Error("终端尚未就绪或已退出");
+      const text = terminalDropText(paths, session, navigator.userAgent.includes('Windows'));
+      if (text) terminal.paste(text);
+      focusTerminal();
+    };
+    const externalDrop = (event: Event) => {
+      const detail = (event as CustomEvent<TerminalDropDetail>).detail;
+      if (detail.sessionId !== session.id) return;
+      setDraggingFiles(false);
+      try {
+        if (detail.error) throw new Error(detail.error);
+        pastePaths(detail.paths);
+      } catch (error) { report(error); }
+    };
+    window.addEventListener(terminalDropEvent, externalDrop);
     const dragOver = (event: DragEvent) => {
-      if (!dragTypes.some(type => event.dataTransfer?.types.includes(type))) return;
+      if (!event.dataTransfer?.types.some(type => type === 'Files' || dragTypes.includes(type))) return;
       event.preventDefault();
       event.stopPropagation();
+      setDraggingFiles(true);
       event.dataTransfer!.dropEffect = 'copy';
     };
+    const dragEnd = () => setDraggingFiles(false);
     const drop = (event: DragEvent) => {
       const transfer = event.dataTransfer;
-      if (!transfer || !dragTypes.some(type => transfer.types.includes(type))) return;
+      if (!transfer || !transfer.types.some(type => type === 'Files' || dragTypes.includes(type))) return;
       event.preventDefault();
       event.stopPropagation();
-      if (!started || exited) return;
+      setDraggingFiles(false);
       try {
+        if (!dragTypes.some(type => transfer.types.includes(type))) {
+          const bridge = (window as unknown as { chrome?: { webview?: { postMessageWithAdditionalObjects?: (message: string, files: File[]) => void } } }).chrome?.webview;
+          if (!bridge?.postMessageWithAdditionalObjects) throw new Error("当前环境无法获取拖入文件的完整路径");
+          bridge.postMessageWithAdditionalObjects(`nexusdesk-terminal-drop:${JSON.stringify({ sessionId: session.id })}`, Array.from(transfer.files));
+          return;
+        }
         const multiple = transfer.getData(dragTypes[0]);
         const paths: unknown = multiple ? JSON.parse(multiple) : [transfer.getData(dragTypes[1]) || transfer.getData(dragTypes[2])];
-        if (!Array.isArray(paths) || !paths.every(path => typeof path === 'string' && path && !/[\r\n\0]/.test(path))) return;
-        const powershell = !remoteId && !/bash|zsh|fish|\bwsl\b/i.test(session.command) && navigator.userAgent.includes('Windows');
-        terminal.paste(paths.map(path => {
-          if (isRemotePath(path)) {
-            const remote = remotePath(path);
-            if (remote.id !== remoteId) throw new Error("该文件不属于当前远程终端");
-            return shellQuote(remote.path);
-          }
-          if (remoteId) throw new Error("本地文件不能直接作为远程 Shell 路径使用");
-          const absolute = resolveTerminalPath(path, session.cwd);
-          return powershell ? `"${absolute.replace(/`/g, '``').replace(/\$/g, '`$').replace(/"/g, '`"')}"`
-            : `"${absolute.replace(/[\\"$`]/g, '\\$&')}"`;
-        }).join(' '));
-        focusTerminal();
+        pastePaths(paths);
       } catch (error) { report(error); }
     };
     element.addEventListener('contextmenu', contextMenu, true);
-    element.addEventListener('dragover', dragOver, true);
-    element.addEventListener('drop', drop, true);
+    const dropElement = element.parentElement ?? element;
+    dropElement.addEventListener('dragover', dragOver, true);
+    dropElement.addEventListener('drop', drop, true);
+    dropElement.addEventListener('dragleave', dragEnd, true);
+    window.addEventListener('dragend', dragEnd);
     let hoveredLink: ILink | undefined;
     let linkClickTimer: number | undefined;
     let pendingLinkPath: string | undefined;
@@ -519,8 +535,11 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
       parsedOutput.dispose();
       element.removeEventListener('wheel', wheel, true);
       element.removeEventListener('contextmenu', contextMenu, true);
-      element.removeEventListener('dragover', dragOver, true);
-      element.removeEventListener('drop', drop, true);
+      dropElement.removeEventListener('dragover', dragOver, true);
+      dropElement.removeEventListener('drop', drop, true);
+      dropElement.removeEventListener('dragleave', dragEnd, true);
+      window.removeEventListener('dragend', dragEnd);
+      window.removeEventListener(terminalDropEvent, externalDrop);
       window.clearTimeout(linkClickTimer);
       window.removeEventListener('keydown', updateLinkModifier);
       window.removeEventListener('keyup', updateLinkModifier);
@@ -561,7 +580,8 @@ export function TerminalSession({ session, active, autoResize, resizeRequest, on
 
   return (
     <>
-      <div style={{ display: active ? "flex" : "none", background: "#2b2d30" }} className="terminal-pane relative h-full w-full min-h-0 flex-col p-2">
+      <div data-terminal-drop-target data-session-id={session.id} style={{ display: active ? "flex" : "none", background: "#2b2d30" }} className="terminal-pane relative h-full w-full min-h-0 flex-col p-2">
+        {draggingFiles && <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-ide-accent bg-ide-bg/80" role="status">松开后将文件完整路径插入终端</div>}
         <div ref={host} onKeyDown={event => event.stopPropagation()} className="terminal-host min-h-0 flex-1 w-full overflow-hidden" />
         {matches.length > 0 && <div className="absolute inset-x-0 top-0 z-10 flex max-h-[calc(100%-3rem)] flex-col border-b border-white/10 shadow-lg" style={{ backgroundColor: `rgba(43, 45, 48, ${1 - historyTransparency / 100})`, textShadow: "0 1px 2px #000" }} aria-label="命令历史候选">
           <div className="mb-1 flex shrink-0 justify-between text-[10px] text-gray-300"><span>命令历史 · 单击回填，双击执行</span><span>{matches.length} 条</span></div>

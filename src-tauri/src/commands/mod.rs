@@ -5,6 +5,7 @@ pub mod project_cmds;
 pub mod remote_cmds;
 pub mod settings_cmds;
 pub mod terminal_cmds;
+pub mod terminal_drop;
 
 pub mod browser_cmds;
 pub mod browser_downloads;
