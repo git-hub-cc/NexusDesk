@@ -15,6 +15,19 @@ import { NavigationHome } from "@/components/navigation/NavigationHome";
 
 export const BROWSER_HOME = "nexusdesk:nav";
 
+export function openNavigationHome(pane: "left" | "right") {
+  const state = useWorkspaceStore.getState();
+  state.setFocusedPane(pane);
+  const tabs = pane === "left" ? state.leftTabs : state.rightTabs;
+  const home = tabs.find(tab => tab.browser?.url === BROWSER_HOME);
+  if (home) {
+    state.openTab(home, { pane });
+    return;
+  }
+  const id = `browser:${crypto.randomUUID()}`;
+  state.openTab({ id, path: id, title: "导航", browser: { root: state.rootPath ?? "", url: BROWSER_HOME } }, { pane });
+}
+
 export function validateBrowserAddress(value: string): string {
   const trimmed = value.trim();
   const input = /^(?:https?:\/\/|chrome-extension:\/\/)/i.test(trimmed) ? trimmed : `http://${trimmed}`;

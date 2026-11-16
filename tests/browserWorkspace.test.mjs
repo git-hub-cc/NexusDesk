@@ -2,6 +2,7 @@ import { pathDeclarations } from "./helpers/loadSource.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 import ts from "typescript";
 import { create } from "zustand";
 import debounce from "lodash/debounce.js";
@@ -24,6 +25,77 @@ const source = pathDeclarations + readFileSync(new URL("../src/store/workspaceSt
 const compiled = ts.transpileModule("const { create, debounce, persist, fsApi, isSnapshot, isRemotePath, isTauri, tauriInvoke, restoreProjectLayout, useTerminalStore, useLayoutStore, showError, gitApi, globalJsonStorage } = globalThis.__browserTest;\n" + source,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
 const { useWorkspaceStore: store, flushPendingWrites } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+const browserSource = readFileSync(new URL("../src/components/editor/BrowserEditor.tsx", import.meta.url), "utf8").replace(/^import .*;\r?$/gm, "");
+const browserContext = { exports: {}, useWorkspaceStore: store, crypto: globalThis.crypto };
+vm.runInNewContext(ts.transpileModule(browserSource, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React },
+}).outputText, browserContext);
+const { openNavigationHome, BROWSER_HOME } = browserContext.exports;
+
+test("opening navigation preserves the former navigation tab after it becomes a website", () => {
+  const page = { id: "browser:navigation", path: "browser:navigation", title: "Example", browser: { root: "C:/project", url: "https://example.com/" } };
+  store.setState({ rootPath: "C:/project", leftTabs: [page], rightTabs: [], activeLeftTabId: page.id, activeRightTabId: null, focusedPane: "left" });
+
+  openNavigationHome("left");
+  const state = store.getState();
+  const home = state.leftTabs.find(tab => tab.browser?.url === BROWSER_HOME);
+  assert.ok(home);
+  assert.notEqual(home.id, page.id);
+  assert.equal(home.path, home.id);
+  assert.equal(home.title, "导航");
+  assert.equal(home.browser.root, "C:/project");
+  assert.equal(state.activeLeftTabId, home.id);
+  assert.equal(state.leftTabs.length, 2);
+  assert.deepEqual(state.leftTabs.find(tab => tab.id === page.id), { ...page, isExternal: false });
+
+  openNavigationHome("left");
+  assert.equal(store.getState().leftTabs.length, 2);
+  assert.equal(store.getState().activeLeftTabId, home.id);
+
+  store.setState({ leftTabs: store.getState().leftTabs.map(tab => tab.id === home.id
+    ? { ...tab, title: "Other", browser: { ...tab.browser, url: "https://other.example/" } }
+    : tab) });
+  openNavigationHome("left");
+  const reopened = store.getState();
+  assert.equal(reopened.leftTabs.length, 3);
+  assert.notEqual(reopened.activeLeftTabId, home.id);
+  assert.equal(reopened.leftTabs.find(tab => tab.id === home.id).browser.url, "https://other.example/");
+  assert.equal(reopened.leftTabs.filter(tab => tab.browser?.url === BROWSER_HOME).length, 1);
+});
+
+test("opening navigation reuses a home page with retained browser history", () => {
+  const home = { id: "browser:random-home", path: "browser:random-home", title: "导航", isPinned: true,
+    browser: { root: "C:/project", url: BROWSER_HOME, homeHistory: { url: "https://example.com/", title: "Example" } } };
+  const page = { id: "browser:page", path: "browser:page", title: "Page", browser: { root: "C:/project", url: "https://other.example/" } };
+  store.setState({ leftTabs: [home, page], rightTabs: [], activeLeftTabId: page.id, focusedPane: "right" });
+
+  openNavigationHome("left");
+  const state = store.getState();
+  assert.equal(state.leftTabs.length, 2);
+  assert.equal(state.activeLeftTabId, home.id);
+  assert.equal(state.focusedPane, "left");
+  assert.equal(state.leftTabs.find(tab => tab.id === home.id), home);
+});
+
+test("navigation opens and is reused independently in each pane", () => {
+  store.setState({ rootPath: null, leftTabs: [], rightTabs: [], activeLeftTabId: null, activeRightTabId: null, focusedPane: "left", isSplitMode: true });
+  openNavigationHome("left");
+  const leftHome = store.getState().leftTabs[0];
+  openNavigationHome("right");
+  const rightHome = store.getState().rightTabs[0];
+  assert.notEqual(rightHome.id, leftHome.id);
+  assert.equal(rightHome.browser.url, BROWSER_HOME);
+  assert.equal(rightHome.browser.root, "");
+
+  openNavigationHome("left");
+  openNavigationHome("right");
+  const state = store.getState();
+  assert.equal(state.leftTabs.length, 1);
+  assert.equal(state.rightTabs.length, 1);
+  assert.equal(state.activeLeftTabId, leftHome.id);
+  assert.equal(state.activeRightTabId, rightHome.id);
+  assert.equal(state.focusedPane, "right");
+});
 
 test("browser tabs preserve metadata and never enter file history or autosave", async () => {
   store.setState({ rootPath: "C:/project", leftTabs: [], rightTabs: [], focusedPane: "left" });
