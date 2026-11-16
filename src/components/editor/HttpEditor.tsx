@@ -1,6 +1,6 @@
 import { settingsStorage } from "@/lib/globalSettings";
 import { memo, useEffect, useRef, useState, useMemo } from "react";
-import { Code, Eye, Columns2, Play, Square, Clock, HardDrive, Globe, AlertTriangle } from "lucide-react";
+import { Code, Eye, Columns2, Play, Square, Clock, HardDrive, Globe, AlertTriangle, LoaderCircle } from "lucide-react";
 import { useWorkspaceStore, type Tab } from "@/store/workspaceStore";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
 import { extractStreamContent, extractResponseUrls } from "@/lib/httpStreamExtraction";
@@ -119,6 +119,25 @@ function parseHttpFile(content: string): HttpRequest[] {
   return requests;
 }
 
+const HttpRequestProgress = ({ startedAt }: { startedAt: number }) => {
+  const [now, setNow] = useState(() => performance.now());
+
+  useEffect(() => {
+    setNow(performance.now());
+    const timer = window.setInterval(() => setNow(performance.now()), 100);
+    return () => window.clearInterval(timer);
+  }, [startedAt]);
+
+  return (
+    <div role="status" className="flex items-center gap-2 rounded border border-ide-panel-border bg-ide-panel-bg p-3 text-xs text-gray-400">
+      <LoaderCircle size={14} className="animate-spin text-ide-accent" aria-hidden="true" />
+      <span>请求中</span>
+      <span aria-hidden="true">·</span>
+      <span role="timer" aria-live="off" className="tabular-nums">已等待 {Math.max(0, (now - startedAt) / 1000).toFixed(1)} 秒</span>
+    </div>
+  );
+};
+
 const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: string }) => {
   const requests = useMemo(() => parseHttpFile(content), [content]);
   const readLimit = (name: string, fallback: number) => {
@@ -138,7 +157,7 @@ const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: s
   const [storageError, setStorageError] = useState("");
   const [activeReqId, setActiveReqId] = useState<string | null>(null);
   const [responses, setResponses] = useState<Record<string, HttpResponse>>({});
-  const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState<Record<string, { startedAt: number } | undefined>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const readAborters = useRef(new Map<string, () => void>());
 
@@ -176,7 +195,7 @@ const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: s
     let requestBodyBytes: number[] | undefined;
     let requestBody = req.body;
     let requestMessage = formatHttpMessage(`${req.method} ${req.url}`, req.headers, requestBody);
-    setLoading(prev => ({ ...prev, [req.id]: true }));
+    setLoading(prev => ({ ...prev, [req.id]: { startedAt } }));
     setErrors(prev => ({ ...prev, [req.id]: "" }));
     try {
       const fileParts = [...req.body.matchAll(/(Content-Disposition:\s*form-data;[^\r\n]*filename="[^"]+"[^\r\n]*\r?\nContent-Type:\s*[^\r\n]+\r?\n\r?\n)<\s*([^\r\n]+)/gi)];
@@ -263,7 +282,7 @@ const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: s
         startedAt: requestStartedAt, requestMessage, responseMessage: `请求失败: ${String(err)}` });
       setErrors(prev => ({ ...prev, [req.id]: String(err) }));
     } finally {
-      setLoading(prev => ({ ...prev, [req.id]: false }));
+      setLoading(prev => ({ ...prev, [req.id]: undefined }));
     }
   };
 
@@ -356,6 +375,9 @@ const HttpDebugger = memo(({ content, filePath }: { content: string; filePath: s
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-4">
+                {loading[activeReq.id] && (
+                  <HttpRequestProgress key={activeReq.id} startedAt={loading[activeReq.id]!.startedAt} />
+                )}
                 {errors[activeReq.id] && (
                   <div className="p-3 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-xs break-words">
                     <div className="flex items-center gap-1 mb-1 font-bold"><AlertTriangle size={14} /> 请求失败</div>

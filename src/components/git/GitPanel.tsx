@@ -10,6 +10,7 @@ import { confirmAction } from "@/lib/dialogs";
 import { isRemotePath } from "@/lib/remote";
 import { codexCommitMessagePath, commitDraftEvent, getCommitDraft, rememberCommitDraft } from "@/lib/codexCommitMessage";
 import { setSpeechTarget } from "@/lib/speechTarget";
+import { OperationProgress } from "@/components/OperationProgress";
 
 export function GitPanel() {
     const root = useWorkspaceStore(s => s.rootPath);
@@ -78,6 +79,8 @@ function RepositoryPanel({ root }: { root: string }) {
     const [isRepository, setIsRepository] = useState<boolean | null>(null);
     const [notice, setNotice] = useState("");
     const [busy, setBusy] = useState(false);
+    const [operation, setOperation] = useState("");
+    const [stage, setStage] = useState("");
     const [pending, setPending] = useState<Set<string>>(new Set());
     const pendingRef = useRef(new Set<string>());
     const queue = useRef(Promise.resolve());
@@ -175,13 +178,19 @@ function RepositoryPanel({ root }: { root: string }) {
         };
     }, [isRepository, refreshStatus, root]);
 
-    async function run(action: () => Promise<void>, mutate = false) {
+    async function run(action: () => Promise<void>, mutate = false, label = "正在执行 Git 操作") {
         if (locked.current || pendingRef.current.size) return;
         locked.current = true; setBusy(true); setError(""); setNotice("");
+        setOperation(label);
+        setStage(mutate ? "正在保存文件" : label);
         try {
             if (mutate) await flushPendingWrites();
+            if (mounted.current) setStage(label);
             await action();
-            if (mutate && mounted.current) await refresh();
+            if (mutate && mounted.current) {
+                setStage("正在刷新 Git 状态");
+                await refresh();
+            }
         } catch (e) { if (mounted.current) setError(String(e)); }
         finally { locked.current = false; if (mounted.current) setBusy(false); }
     }
@@ -191,8 +200,9 @@ function RepositoryPanel({ root }: { root: string }) {
             if (!mounted.current) return;
             setIsRepository(true);
             setNotice("Git 仓库初始化成功");
+            setStage("正在刷新 Git 状态");
             await refresh();
-        });
+        }, false, "正在初始化仓库");
     }
     function stageMany(candidates: GitFileStatus[], staged: boolean) {
         if (locked.current) return;
@@ -248,7 +258,7 @@ function RepositoryPanel({ root }: { root: string }) {
             appendCommitMessage(commit.message);
             if (revision) returnToLocal();
             setNotice(`已撤销提交 ${commit.id.slice(0, 8)}，更改已保留在暂存区`);
-        }, true);
+        }, true, "正在撤销提交");
     }
     async function undoPushedCommit(commit: GitLogEntry) {
         if (!commit.isHead || !commit.pushed || !hasRemote) return;
@@ -268,7 +278,7 @@ function RepositoryPanel({ root }: { root: string }) {
             appendCommitMessage(commit.message);
             if (revision) returnToLocal();
             setNotice("已撤销并推送，原提交更改已恢复到工作区（未暂存），补丁文件已清理");
-        }, true);
+        }, true, "正在撤销并推送");
     }
     async function restorePushedCommit(commit: GitLogEntry) {
         if (!commit.isHead || !commit.recoveryPatch) return;
@@ -281,7 +291,7 @@ function RepositoryPanel({ root }: { root: string }) {
             await gitApi.restorePushedCommit(root, commit.id);
             if (revision) returnToLocal();
             setNotice("已恢复撤销内容并推送到远程");
-        }, true);
+        }, true, "正在恢复并推送");
     }
     async function openRevisionFile(path: string) {
         if (!revision) return;
@@ -312,11 +322,12 @@ function RepositoryPanel({ root }: { root: string }) {
                         })) state.closeTab(tab.id, pane);
                     }
                 }
+                if (mounted.current) setStage("正在刷新 Git 状态");
                 await refresh();
                 panelRef.current?.focus();
             }
             if (mounted.current && action === "ignore") setNotice(`已加入 .gitignore：${roots.map(target => target.path).join("、")}（已跟踪文件仍由 Git 跟踪）`);
-        });
+        }, false, action === "ignore" ? "正在更新忽略规则" : "正在回退文件");
     }
     async function undoRevert() {
         await run(async () => {
@@ -331,7 +342,7 @@ function RepositoryPanel({ root }: { root: string }) {
                 }
             }
             setNotice(`已撤销回退，恢复 ${paths.length} 个文件`);
-        }, true);
+        }, true, "正在撤销文件回退");
     }
     const operationsPending = busy || pending.size > 0;
     const resizeColumns = (index: 0 | 1, clientX: number) => {
@@ -376,17 +387,19 @@ function RepositoryPanel({ root }: { root: string }) {
     }}>
         <div className="flex items-center gap-3 px-2 py-1 border-b border-ide-panel-border">
             <button className={revision ? "text-gray-400 hover:text-white" : "text-blue-400"} onClick={returnToLocal}>本地更改 ({files.length})</button>
-            <button title="刷新 Git 状态" aria-label="刷新 Git 状态" disabled={operationsPending} onClick={() => void run(refresh)}><RefreshCw size={14} /></button>
+            <button title="刷新 Git 状态" aria-label="刷新 Git 状态" disabled={operationsPending} onClick={() => void run(refresh, false, "正在刷新 Git 状态")}><RefreshCw size={14} className={busy && stage === "正在刷新 Git 状态" ? "animate-spin" : ""} /></button>
             {revision ? <span className="text-blue-400 truncate">历史快照 {revision.id.slice(0, 8)}</span> : <span className="text-gray-400">勾选暂存 · 点击文件查看差异</span>}
         </div>
         {error && <p role="alert" className="text-red-400 px-2 whitespace-pre-wrap">{error}</p>}
         {notice && <p role="status" className="text-green-400 px-2">{notice}</p>}
+        {busy && <OperationProgress label={`${operation}${stage === operation ? "" : ` · ${stage}`}`} className="shrink-0 px-2 py-1" elapsedLabel="已用时" />}
+        {pending.size > 0 && <OperationProgress label={`正在更新暂存区 · 剩余 ${pending.size} 个文件`} className="shrink-0 px-2 py-1" elapsedLabel="已用时" />}
         <div ref={columnsRef} className="flex flex-1 min-h-0 overflow-auto" style={resizing ? { cursor: "ew-resize", userSelect: "none" } : undefined}>
             <div className="min-w-0 shrink-0 overflow-auto p-2" style={{ width: `${fileWidth}%` }}>
-                {revision ? loadingRevision ? <p className="text-gray-400">正在读取提交文件…</p> : <>
+                {revision ? loadingRevision ? <OperationProgress key={revision.id} label="正在读取提交文件" /> : <>
                     <p className="text-gray-500 mb-1">提交更改 ({revisionFiles.length}) · {revision.parents.length > 1 ? "相对第一父提交" : "相对父提交"} · 点击查看差异</p>
                     {!revisionFiles.length && <p className="text-gray-400">此提交没有文件差异</p>}
-                    <GitFileTree key={revision.id} files={revisionFiles} renderFile={(file, name) => <button className={`flex items-center gap-2 text-left w-full py-1 hover:bg-ide-tree-hover ${file.status === "新增" ? "text-green-400" : file.status === "删除" ? "text-red-400" : "text-blue-400"}`} title={file.path} onClick={() => void run(() => openRevisionFile(file.path))}><span className="truncate">{name}</span><span className="shrink-0">{file.status}</span></button>} />
+                    <GitFileTree key={revision.id} files={revisionFiles} renderFile={(file, name) => <button className={`flex items-center gap-2 text-left w-full py-1 hover:bg-ide-tree-hover ${file.status === "新增" ? "text-green-400" : file.status === "删除" ? "text-red-400" : "text-blue-400"}`} title={file.path} onClick={() => void run(() => openRevisionFile(file.path), false, "正在读取历史差异")}><span className="truncate">{name}</span><span className="shrink-0">{file.status}</span></button>} />
                 </> : <>
                     {!files.length && (isRepository === false ? <div className="flex flex-col items-start gap-2 text-sm text-gray-400">
                         <span>当前项目尚未初始化 Git 仓库。</span>
@@ -396,11 +409,11 @@ function RepositoryPanel({ root }: { root: string }) {
                     <ContextMenu.Trigger asChild><div>
                     <GitFileTree files={files} onContextMenu={(_event, targets) => {
                         if (!operationsPending) setContextMenuTargets(targets);
-                    }} selection={{ checked: file => file.staged, eligible: file => !file.conflict, pending: file => pending.has(file.path), disabled: busy, onChange: stageMany }} renderFile={(file, name) => <div className={`flex items-center gap-2 py-1 rounded cursor-pointer hover:bg-ide-tree-hover ${file.conflict ? "text-orange-400" : file.status === "新增" ? "text-green-400" : file.status === "删除" ? "text-red-400" : "text-blue-400"}`} onClick={() => void run(() => openDiff(file, !file.unstaged))}>
+                    }} selection={{ checked: file => file.staged, eligible: file => !file.conflict, pending: file => pending.has(file.path), disabled: busy, onChange: stageMany }} renderFile={(file, name) => <div className={`flex items-center gap-2 py-1 rounded cursor-pointer hover:bg-ide-tree-hover ${file.conflict ? "text-orange-400" : file.status === "新增" ? "text-green-400" : file.status === "删除" ? "text-red-400" : "text-blue-400"}`} onClick={() => void run(() => openDiff(file, !file.unstaged), false, "正在读取文件差异")}>
                         <input type="checkbox" className="shrink-0 accent-blue-500 cursor-pointer disabled:cursor-wait" onClick={event => event.stopPropagation()} aria-label={`暂存 ${file.path}`} checked={file.staged} disabled={busy || pending.has(file.path) || file.conflict} onChange={e => stageMany([file], e.currentTarget.checked)} />
                         <span className="min-w-0 flex-1 truncate" title={file.path}>{name}</span>
                         <span className="shrink-0">{file.status}</span>
-                        {pending.has(file.path) ? <span className="text-gray-400 shrink-0">暂存处理中…</span> : file.staged && <button className="shrink-0 text-green-400" onClick={event => { event.stopPropagation(); void run(() => openDiff(file, true)); }}>已暂存</button>}
+                        {pending.has(file.path) ? <span className="text-gray-400 shrink-0">暂存处理中…</span> : file.staged && <button className="shrink-0 text-green-400" onClick={event => { event.stopPropagation(); void run(() => openDiff(file, true), false, "正在读取暂存差异"); }}>已暂存</button>}
                         {file.staged && file.unstaged && <span title="暂存后又有修改" className="text-yellow-400">+修改</span>}
                     </div>} />
                     </div></ContextMenu.Trigger>
@@ -422,11 +435,11 @@ function RepositoryPanel({ root }: { root: string }) {
                         }
                         const id = await gitApi.commit(root, message);
                         if (mounted.current) { changeMessage(""); setNotice(`提交成功 ${id.slice(0, 8)}`); }
-                    }, true)}><GitCommit size={14} aria-hidden="true" />{busy ? "处理中…" : "提交"}</button>
+                    }, true, "正在提交")}><GitCommit size={14} aria-hidden="true" />{busy && operation === "正在提交" ? "正在提交…" : "提交"}</button>
                     <button className="flex w-24 shrink-0 items-center justify-center gap-1 border border-emerald-600 bg-emerald-700 text-white enabled:bg-emerald-600 enabled:hover:bg-emerald-500 disabled:border-emerald-800 disabled:bg-emerald-900 disabled:text-gray-300" disabled={!hasRemote || operationsPending || !!revision || !log.some(commit => !commit.pushed)} title={hasRemote ? "推送当前分支到远程" : "请先在版本控制设置中配置远程仓库"} onClick={() => void run(async () => {
                         await gitApi.push(root);
                         if (mounted.current) setNotice("推送成功");
-                    }, true)}><Upload size={14} aria-hidden="true" />推送</button>
+                    }, true, "正在推送")}><Upload size={14} aria-hidden="true" />{busy && operation === "正在推送" ? "正在推送…" : "推送"}</button>
                 </div>
             </div>
             {renderSeparator(1, "调整提交说明与提交历史宽度")}
@@ -443,7 +456,7 @@ function RepositoryPanel({ root }: { root: string }) {
                     <div className="text-gray-500">{c.parents.length ? `↳ ${c.parents.map(p => p.slice(0, 8)).join(" + ")}` : "根提交"}{c.parents.length > 1 ? " (合并)" : ""}</div>
                 </button></ContextMenu.Trigger><ContextMenu.Portal><ContextMenu.Content data-panel-menu aria-label="提交操作" collisionPadding={8} className="ide-menu w-60 text-xs">
                     <ContextMenu.Item className="ide-menu-item" onSelect={() => void copyCommitMessage(c)}><Copy size={14} />复制提交说明</ContextMenu.Item>
-                    <ContextMenu.Item disabled={operationsPending} className="ide-menu-item" onSelect={() => void run(() => gitApi.openSnapshot(root, c.id))}><GitCommit size={14} />在隔离窗口查看完整项目</ContextMenu.Item>
+                    <ContextMenu.Item disabled={operationsPending} className="ide-menu-item" onSelect={() => void run(() => gitApi.openSnapshot(root, c.id), false, "正在打开历史快照")}><GitCommit size={14} />在隔离窗口查看完整项目</ContextMenu.Item>
                     {c.isHead && !c.pushed && <ContextMenu.Item disabled={operationsPending} className="ide-menu-item" onSelect={() => void undoCommit(c)}><Undo2 size={14} />撤销此提交</ContextMenu.Item>}
                     {c.isHead && c.pushed && hasRemote && <ContextMenu.Item disabled={operationsPending} className="ide-menu-item" onSelect={() => void undoPushedCommit(c)}><Undo2 size={14} />撤销并推送</ContextMenu.Item>}
                     {c.isHead && c.recoveryPatch && <ContextMenu.Item disabled={operationsPending || !hasRemote} className="ide-menu-item" onSelect={() => void restorePushedCommit(c)}><RotateCcw size={14} />恢复撤销内容</ContextMenu.Item>}

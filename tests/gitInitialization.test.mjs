@@ -39,7 +39,7 @@ function fixture({ exists = false, failInit = false } = {}) {
     refreshStatus: async () => { calls.push('status'); state.files = ['note.md']; },
     flushPendingWrites: async () => {},
   };
-  for (const name of ['IsRepository', 'Files', 'Log', 'HasRemote', 'Error', 'Busy', 'Notice']) {
+  for (const name of ['IsRepository', 'Files', 'Log', 'HasRemote', 'Error', 'Busy', 'Notice', 'Operation', 'Stage']) {
     values[`set${name}`] = value => { state[name[0].toLowerCase() + name.slice(1)] = value; };
   }
   const actions = new Function(...Object.keys(values), `${compiled}\nreturn { refresh, initializeRepository };`)(...Object.values(values));
@@ -63,6 +63,8 @@ test('initialization refreshes files, history and settings and reports success',
   assert.deepEqual(f.state.files, ['note.md']);
   assert.equal(f.state.notice, 'Git 仓库初始化成功');
   assert.equal(f.state.busy, false);
+  assert.equal(f.state.operation, '正在初始化仓库');
+  assert.equal(f.state.stage, '正在刷新 Git 状态');
 });
 
 test('failed initialization retains initialization state and allows retry', async () => {

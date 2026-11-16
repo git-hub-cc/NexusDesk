@@ -2,6 +2,7 @@ import { settingsStorage } from "@/lib/globalSettings";
 import { useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
+import { OperationProgress } from "@/components/OperationProgress";
 import { X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { remoteUri } from "@/lib/remote";
@@ -33,12 +34,14 @@ export function SftpConnectDialog({ onClose }: { onClose: () => void }) {
   const [password, setPassword] = useState(saved.password || "");
   const [trust, setTrust] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState("");
   const working = useRef(false);
   const [error, setError] = useState("");
 
   const connect = async () => {
     if (working.current) return;
     working.current = true; setBusy(true); setError("");
+    setStage("正在连接服务器");
     let normalizedHost = host.trim();
     let normalizedPort = Number(port);
     if (/^(sftp|ssh):\/\//.test(normalizedHost)) {
@@ -60,16 +63,18 @@ export function SftpConnectDialog({ onClose }: { onClose: () => void }) {
       });
       if (!result.trusted) { setTrust(result.fingerprint); return; }
       const root = remoteUri(id, "/");
+      setStage("正在加载远程目录");
       if (!await useWorkspaceStore.getState().setProject(root)) throw new Error("无法打开远程目录，请检查目录权限或未保存的文件");
       settingsStorage.setItem(historyKey, id);
       settingsStorage.setItem(`sftp-label:${id}`, `${username.trim()}@${hostname}:${serverPort}`);
       settingsStorage.setItem(`sftp-connection:${id}`, JSON.stringify({ host: hostname, port: serverPort, username: username.trim(), password, fingerprint: result.fingerprint }));
       useWorkspaceStore.setState({ remoteLabel: `${username.trim()}@${hostname}:${serverPort}` });
+      setStage("正在启动远程终端");
       await useTerminalStore.getState().createSession({ id: "ssh", name: "终端", command: "" }, root);
       useLayoutStore.setState({ leftSidebarVisible: true, bottomPanelVisible: true, bottomPanelTab: "terminal" });
       setPassword("");
       onClose();
-    } catch (cause) { setError(String(cause)); await invoke("close_remote", { id }).catch(() => {}); }
+    } catch (cause) { setError(String(cause)); setStage("正在清理连接"); await invoke("close_remote", { id }).catch(() => {}); }
     finally { working.current = false; setBusy(false); }
   };
 
@@ -81,7 +86,7 @@ export function SftpConnectDialog({ onClose }: { onClose: () => void }) {
         <Dialog.Close disabled={busy} aria-label="关闭 SFTP 连接对话框" className="rounded p-1 hover:bg-white/10 disabled:opacity-40"><X size={16} /></Dialog.Close>
       </header>
       <Dialog.Description className="sr-only">连接后，在工作区文件树中浏览服务器目录，在底部终端中使用远程 Shell。</Dialog.Description>
-      <form className="flex flex-col gap-3 p-4 text-sm" onSubmit={event => { event.preventDefault(); void connect(); }}>
+      <form className="flex flex-col gap-3 p-4 text-sm" aria-busy={busy} onSubmit={event => { event.preventDefault(); void connect(); }}>
         {connections.length > 0 && <label className="flex flex-col gap-1">已保存的连接<select disabled={busy} defaultValue="" className="ide-control rounded px-3 py-2" onChange={event => {
           const connection = connections.find(item => item.id === event.target.value);
           if (!connection) return;
@@ -101,7 +106,8 @@ export function SftpConnectDialog({ onClose }: { onClose: () => void }) {
             className="ide-control rounded px-3 py-2" /></label>)}
         {trust && <div className="break-all rounded border border-ide-panel-border p-3 text-xs">请与服务器管理员核对 SSH 主机指纹（SHA-256 十六进制）：<p className="my-2 font-mono select-text">{trust}</p>确认后将发送密码进行认证。</div>}
         {error && <p role="alert" className="text-red-400">{error}</p>}
-        <button disabled={busy} type="submit" className="self-end rounded ide-button ide-button-primary px-4 py-2">{busy ? "正在连接..." : trust ? "信任指纹并连接" : "连接"}</button>
+        {busy && <OperationProgress label={stage} />}
+        <button disabled={busy} type="submit" className="self-end rounded ide-button ide-button-primary px-4 py-2">{busy ? `${stage}…` : trust ? "信任指纹并连接" : "连接"}</button>
       </form>
     </DialogShell>
   </Dialog.Root>;

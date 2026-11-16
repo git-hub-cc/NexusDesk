@@ -1,5 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
+import { OperationProgress } from "@/components/OperationProgress";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 import { fsApi, gitApi, type GitCloneAuth, type GitProvider, type GitRepository } from "@/lib/api";
@@ -14,7 +15,7 @@ function savedProvider(): GitProvider {
 }
 
 interface CloneProjectDialogProps {
-  onClone: (url: string, targetPath: string, auth?: GitCloneAuth) => Promise<void>;
+  onClone: (url: string, targetPath: string, auth?: GitCloneAuth, onProgress?: (stage: string) => void) => Promise<void>;
   onClose: () => void;
 }
 
@@ -31,6 +32,7 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
   const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState("");
   const [error, setError] = useState("");
   const root = useWorkspaceStore(state => state.rootPath);
   const credentialsEdited = useRef(false);
@@ -111,9 +113,10 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
     }
     working.current = true;
     setBusy(true);
+    setStage("正在克隆仓库");
     setError("");
     try {
-      await onClone(url.trim(), targetPath, token.trim() ? { token: token.trim(), provider } : undefined);
+      await onClone(url.trim(), targetPath, token.trim() ? { token: token.trim(), provider } : undefined, setStage);
       onClose();
     } catch (cause) {
       setError(`克隆失败：${String(cause)}`);
@@ -158,7 +161,7 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
               className="ide-button ide-button-secondary rounded px-3 py-2">刷新</button>
           </div>
           <p className="text-xs text-gray-400">Token 按平台保存在本机，需有读取仓库的权限。留空可直接通过链接克隆；克隆成功后也会保存到该项目的 Git 设置。</p>
-          {loading && <p role="status" className="text-xs text-gray-400">正在获取我的项目...</p>}
+          {loading && <OperationProgress label="正在获取我的项目" />}
           {listError && <p role="alert" className="text-xs text-red-400">{listError}</p>}
           {loaded && <section className="flex flex-col gap-2" aria-label="我的项目">
             <label htmlFor={`${id}-filter`} className="text-xs">我的项目（{repositories.length}）</label>
@@ -192,11 +195,11 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
             <button type="button" disabled={busy} onClick={() => void browse()} className="shrink-0 ide-button ide-button-secondary rounded px-3 py-2">浏览...</button>
           </div>
           {targetPath && <p className="break-all text-xs text-gray-400">克隆到：{targetPath}</p>}
-          {busy && <p role="status" className="text-xs text-gray-400">正在克隆仓库...</p>}
+          {busy && <OperationProgress label={stage} />}
           {error && <p role="alert" className="break-words text-xs text-red-400">{error}</p>}
           <footer className="mt-2 flex justify-end gap-2">
             <Dialog.Close disabled={busy} className="ide-button ide-button-secondary rounded px-4 py-1.5">取消</Dialog.Close>
-            <button type="submit" disabled={busy || !url.trim() || !targetPath} className="rounded ide-button ide-button-primary px-4 py-1.5">{busy ? "正在克隆..." : "克隆"}</button>
+            <button type="submit" disabled={busy || !url.trim() || !targetPath} className="rounded ide-button ide-button-primary px-4 py-1.5">{busy ? `${stage}…` : "克隆"}</button>
           </footer>
         </form>
       </DialogShell>

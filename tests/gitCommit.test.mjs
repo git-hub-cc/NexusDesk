@@ -26,9 +26,12 @@ async function submit({ failSave = false, failStage = false } = {}) {
   let index = 'old';
   let committed;
   let error;
+  let busy;
+  let operation;
+  const stages = [];
   const calls = [];
   const execute = new Function('gitApi', 'flushPendingWrites', 'files', 'root', 'message',
-    'locked', 'pendingRef', 'mounted', 'setBusy', 'setError', 'setNotice', 'refresh', 'changeMessage', compiled);
+    'locked', 'pendingRef', 'mounted', 'setBusy', 'setError', 'setNotice', 'refresh', 'changeMessage', 'setOperation', 'setStage', compiled);
   await execute({
     async stage(root, path, staged) {
       calls.push(['stage', path, staged]);
@@ -45,8 +48,9 @@ async function submit({ failSave = false, failStage = false } = {}) {
     { path: 'other/a.md', staged: false },
     { path: 'deleted.md', staged: true },
   ], '/repo', 'message', { current: false }, { current: new Set() }, { current: true },
-  () => {}, value => { error = value; }, () => {}, async () => {}, () => {});
-  return { calls, committed, error };
+  value => { busy = value; }, value => { error = value; }, () => {}, async () => {}, () => {},
+  value => { operation = value; }, value => { stages.push(value); });
+  return { calls, committed, error, busy, operation, stages };
 }
 
 test('commit includes flushed edits and restages only selected paths before committing', async () => {
@@ -56,6 +60,9 @@ test('commit includes flushed edits and restages only selected paths before comm
     ['save'], ['stage', 'notes/a.md', true], ['stage', 'deleted.md', true], ['commit'],
   ]);
   assert.equal(result.error, '');
+  assert.equal(result.operation, '正在提交');
+  assert.deepEqual(result.stages, ['正在保存文件', '正在提交', '正在刷新 Git 状态']);
+  assert.equal(result.busy, false);
 });
 
 test('save or restage failure prevents commit', async () => {
@@ -64,5 +71,7 @@ test('save or restage failure prevents commit', async () => {
     assert.equal(result.committed, undefined);
     assert.ok(result.error.includes('failed'));
     assert.equal(result.calls.some(call => call[0] === 'commit'), false);
+    assert.equal(result.busy, false);
+    assert.equal(result.stages.includes('正在刷新 Git 状态'), false);
   }
 });
