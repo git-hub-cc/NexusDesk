@@ -1,4 +1,5 @@
 mod capture_service;
+mod clone_service;
 pub mod commands;
 pub mod core;
 mod logging;
@@ -83,6 +84,13 @@ mod lifecycle_tests {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == clone_service::WORKER_ARGUMENT)
+    {
+        clone_service::run_worker();
+        return;
+    }
     logging::init().expect("Cannot initialize application logs");
     if std::env::args_os().any(|arg| arg == "--capture-service") {
         capture_service::run();
@@ -319,6 +327,7 @@ pub fn run() {
             commands::git_cmds::get_git_image_diff,
             commands::git_cmds::is_git_installed,
             commands::git_cmds::clone_git_repository,
+            commands::git_cmds::cancel_git_clone,
             commands::git_cmds::list_git_repositories,
             commands::git_cmds::push_git_repository,
             commands::git_cmds::get_git_settings,

@@ -1,5 +1,27 @@
-use crate::core::git;
+use crate::{clone_service, core::git};
 use serde::Deserialize;
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
+};
+
+fn clone_requests() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    static REQUESTS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+    REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[tauri::command]
+pub fn cancel_git_clone(request_id: String) -> bool {
+    let requests = clone_requests().lock().unwrap();
+    if let Some(cancelled) = requests.get(&request_id) {
+        cancelled.store(true, Ordering::Relaxed);
+        return true;
+    }
+    false
+}
 
 #[tauri::command]
 pub async fn is_git_installed() -> Result<bool, String> {
@@ -167,12 +189,23 @@ pub fn save_git_settings(repo_path: String, settings: GitSettingsInput) -> Resul
 }
 #[tauri::command]
 pub async fn clone_git_repository(
+    request_id: String,
     url: String,
     target_path: String,
     token: Option<String>,
     provider: Option<String>,
 ) -> Result<(), String> {
+    let cancelled = {
+        let mut requests = clone_requests().lock().unwrap();
+        if requests.contains_key(&request_id) {
+            return Err("克隆请求已存在".into());
+        }
+        let cancelled = Arc::new(AtomicBool::new(false));
+        requests.insert(request_id.clone(), cancelled.clone());
+        cancelled
+    };
     tauri::async_runtime::spawn_blocking(move || {
+        let request = CloneRequestGuard(Some(request_id));
         let url = url.trim();
         if url.is_empty() {
             return Err("请输入 Git 仓库链接".to_string());
@@ -185,26 +218,31 @@ pub async fn clone_git_repository(
             return Err("目标目录已存在，请更换项目名称".to_string());
         }
         let token = token.as_deref().unwrap_or_default().trim();
-        let mut callbacks = git2::RemoteCallbacks::new();
-        if !token.is_empty() {
-            let host = validate_clone_host(url, provider.as_deref().unwrap_or("github"))?;
-            callbacks.credentials(move |credential_url, _, allowed| {
-                let trusted = reqwest::Url::parse(credential_url)
-                    .is_ok_and(|url| url.scheme() == "https" && url.host_str() == Some(host));
-                if trusted && allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
-                    git2::Cred::userpass_plaintext("oauth2", token)
-                } else {
-                    Err(git2::Error::from_str("无法为该地址提供凭据"))
-                }
-            });
+        let host = if token.is_empty() {
+            None
+        } else {
+            Some(validate_clone_host(url, provider.as_deref().unwrap_or("github"))?.to_string())
+        };
+        std::fs::create_dir(target).map_err(|error| format!("无法创建目标目录：{error}"))?;
+        let result = clone_service::run(
+            &clone_service::CloneInput {
+                url: url.to_string(),
+                target_path: target_path.clone(),
+                token: token.to_string(),
+                host,
+            },
+            &cancelled,
+        );
+        if request.finish() {
+            std::fs::remove_dir_all(target)
+                .map_err(|error| format!("克隆已取消，但清理目标目录失败：{error}"))?;
+            return Err("克隆已取消".into());
         }
-        let mut fetch = git2::FetchOptions::new();
-        fetch.remote_callbacks(callbacks);
-        let mut builder = git2::build::RepoBuilder::new();
-        builder.fetch_options(fetch);
-        builder
-            .clone(url, target)
-            .map_err(|error| error.to_string())?;
+        if let Err(error) = result {
+            std::fs::remove_dir_all(target)
+                .map_err(|cleanup| format!("{error}；清理目标目录失败：{cleanup}"))?;
+            return Err(error);
+        }
         if !token.is_empty() {
             git::save_settings(&target_path, "", "", "oauth2", token)
                 .map_err(|_| "仓库已克隆，但 Token 保存失败，请打开项目后重新配置".to_string())?;
@@ -213,6 +251,28 @@ pub async fn clone_git_repository(
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+struct CloneRequestGuard(Option<String>);
+
+impl CloneRequestGuard {
+    fn finish(mut self) -> bool {
+        let request_id = self.0.take().unwrap();
+        // 与取消操作共用锁，让请求结束和最后一次取消检查保持原子性。
+        clone_requests()
+            .lock()
+            .unwrap()
+            .remove(&request_id)
+            .is_some_and(|cancelled| cancelled.load(Ordering::Relaxed))
+    }
+}
+
+impl Drop for CloneRequestGuard {
+    fn drop(&mut self) {
+        if let Some(request_id) = &self.0 {
+            clone_requests().lock().unwrap().remove(request_id);
+        }
+    }
 }
 
 #[tauri::command]
@@ -362,6 +422,47 @@ pub fn ignore_git_file(repo_path: String, path: String) -> Result<(), String> {
 mod clone_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn cancelling_unknown_request_does_not_create_a_record() {
+        let request_id = "unknown-clone-request".to_string();
+        assert!(!cancel_git_clone(request_id.clone()));
+        assert!(!clone_requests().lock().unwrap().contains_key(&request_id));
+    }
+
+    #[test]
+    fn finishing_request_observes_cancellation_and_rejects_late_cancels() {
+        let request_id = "cancelled-clone-request".to_string();
+        clone_requests()
+            .lock()
+            .unwrap()
+            .insert(request_id.clone(), Arc::new(AtomicBool::new(false)));
+        let request = CloneRequestGuard(Some(request_id.clone()));
+        assert!(cancel_git_clone(request_id.clone()));
+        assert!(request.finish());
+        assert!(!cancel_git_clone(request_id.clone()));
+        assert!(!clone_requests().lock().unwrap().contains_key(&request_id));
+    }
+
+    #[test]
+    fn failed_and_completed_requests_release_their_records() {
+        for (request_id, completed) in [
+            ("failed-clone-request", false),
+            ("completed-clone-request", true),
+        ] {
+            clone_requests()
+                .lock()
+                .unwrap()
+                .insert(request_id.to_string(), Arc::new(AtomicBool::new(false)));
+            let request = CloneRequestGuard(Some(request_id.to_string()));
+            if completed {
+                assert!(!request.finish());
+            } else {
+                drop(request);
+            }
+            assert!(!cancel_git_clone(request_id.to_string()));
+        }
+    }
 
     #[test]
     fn token_clone_requires_selected_https_host() {

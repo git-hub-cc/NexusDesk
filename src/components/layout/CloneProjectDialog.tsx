@@ -15,7 +15,7 @@ function savedProvider(): GitProvider {
 }
 
 interface CloneProjectDialogProps {
-  onClone: (url: string, targetPath: string, auth?: GitCloneAuth, onProgress?: (stage: string) => void) => Promise<void>;
+  onClone: (requestId: string, url: string, targetPath: string, auth?: GitCloneAuth, onCloned?: () => void) => Promise<void>;
   onClose: () => void;
 }
 
@@ -28,6 +28,10 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
   const id = useId();
   const urlInput = useRef<HTMLInputElement>(null);
   const working = useRef(false);
+  const activeRequest = useRef<string | null>(null);
+  const cancelRequested = useRef(false);
+  const [canCancel, setCanCancel] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
@@ -112,17 +116,49 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
       setError("请选择或输入完整的保存目录路径"); return;
     }
     working.current = true;
+    const requestId = crypto.randomUUID();
+    activeRequest.current = requestId;
+    cancelRequested.current = false;
+    setCanCancel(true);
     setBusy(true);
     setStage("正在克隆仓库");
     setError("");
     try {
-      await onClone(url.trim(), targetPath, token.trim() ? { token: token.trim(), provider } : undefined, setStage);
+      await onClone(requestId, url.trim(), targetPath, token.trim() ? { token: token.trim(), provider } : undefined, () => {
+        activeRequest.current = null;
+        setCanCancel(false);
+        setCanceling(false);
+        setStage("正在打开项目");
+      });
       onClose();
     } catch (cause) {
       setError(`克隆失败：${String(cause)}`);
     } finally {
       working.current = false;
+      activeRequest.current = null;
+      setCanCancel(false);
+      setCanceling(false);
       setBusy(false);
+    }
+  };
+
+  const cancelClone = async () => {
+    const requestId = activeRequest.current;
+    if (!requestId || cancelRequested.current) return;
+    cancelRequested.current = true;
+    setCanceling(true);
+    setStage("正在取消克隆");
+    try {
+      while (activeRequest.current === requestId) {
+        if (await gitApi.cancelClone(requestId)) return;
+        await new Promise(resolve => window.setTimeout(resolve, 50));
+      }
+    } catch (cause) {
+      if (activeRequest.current !== requestId) return;
+      setError(`取消克隆失败：${String(cause)}`);
+      cancelRequested.current = false;
+      setCanceling(false);
+      setStage("正在克隆仓库");
     }
   };
 
@@ -133,7 +169,7 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
         onEscapeKeyDown={event => { if (working.current) event.preventDefault(); }}>
         <header className="flex items-center justify-between border-b border-ide-panel-border px-4 py-3">
           <Dialog.Title className="font-medium">克隆 Git 项目</Dialog.Title>
-          <Dialog.Close disabled={busy} aria-label="取消克隆" className="rounded p-1 hover:bg-white/10 disabled:opacity-40"><X size={16} /></Dialog.Close>
+          <button type="button" disabled={busy && (!canCancel || canceling)} onClick={() => busy ? void cancelClone() : onClose()} aria-label={busy ? "取消克隆" : "关闭"} className="rounded p-1 hover:bg-white/10 disabled:opacity-40"><X size={16} /></button>
         </header>
         <form onSubmit={event => void submit(event)} className="flex flex-col gap-3 p-4" aria-busy={busy}>
           <label htmlFor={`${id}-provider`} className="text-xs">代码托管平台</label>
@@ -198,7 +234,7 @@ export function CloneProjectDialog({ onClone, onClose }: CloneProjectDialogProps
           {busy && <OperationProgress label={stage} />}
           {error && <p role="alert" className="break-words text-xs text-red-400">{error}</p>}
           <footer className="mt-2 flex justify-end gap-2">
-            <Dialog.Close disabled={busy} className="ide-button ide-button-secondary rounded px-4 py-1.5">取消</Dialog.Close>
+            {busy ? <button type="button" disabled={!canCancel || canceling} onClick={() => void cancelClone()} className="ide-button ide-button-secondary rounded px-4 py-1.5">{canceling ? "正在取消…" : "取消克隆"}</button> : <Dialog.Close className="ide-button ide-button-secondary rounded px-4 py-1.5">取消</Dialog.Close>}
             <button type="submit" disabled={busy || !url.trim() || !targetPath} className="rounded ide-button ide-button-primary px-4 py-1.5">{busy ? `${stage}…` : "克隆"}</button>
           </footer>
         </form>

@@ -54,9 +54,9 @@ export const TitleBar: React.FC<{ expanded?: boolean }> = ({ expanded = false } 
     if (!await setProject(path)) throw new Error("无法打开新项目目录");
   };
 
-  const cloneProject = async (url: string, targetPath: string, auth?: GitCloneAuth, onProgress?: (stage: string) => void) => {
-    await gitApi.cloneRepository(url, targetPath, auth);
-    onProgress?.("正在打开项目");
+  const cloneProject = async (requestId: string, url: string, targetPath: string, auth?: GitCloneAuth, onCloned?: () => void) => {
+    await gitApi.cloneRepository(requestId, url, targetPath, auth);
+    onCloned?.();
     if (!await setProject(targetPath)) throw new Error("无法打开克隆的项目目录");
   };
 

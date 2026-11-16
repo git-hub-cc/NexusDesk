@@ -5,16 +5,16 @@ import vm from 'node:vm';
 import React from 'react';
 import ts from 'typescript';
 
-function titleBar({ rootPath = null, exists = async () => true, confirmed = false, launchError = null } = {}) {
+function titleBar({ rootPath = null, exists = async () => true, confirmed = false, launchError = null, cloneRepository = async () => {}, openProject = async () => true } = {}) {
   const states = [];
   let cursor = 0;
   const prompts = [], errors = [], opened = [], checked = [], launched = [];
-  let state = { rootPath, recentProjects: ['C:/existing', 'C:/missing'], setProject: async path => { opened.push(path); return true; } };
+  let state = { rootPath, recentProjects: ['C:/existing', 'C:/missing'], setProject: async path => { opened.push(path); return openProject(path); } };
   const store = Object.assign(() => state, { setState: update => { state = { ...state, ...update(state) }; } });
   const source = readFileSync(new URL('../src/components/layout/TitleBar.tsx', import.meta.url), 'utf8').replace(/^import .*;\r?$/gm, '');
   const exports = {};
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.React, module: ts.ModuleKind.CommonJS } }).outputText, {
-    exports, React, snapshotCommit: null, flushGlobalSettings: async () => {},
+    exports, React, snapshotCommit: null, flushGlobalSettings: async () => {}, gitApi: { cloneRepository },
     useEffect() {},
     settingsStorage: { getItem: () => null },
     invoke: async (command, args) => {
@@ -53,6 +53,27 @@ function titleBar({ rootPath = null, exists = async () => true, confirmed = fals
     refresh: () => render().find(node => node.props.onBeforeOpen).props.onBeforeOpen(),
   };
 }
+
+test('cloning signals completion before opening the project', async () => {
+  const events = [];
+  let finishOpening;
+  const opening = new Promise(resolve => { finishOpening = resolve; });
+  const bar = titleBar({
+    cloneRepository: async (...args) => { events.push(['clone', ...args]); },
+    openProject: async path => { events.push(['open', path]); await opening; return true; },
+  });
+  bar.render().find(node => node.type === 'Menu.Item' && node.props.children === '克隆 Git 项目...').props.onSelect();
+  const dialog = bar.render().find(node => node.type === 'CloneProjectDialog');
+  const task = dialog.props.onClone('request', 'https://example.invalid/repo.git', 'C:/repo', undefined, () => events.push(['cloned']));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(events, [
+    ['clone', 'request', 'https://example.invalid/repo.git', 'C:/repo', undefined],
+    ['cloned'],
+    ['open', 'C:/repo'],
+  ]);
+  finishOpening();
+  await task;
+});
 
 test('recent projects refresh missing colors and clear them when a directory returns', async () => {
   let missing = true;
