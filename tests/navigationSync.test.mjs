@@ -11,7 +11,7 @@ function response(status, body = {}) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }
 
-function createSync(fetch, data = { categories: [] }, logicalData = null, values = new Map(), fastInitialization = false) {
+function createSync(fetch, data = { categories: [] }, logicalData = { workspace: "global", folders: [], entries: [] }, values = new Map(), fastInitialization = false) {
   let rootPath = logicalData ? "C:/project" : null;
   const applied = [];
   const listeners = new Map();
@@ -91,7 +91,7 @@ function repository(initial = {}) {
   };
 }
 
-const logicalSnapshot = (workspace = 'folder:project') => ({ workspace, folders: ['notes', 'empty'], entries: [{ path: 'a.md', category: 'notes', kind: 'reference' }] });
+const logicalSnapshot = (workspace = 'global') => ({ workspace, folders: ['notes', 'empty'], entries: [{ path: 'C:/project/a.md', category: 'notes', kind: 'reference' }] });
 
 test('new GitHub repository waits for its default branch and serializes initial commits', async () => {
   const repo = repository();
@@ -208,7 +208,7 @@ for (const provider of ['github', 'gitlab', 'gitee']) {
     assert.deepEqual(new Set(repo.writes.map(write => write.name)), new Set(['navhub.json', 'logical-partitions.json']));
     assert.equal(repo.disk.get('navhub.json').logicalPartitions, undefined);
     assert.deepEqual(repo.disk.get('logical-partitions.json').workspaces.other, { folders: ['other'], entries: [] });
-    assert.deepEqual(repo.disk.get('logical-partitions.json').workspaces['folder:project'].folders, ['empty', 'notes']);
+    assert.deepEqual(repo.disk.get('logical-partitions.json').workspaces.global.folders, ['empty', 'notes']);
     repo.writes.length = 0;
     sync.values.set('proxy-mode-preference', 'true');
     await sync.save();
@@ -241,21 +241,26 @@ test('legacy migration preserves data until the new file is saved and retries cl
   assert.deepEqual(repo.disk.get('navhub.json').preferences, original.preferences);
 });
 
-test('logical sync waits for a local project and resumes when it opens', async () => {
+test('logical sync shares one snapshot across local projects, SFTP and no project', async () => {
   const repo = repository();
-  const sync = createSync(repo.fetch.bind(repo));
+  const sync = createSync(repo.fetch.bind(repo), { categories: [] }, logicalSnapshot());
   sync.api.setCloudSyncSelection({ myNavigation: false, logicalPartitions: true });
   await sync.api.connectNavigationSync('token', 'owner/repo', 'github');
-  assert.match(sync.api.getNavigationSyncState().logicalNotice, /等待打开本地项目/);
-  assert.equal(repo.writes.length, 0);
-  sync.setLogical(logicalSnapshot(), 'sftp:server/project');
-  await sync.save('nexusdesk-logical-data-changed');
-  assert.match(sync.api.getNavigationSyncState().logicalNotice, /SFTP/);
-  assert.equal(repo.writes.length, 0);
-  sync.setLogical(logicalSnapshot(), 'C:/project');
-  await sync.save('nexusdesk-logical-data-changed');
-  assert.equal(sync.api.getNavigationSyncState().logicalNotice, '');
-  assert.deepEqual(repo.writes.map(write => write.name), ['logical-partitions.json']);
+  const initialWrites = repo.writes.length;
+  const folders = ['notes', 'empty'];
+  for (const root of ['C:/other', 'sftp:server/project', null]) {
+    sync.setLogical(logicalSnapshot(), root);
+    await sync.save('nexusdesk-logical-data-changed');
+    assert.equal(sync.api.getNavigationSyncState().logicalNotice, '');
+    assert.equal(repo.writes.length, initialWrites);
+  }
+  for (const root of ['C:/other', 'sftp:server/project', null]) {
+    folders.push(`shared-${folders.length}`);
+    sync.setLogical({ ...logicalSnapshot(), folders: [...folders] }, root);
+    await sync.save('nexusdesk-logical-data-changed');
+    assert.deepEqual(repo.disk.get('logical-partitions.json').workspaces.global.folders, [...folders].sort());
+  }
+  assert.deepEqual(Object.keys(repo.disk.get('logical-partitions.json').workspaces), ['global']);
 });
 
 test('deletions survive reconnect and propagate to another device without resurrecting', async () => {
@@ -266,10 +271,10 @@ test('deletions survive reconnect and propagate to another device without resurr
     device.api.setCloudSyncSelection({ myNavigation: false, logicalPartitions: true });
     await device.api.connectNavigationSync('token', 'owner/repo', 'github');
   }
-  const removed = { workspace: 'folder:project', folders: ['empty'], entries: [] };
+  const removed = { workspace: 'global', folders: ['empty'], entries: [] };
   deviceA.setLogical(removed);
   await deviceA.save('nexusdesk-logical-data-changed');
-  const remote = repo.disk.get('logical-partitions.json').workspaces['folder:project'];
+  const remote = repo.disk.get('logical-partitions.json').workspaces.global;
   assert.deepEqual(remote.deletedFolders, ['notes']);
   assert.equal(remote.deletedEntries.length, 1);
   await deviceB.api.syncNavigationNow();
@@ -277,10 +282,10 @@ test('deletions survive reconnect and propagate to another device without resurr
   assert.equal(deviceB.applied.at(-1).entries.length, 0);
   const restarted = createSync(repo.fetch.bind(repo), { categories: [] }, removed, deviceA.values);
   await restarted.api.connectNavigationSync('token', 'owner/repo', 'github');
-  assert.equal(repo.disk.get('logical-partitions.json').workspaces['folder:project'].entries.length, 0);
+  assert.equal(repo.disk.get('logical-partitions.json').workspaces.global.entries.length, 0);
   deviceB.setLogical(logicalSnapshot());
   await deviceB.save('nexusdesk-logical-data-changed');
-  assert.equal(repo.disk.get('logical-partitions.json').workspaces['folder:project'].entries.length, 1, 'explicit recreation should sync');
+  assert.equal(repo.disk.get('logical-partitions.json').workspaces.global.entries.length, 1, 'explicit recreation should sync');
 });
 
 test('disabled logical sync preserves legacy data and does not create a partition file', async () => {
@@ -448,3 +453,43 @@ for (const failure of [
     assert.equal(sync.api.getNavigationSyncState().error, '');
   });
 }
+
+test('existing global absolute entries and normalized tombstones apply across projects', async () => {
+  const global = {
+    folders: ['shared'],
+    entries: [
+      { path: 'C:/elsewhere/keep.md', category: 'shared', kind: 'reference' },
+      { path: 'C:/Elsewhere/removed.md', category: 'shared', kind: 'copy' },
+    ],
+    deletedFolders: [],
+    deletedEntries: [JSON.stringify(['copy', 'c:/elsewhere/removed.md', 'shared'])],
+  };
+  const repo = repository({ 'logical-partitions.json': { version: 1, workspaces: { global } } });
+  const sync = createSync(repo.fetch.bind(repo));
+  sync.setLogical({ workspace: 'global', folders: [], entries: [] }, null);
+  sync.api.setCloudSyncSelection({ myNavigation: false, logicalPartitions: true });
+  await sync.api.connectNavigationSync('token', 'owner/repo', 'github');
+  assert.equal(sync.applied.length, 1);
+  assert.equal(sync.applied[0].workspace, 'global');
+  assert.deepEqual(Array.from(sync.applied[0].entries, entry => entry.path), ['C:/elsewhere/keep.md']);
+});
+
+test('legacy workspace migrates relative paths and tombstones into global once', async () => {
+  const old = {
+    folders: ['notes'],
+    entries: [
+      { path: 'kept.md', category: 'notes', kind: 'reference' },
+      { path: 'removed.md', category: 'notes', kind: 'copy' },
+    ],
+    deletedEntries: [JSON.stringify(['copy', 'removed.md', 'notes'])],
+  };
+  const repo = repository({ 'logical-partitions.json': { version: 1, workspaces: { 'folder:project': old } } });
+  const local = { workspace: 'global', legacyWorkspace: 'folder:project', folders: [], entries: [] };
+  const sync = createSync(repo.fetch.bind(repo), { categories: [] }, local);
+  sync.api.setCloudSyncSelection({ myNavigation: false, logicalPartitions: true });
+  await sync.api.connectNavigationSync('token', 'owner/repo', 'github');
+  const document = repo.disk.get('logical-partitions.json');
+  assert.equal(document.workspaces['folder:project'], undefined);
+  assert.deepEqual(document.workspaces.global.entries.map(entry => entry.path), ['C:/project/kept.md']);
+  assert.equal(sync.applied[0].workspace, 'global');
+});

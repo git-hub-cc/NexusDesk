@@ -61,7 +61,7 @@ test("closing a project flushes edits, preserves its session and clears the work
   assert.equal(state.projectPinnedTabs["close-project"].left[0].id, "close");
   assert.deepEqual(state.recentProjects, ["close-project"]);
   await state.fetchLogicalTree();
-  assert.deepEqual(store.getState().logicalTreeData, []);
+  assert.deepEqual(store.getState().logicalTreeData, [{ id: "updated" }]);
   store.setState({ leftTabs: [{ id: "a", path: "a.md", title: "a", content: "initial" }],
     rightTabs: [{ id: "a", path: "a.md", title: "a", content: "initial" }] });
 });
@@ -138,13 +138,15 @@ test("session restart restores ordinary tabs, order, active panes and current di
 
 test("autosave coalesces edits, serializes writes, preserves dirty state and retries errors", async () => {
   store.setState({ rootPath: "autosave-project" });
+  await store.getState().fetchLogicalTree();
+  const logicalTreeBeforeSave = store.getState().logicalTreeData;
   edit("one"); edit("two"); edit("three");
   assert.equal(writes.length, 0);
   await new Promise(resolve => setTimeout(resolve, 550));
   await flushPendingWrites();
   assert.deepEqual(writes, [["a.md", "three"]]);
   assert.equal(current().isDirty, false);
-  assert.deepEqual(store.getState().logicalTreeData, [], "body edits do not rebuild the logical tree");
+  assert.equal(store.getState().logicalTreeData, logicalTreeBeforeSave, "body edits do not rebuild the logical tree");
   assert.ok(store.getState().indexRevision > 0, "link views still refresh after saves");
   edit("temporary"); edit("three");
   await flushPendingWrites();

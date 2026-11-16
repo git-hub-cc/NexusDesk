@@ -233,8 +233,20 @@ async function syncNavigation(mergeRemote = true) {
   remoteData = merged;
 }
 
+function logicalPath(path: string) {
+  const value = path.replace(/\\/g, "/").replace(/^\/\/\?\/UNC\//i, "//").replace(/^\/\/\?\//, "");
+  return /^(?:[a-z]:|\/\/)/i.test(value) ? value.toLowerCase() : value;
+}
+
 function entryKey(entry: LogicalSyncData["entries"][number]) {
-  return JSON.stringify([entry.kind, entry.path.replace(/\\/g, "/"), entry.category]);
+  return JSON.stringify([entry.kind, logicalPath(entry.path), entry.category]);
+}
+
+function normalizeDeletedEntry(key: string) {
+  try {
+    const [kind, path, category] = JSON.parse(key);
+    return entryKey({ kind, path, category });
+  } catch { return key; }
 }
 
 function logicalEqual(a: Pick<LogicalSyncData, "folders" | "entries">, b: Pick<LogicalSyncData, "folders" | "entries">) {
@@ -242,8 +254,8 @@ function logicalEqual(a: Pick<LogicalSyncData, "folders" | "entries">, b: Pick<L
     && JSON.stringify(a.entries.map(entryKey).sort()) === JSON.stringify(b.entries.map(entryKey).sort());
 }
 
-function logicalSnapshot(root: string, data: LogicalSyncData) {
-  return JSON.stringify([root, data.workspace, [...data.folders].sort(), data.entries.map(entryKey).sort()]);
+function logicalSnapshot(data: LogicalSyncData) {
+  return JSON.stringify(["global", [...data.folders].sort(), data.entries.map(entryKey).sort()]);
 }
 
 function validLogicalWorkspace(value: unknown): value is LogicalWorkspace {
@@ -257,7 +269,7 @@ function validLogicalWorkspace(value: unknown): value is LogicalWorkspace {
 
 function mergeLogical(local: LogicalSyncData, remote: LogicalWorkspace | undefined, baseline: LogicalSyncData | null): LogicalWorkspace {
   const deletedFolders = new Set(remote?.deletedFolders ?? []);
-  const deletedEntries = new Set(remote?.deletedEntries ?? []);
+  const deletedEntries = new Set((remote?.deletedEntries ?? []).map(normalizeDeletedEntry));
   const localFolders = new Set(local.folders);
   const localEntries = new Map(local.entries.map(entry => [entryKey(entry), entry]));
   const previousFolders = new Set(baseline?.folders ?? []);
@@ -283,11 +295,7 @@ function mergeLogical(local: LogicalSyncData, remote: LogicalWorkspace | undefin
 
 async function syncLogical() {
   if (!getCloudSyncSelection().logicalPartitions) { update({ logicalNotice: "" }); return false; }
-  const root = useWorkspaceStore.getState().rootPath;
-  if (!root || root.startsWith("sftp:")) {
-    update({ logicalNotice: root ? "当前 SFTP 项目不支持逻辑分区同步" : "逻辑分区等待打开本地项目" });
-    return false;
-  }
+  const root = useWorkspaceStore.getState().rootPath ?? "";
   update({ logicalNotice: "" });
   const local = await fsApi.getLogicalSyncData(root);
   const snapshot = await readRepositoryFile(LOGICAL_FILE);
@@ -305,24 +313,46 @@ async function syncLogical() {
   if (legacy && !Object.prototype.hasOwnProperty.call(document.workspaces, legacy.workspace)) {
     document.workspaces = { ...document.workspaces, [legacy.workspace]: { folders: legacy.folders, entries: legacy.entries } };
   }
-  const baselineKey = `nexusdesk.cloudSync.baseline:${current.provider}:${current.repo}:${root}:${local.workspace}`;
+  // 旧项目记录迁入全局；无法定位根目录的其他项目记录继续保留在原文件中。
+  let remote = document.workspaces.global;
+  const legacyWorkspace = local.legacyWorkspace;
+  if (legacyWorkspace && document.workspaces[legacyWorkspace] && root && !root.startsWith("sftp:")) {
+    const previous = document.workspaces[legacyWorkspace];
+    const absolute = (path: string) => /^(?:[a-z]:[\\/]|[\\/])/i.test(path) ? path : `${root.replace(/[\\/]+$/, "")}/${path}`;
+    const migrated = {
+      ...previous,
+      workspace: "global",
+      entries: previous.entries.map(entry => ({ ...entry, path: absolute(entry.path) })),
+    };
+    const deletedEntries = (previous.deletedEntries ?? []).map(key => {
+      try {
+        const [kind, path, category] = JSON.parse(key);
+        return entryKey({ kind, path: absolute(path), category });
+      } catch { return key; }
+    });
+    remote = mergeLogical(migrated, {
+      folders: remote?.folders ?? [], entries: remote?.entries ?? [],
+      deletedFolders: [...(remote?.deletedFolders ?? []), ...(previous.deletedFolders ?? [])],
+      deletedEntries: [...(remote?.deletedEntries ?? []), ...deletedEntries],
+    }, null);
+    delete document.workspaces[legacyWorkspace];
+  }
+  const baselineKey = `nexusdesk.cloudSync.baseline:${current.provider}:${current.repo}:global`;
   let baseline: LogicalSyncData | null = null;
   try { baseline = JSON.parse(settingsStorage.getItem(baselineKey) || "null"); }
   catch { /* 损坏的本地基线按首次同步处理，避免推断删除。 */ }
-  const merged = mergeLogical(local, document.workspaces[local.workspace], baseline);
-  const applied = { workspace: local.workspace, folders: merged.folders, entries: merged.entries };
-  if (useWorkspaceStore.getState().rootPath !== root) return;
+  const merged = mergeLogical(local, remote, baseline);
+  const applied = { workspace: "global", folders: merged.folders, entries: merged.entries };
   const nextDocument = {
     version: 1,
     updatedAt: Date.now(),
-    workspaces: { ...document.workspaces, [local.workspace]: merged },
+    workspaces: { ...document.workspaces, global: merged },
   };
   if (!snapshot.value || JSON.stringify(snapshot.value.workspaces) !== JSON.stringify(nextDocument.workspaces)) {
     await writeRepositoryFile(LOGICAL_FILE, nextDocument, `同步逻辑分区：分区 ${merged.folders.length} 个，记录 ${merged.entries.length} 条`);
   }
-  if (useWorkspaceStore.getState().rootPath !== root) return;
   const latestLocal = await fsApi.getLogicalSyncData(root);
-  if (useWorkspaceStore.getState().rootPath !== root || !logicalEqual(local, latestLocal)) return;
+  if (!logicalEqual(local, latestLocal)) return;
   if (!logicalEqual(local, applied)) {
     await fsApi.applyLogicalSyncData(root, { ...applied, deletedFolders: merged.deletedFolders });
   }
@@ -337,7 +367,7 @@ async function syncLogical() {
       await writeRepositoryFile(DATA_FILE, remaining, "迁移逻辑分区至独立文件");
     });
   }
-  lastLogicalSnapshot = logicalSnapshot(root, applied);
+  lastLogicalSnapshot = logicalSnapshot(applied);
 }
 
 function graphCategoryKey(category: GraphSyncData["categories"][number]) { return category.name.toLocaleLowerCase(); }
@@ -461,8 +491,8 @@ function queuePush(channel: SyncChannel, mergeRemote = false) {
       if (current.fileErrors?.[channel]) return true;
       if (channel === "navigation") return mergeRemote || JSON.stringify(navigationSnapshot(await loadNavigationData())) !== lastNavigationSnapshot;
       const root = useWorkspaceStore.getState().rootPath;
+      if (channel === "logical") return logicalSnapshot(await fsApi.getLogicalSyncData(root ?? "")) !== lastLogicalSnapshot;
       if (!root || root.startsWith("sftp:")) return true;
-      if (channel === "logical") return logicalSnapshot(root, await fsApi.getLogicalSyncData(root)) !== lastLogicalSnapshot;
       return graphSnapshot(root, await fsApi.getGraphSyncData(root)) !== lastGraphSnapshot;
     }).catch(() => {});
   }, 1800);

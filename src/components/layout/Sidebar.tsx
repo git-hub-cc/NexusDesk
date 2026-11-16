@@ -59,8 +59,6 @@ export const Sidebar: React.FC = () => {
                     物理
                 </button>
                 <button
-                    disabled={remote}
-                    title={remote ? "SFTP 使用物理目录树" : undefined}
                     className={`flex items-center gap-1 px-1.5 py-1 rounded-sm ml-0.5 shrink-0 transition-colors disabled:opacity-50 ${sidebarMode === "logical" ? "bg-ide-selection text-white" : "text-gray-400 hover:text-white hover:bg-ide-tab-hover"}`}
                     onClick={() => setSidebarMode("logical")}
                     onDragEnter={handleDragEnterLogical}
@@ -102,7 +100,7 @@ export const Sidebar: React.FC = () => {
                     <PhysicalTree />
                 </div>
                 <div className={`absolute inset-0 ${sidebarMode === "logical" ? "block" : "hidden"}`}>
-                    {!remote && <LogicalTree />}
+                    <LogicalTree />
                 </div>
                 <div className={`absolute inset-0 ${sidebarMode === "graph" ? "block" : "hidden"}`}>
                     {!remote && <GraphView key={rootPath} active={sidebarMode === "graph"} />}

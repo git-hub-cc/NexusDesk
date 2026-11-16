@@ -796,7 +796,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           if (version !== projectVersion) return false;
           if (!savedLayout) useLayoutStore.setState({ leftSidebarVisible: true, bottomPanelVisible: false });
 
-          if (isSnapshot || isRemotePath(path)) return true;
+          if (isSnapshot) return true;
+          if (isRemotePath(path)) { void get().fetchLogicalTree(); return true; }
           void (async () => {
             try {
               await gitApi.status(path);
@@ -825,7 +826,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       setSidebarMode: (mode) => set({ sidebarMode: mode, partitionSearchPaths: null }),
 
       fetchLogicalTree: async () => {
-        if (isSnapshot || !get().rootPath || isRemotePath(get().rootPath)) return;
+        if (isSnapshot) return;
         const version = projectVersion;
         const existing = logicalTreeRefreshes.get(version);
         if (existing) { existing.pending = true; return existing.request; }

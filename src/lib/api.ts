@@ -73,7 +73,7 @@ export const videoApi = {
     cancelMkvToMp4: (path: string): Promise<void> => invoke("cancel_mkv_to_mp4", { path }),
 };
 export interface GraphCategory { name: string; files: string[]; missingFiles: string[]; color?: string | null }
-export interface LogicalSyncData { workspace: string; folders: string[]; entries: { path: string; category: string; kind: string }[]; deletedFolders?: string[] }
+export interface LogicalSyncData { workspace: string; legacyWorkspace?: string; folders: string[]; entries: { path: string; category: string; kind: string }[]; deletedFolders?: string[] }
 export interface GraphSyncData { workspace: string; categories: { name: string; color: string | null }[]; files: { category: string; path: string }[] }
 function notifyGraphChanged() {
     window.dispatchEvent(new Event("nexusdesk-graph-data-changed"));

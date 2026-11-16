@@ -905,6 +905,12 @@ pub struct LogicalSyncEntry {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct LogicalSyncData {
     pub workspace: String,
+    #[serde(
+        default,
+        rename = "legacyWorkspace",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub legacy_workspace: Option<String>,
     pub folders: Vec<String>,
     pub entries: Vec<LogicalSyncEntry>,
     #[serde(
@@ -934,9 +940,19 @@ pub(super) fn relative_workspace_path(root: &std::path::Path, path: &str) -> Opt
     Some(relative.to_string_lossy().replace('\\', "/"))
 }
 
+fn sync_absolute_path(path: &str) -> String {
+    path.strip_prefix(r"\\?\UNC\")
+        .map(|rest| format!(r"\\{rest}"))
+        .or_else(|| path.strip_prefix(r"\\?\").map(str::to_string))
+        .unwrap_or_else(|| path.to_string())
+        .replace('\\', "/")
+}
+
 fn logical_sync_data(conn: &rusqlite::Connection, root: &str) -> Result<LogicalSyncData, String> {
-    let root_path = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
-    let workspace = logical_workspace_id(&root_path);
+    let legacy_workspace = std::fs::canonicalize(root)
+        .ok()
+        .map(|path| logical_workspace_id(&path));
+    let workspace = "global".to_string();
     let mut entries = Vec::new();
     for (table, kind) in [
         ("logical_refs", "reference"),
@@ -953,13 +969,11 @@ fn logical_sync_data(conn: &rusqlite::Connection, root: &str) -> Result<LogicalS
             .map_err(|e| e.to_string())?;
         for row in rows {
             let (path, category) = row.map_err(|e| e.to_string())?;
-            if let Some(path) = relative_workspace_path(&root_path, &path) {
-                entries.push(LogicalSyncEntry {
-                    path,
-                    category,
-                    kind: kind.into(),
-                });
-            }
+            entries.push(LogicalSyncEntry {
+                path: sync_absolute_path(&path),
+                category,
+                kind: kind.into(),
+            });
         }
     }
     let mut metadata = conn
@@ -972,13 +986,11 @@ fn logical_sync_data(conn: &rusqlite::Connection, root: &str) -> Result<LogicalS
         .map_err(|e| e.to_string())?;
     for row in rows {
         let (path, category) = row.map_err(|e| e.to_string())?;
-        if let Some(path) = relative_workspace_path(&root_path, &path) {
-            entries.push(LogicalSyncEntry {
-                path,
-                category,
-                kind: "reference".into(),
-            });
-        }
+        entries.push(LogicalSyncEntry {
+            path: sync_absolute_path(&path),
+            category,
+            kind: "reference".into(),
+        });
     }
     entries.sort_by(|a, b| (&a.path, &a.category, &a.kind).cmp(&(&b.path, &b.category, &b.kind)));
     let mut folders = entries
@@ -997,6 +1009,7 @@ fn logical_sync_data(conn: &rusqlite::Connection, root: &str) -> Result<LogicalS
     }
     Ok(LogicalSyncData {
         workspace,
+        legacy_workspace,
         folders: folders.into_iter().collect(),
         entries,
         deleted_folders: Vec::new(),
@@ -1034,7 +1047,7 @@ pub(super) fn logical_workspace_id(root: &std::path::Path) -> String {
 #[cfg(test)]
 mod logical_sync_tests {
     #[test]
-    fn logical_sync_snapshot_uses_workspace_relative_paths() {
+    fn logical_sync_snapshot_shares_absolute_paths_across_projects() {
         let root = std::env::temp_dir().join(format!(
             "nexusdesk-logical-sync-{}-{}",
             std::process::id(),
@@ -1070,24 +1083,50 @@ mod logical_sync_tests {
         .unwrap();
 
         let snapshot = super::logical_sync_data(&conn, root.to_str().unwrap()).unwrap();
-        assert_eq!(
-            snapshot.workspace,
-            super::logical_workspace_id(&std::fs::canonicalize(&root).unwrap())
+        assert_eq!(snapshot.workspace, "global");
+        assert_eq!(snapshot.entries.len(), 2);
+        assert!(
+            snapshot
+                .entries
+                .iter()
+                .any(|entry| entry.path == super::sync_absolute_path(inside.to_str().unwrap()))
         );
-        assert_eq!(snapshot.entries.len(), 1);
-        assert_eq!(snapshot.entries[0].path, "notes/inside.md");
-        assert_eq!(snapshot.entries[0].kind, "reference");
+        assert!(
+            snapshot
+                .entries
+                .iter()
+                .any(|entry| entry.path == super::sync_absolute_path(outside.to_str().unwrap()))
+        );
+        let other = super::logical_sync_data(&conn, "nonexistent-project").unwrap();
+        assert_eq!(other.workspace, snapshot.workspace);
+        assert_eq!(other.entries.len(), snapshot.entries.len());
         assert!(snapshot.folders.contains(&"empty".to_string()));
         conn.execute(
             "INSERT INTO file_meta(path,logical_type) VALUES (?1,'notes')",
             [inside.to_string_lossy().as_ref()],
         )
         .unwrap();
+        let mut invalid: super::LogicalSyncData =
+            serde_json::from_value(serde_json::to_value(&snapshot).unwrap()).unwrap();
+        invalid.entries[0].path = "relative.md".into();
+        assert!(super::apply_logical_sync_data_in_db(&conn, "", invalid).is_err());
+        assert_eq!(
+            super::logical_sync_data(&conn, "").unwrap().entries.len(),
+            2
+        );
+        let restored: super::LogicalSyncData =
+            serde_json::from_value(serde_json::to_value(&snapshot).unwrap()).unwrap();
+        super::apply_logical_sync_data_in_db(&conn, "another-project", restored).unwrap();
+        assert_eq!(
+            super::logical_sync_data(&conn, "").unwrap().entries.len(),
+            2
+        );
         super::apply_logical_sync_data_in_db(
             &conn,
             root.to_str().unwrap(),
             super::LogicalSyncData {
                 workspace: snapshot.workspace,
+                legacy_workspace: None,
                 folders: vec!["empty".into()],
                 entries: vec![],
                 deleted_folders: vec!["notes".into()],
@@ -1100,7 +1139,7 @@ mod logical_sync_tests {
         let outside_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM logical_copies", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(outside_count, 1);
+        assert_eq!(outside_count, 0);
         std::fs::remove_dir_all(root).unwrap();
     }
 }
@@ -1130,31 +1169,42 @@ pub fn apply_logical_sync_data(
 
 fn apply_logical_sync_data_in_db(
     conn: &rusqlite::Connection,
-    root: &str,
+    _root: &str,
     data: LogicalSyncData,
 ) -> Result<(), String> {
-    let root_path = std::fs::canonicalize(&root).map_err(|e| e.to_string())?;
-    let workspace = logical_workspace_id(&root_path);
-    if data.workspace != workspace {
-        return Err("云端逻辑分区属于其他工作区".into());
+    if data.workspace != "global" {
+        return Err("云端逻辑分区必须使用全局数据".into());
     }
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    for table in ["logical_refs", "logical_copies", "logical_hidden"] {
-        let mut stmt = tx
-            .prepare(&format!("SELECT path FROM {table}"))
-            .map_err(|e| e.to_string())?;
-        let paths = stmt
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|e| e.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
-        drop(stmt);
-        for path in paths {
-            if relative_workspace_path(&root_path, &path).is_some() {
-                tx.execute(&format!("DELETE FROM {table} WHERE path=?1"), [&path])
-                    .map_err(|e| e.to_string())?;
-            }
+    let mut stmt = tx
+        .prepare("SELECT path FROM file_meta UNION SELECT path FROM logical_refs UNION SELECT path FROM logical_copies UNION SELECT path FROM logical_hidden")
+        .map_err(|e| e.to_string())?;
+    let existing_paths = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    drop(stmt);
+    let path_key = |path: &str| {
+        let value = sync_absolute_path(path);
+        if cfg!(windows) {
+            value.to_lowercase()
+        } else {
+            value
         }
+    };
+    let existing_paths: std::collections::HashMap<_, _> = existing_paths
+        .into_iter()
+        .map(|path| (path_key(&path), path))
+        .collect();
+    for table in [
+        "logical_refs",
+        "logical_copies",
+        "logical_hidden",
+        "logical_folders",
+    ] {
+        tx.execute(&format!("DELETE FROM {table}"), [])
+            .map_err(|e| e.to_string())?;
     }
     for folder in &data.folders {
         db::insert_logical_folder(&tx, folder).map_err(|e| e.to_string())?;
@@ -1174,30 +1224,22 @@ fn apply_logical_sync_data_in_db(
         .map_err(|e| e.to_string())?;
     drop(stmt);
     for path in paths {
-        if relative_workspace_path(&root_path, &path).is_some() {
-            tx.execute(
-                "INSERT OR IGNORE INTO logical_refs(path, category) VALUES (?1, '')",
-                [&path],
-            )
-            .map_err(|e| e.to_string())?;
-        }
+        tx.execute(
+            "INSERT OR IGNORE INTO logical_refs(path, category) VALUES (?1, '')",
+            [&path],
+        )
+        .map_err(|e| e.to_string())?;
     }
     for entry in data.entries {
-        let relative = std::path::Path::new(&entry.path);
-        if relative.is_absolute()
-            || relative.components().any(|part| {
-                matches!(
-                    part,
-                    std::path::Component::ParentDir
-                        | std::path::Component::RootDir
-                        | std::path::Component::Prefix(_)
-                )
-            })
-        {
-            return Err("云端逻辑分区包含无效路径".into());
+        if !std::path::Path::new(&entry.path).is_absolute() {
+            return Err("云端逻辑分区必须使用绝对路径".into());
         }
-        let path = root_path.join(relative).to_string_lossy().to_string();
-        db::insert_logical_folder(&tx, &entry.category).map_err(|e| e.to_string())?;
+        let path = existing_paths
+            .get(&path_key(&entry.path))
+            .unwrap_or(&entry.path);
+        if !entry.category.is_empty() {
+            db::insert_logical_folder(&tx, &entry.category).map_err(|e| e.to_string())?;
+        }
         let table = match entry.kind.as_str() {
             "reference" => "logical_refs",
             "copy" => "logical_copies",
@@ -1216,7 +1258,7 @@ fn apply_logical_sync_data_in_db(
 
 fn get_logical_tree_blocking(state: &AppState) -> Result<Vec<FileNode>, String> {
     let snapshot = {
-        let guard = state.db_conn.lock().map_err(|e| e.to_string())?;
+        let guard = project_db(state)?;
         match guard.as_ref() {
             Some(conn) => db::read_logical_tree(conn).map_err(|e| e.to_string())?,
             None => Vec::new(),

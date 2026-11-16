@@ -1,4 +1,4 @@
-import { isWithinPath, pathKey } from "@/lib/paths";
+import { displayPath, isWithinPath, pathKey } from "@/lib/paths";
 import { openWorkspaceFile } from "@/lib/workspaceFile";
 import { FileIcon } from "./FileIcon";
 import { selectTreeNode, activateTreeFile } from "./treeInteraction";
@@ -321,7 +321,7 @@ export const LogicalTree: React.FC = React.memo(() => {
               <div
                 style={style}
                 aria-disabled={node.data.missing || undefined}
-                title={node.data.missing ? `${node.data.id}\n文件已不存在，可取消关联` : node.data.id}
+                title={node.data.missing ? `${displayPath(node.data.id)}\n文件已不存在，可取消关联` : displayPath(node.data.id)}
                 tabIndex={-1}
                 onKeyDown={openContextMenuFromKeyboard}
                 onContextMenu={() => node.select()}
