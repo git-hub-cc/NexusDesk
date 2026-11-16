@@ -37,6 +37,23 @@ fn image_endpoint(base: &str, editing: bool) -> Result<reqwest::Url, String> {
     Ok(url)
 }
 
+fn is_valid_image_data_url(url: &str) -> bool {
+    let Some(data) = url.strip_prefix("data:") else {
+        return false;
+    };
+    let Some((mime, encoded)) = data.split_once(";base64,") else {
+        return false;
+    };
+    if !matches!(mime, "image/png" | "image/jpeg" | "image/webp")
+        || encoded.len() > MAX_IMAGE_BYTES.div_ceil(3) * 4
+    {
+        return false;
+    }
+    BASE64_STANDARD
+        .decode(encoded)
+        .is_ok_and(|bytes| !bytes.is_empty() && bytes.len() <= MAX_IMAGE_BYTES)
+}
+
 fn parse_images(payload: serde_json::Value) -> Result<Vec<ChatImage>, String> {
     let data = payload
         .get("data")
@@ -55,7 +72,9 @@ fn parse_images(payload: serde_json::Value) -> Result<Vec<ChatImage>, String> {
                     item.get("url")
                         .and_then(|value| value.as_str())
                         .filter(|value| {
-                            value.starts_with("https://") || value.starts_with("http://")
+                            value.starts_with("https://")
+                                || value.starts_with("http://")
+                                || is_valid_image_data_url(value)
                         })
                         .map(str::to_owned)
                 })?;
@@ -237,12 +256,25 @@ mod tests {
 
     #[test]
     fn accepts_url_and_base64_results() {
-        let images = parse_images(serde_json::json!({"data": [{"url": "https://example.com/image.png"}, {"b64_json": "aGVsbG8="}]})).unwrap();
-        assert_eq!(images.len(), 2);
+        let images = parse_images(serde_json::json!({"data": [
+            {"url": "https://example.com/image.png"},
+            {"b64_json": "aGVsbG8="},
+            {"url": "data:image/png;base64,aGVsbG8="}
+        ]}))
+        .unwrap();
+        assert_eq!(images.len(), 3);
         assert!(images[1].url.starts_with("data:image/png;base64,"));
+        assert_eq!(images[2].url, "data:image/png;base64,aGVsbG8=");
         assert!(parse_images(serde_json::json!({"data": []})).is_err());
         assert!(
             parse_images(serde_json::json!({"data": [{"url": "javascript:alert(1)"}]})).is_err()
+        );
+        assert!(
+            parse_images(serde_json::json!({"data": [
+                {"url": "data:text/plain;base64,aGVsbG8="},
+                {"url": "data:image/png;base64,not base64"}
+            ]}))
+            .is_err()
         );
     }
 
