@@ -542,6 +542,8 @@ pub async fn create_browser(
     let popup_parent_label = label.clone();
     // Start the target navigation immediately using the measured editor bounds.
     let builder = tauri::webview::WebviewBuilder::new(&label, tauri::WebviewUrl::External(initial_url))
+        // 让 WebView2 将文件拖拽事件交给网页，保留原生上传行为。
+        .disable_drag_drop_handler()
         .initialization_script(include_str!("browser_links.js"))
         .initialization_script(include_str!("browser_gemini.js"))
         .initialization_script(include_str!("browser_video_progress.js"))
@@ -643,6 +645,7 @@ pub async fn create_browser(
                 tauri::WebviewUrl::External(tauri::Url::parse("about:blank").unwrap()),
             )
             .window_features(features)
+            .disable_drag_drop_handler()
             .data_directory(popup_directory.clone())
             .incognito(false)
             .on_navigation({
