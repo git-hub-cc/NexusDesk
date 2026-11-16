@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 
 const source = readFileSync(new URL("../src/components/editor/DocumentPreview.tsx", import.meta.url), "utf8");
-const compiled = ts.transpileModule(source, {
+const compiled = ts.transpileModule(source.replace("function PdfPreview(", "export function PdfPreview("), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
 
@@ -43,6 +43,9 @@ function setup() {
     "@/lib/remote": { isRemotePath: path => path.startsWith("sftp://") },
     "@/lib/pdfPreview": {},
     "@/lib/spreadsheetPreview": {},
+    "@/hooks/usePersistentState": {},
+    "@/store/workspaceStore": { useWorkspaceStore: selector => selector({ rootPath: "project" }) },
+    "@/lib/paths": {},
     "pdfjs-dist": { GlobalWorkerOptions: {}, getDocument: () => ({ promise: Promise.resolve(document), destroy: async () => { destroyed++; } }) },
     "pdfjs-dist/build/pdf.worker.min.mjs?url": { default: "worker.mjs" },
     "@e965/xlsx": { read: () => ({ SheetNames: ["Sheet1"], Sheets: { Sheet1: {} } }) },
@@ -126,4 +129,98 @@ test("切换标签保留同一工作簿和表格组件，重新加载才替换�
   assert.notEqual(findSheet(preview.render("test.xlsx", true)).props.workbook, initial.props.workbook);
   assert.equal(preview.reads, 2);
   preview.close();
+});
+
+test("PDF 首次激活恢复页码，切换标签、缩放和调整宽度保留页内位置", () => {
+  const slots = [];
+  const values = new Map([["pdf.page:test.pdf", 5]]);
+  let cursor = 0;
+  let pending = [];
+  let resize;
+  const scrolls = [];
+  const host = {
+    clientWidth: 800,
+    scrollTop: 0,
+    scrollTo({ top }) { this.scrollTop = top; scrolls.push(top); },
+  };
+  const effect = (callback, dependencies) => {
+    const index = cursor++;
+    const previous = slots[index];
+    if (!previous || dependencies.some((value, i) => !Object.is(value, previous.dependencies[i]))) {
+      pending.push(() => {
+        previous?.cleanup?.();
+        slots[index] = { dependencies, cleanup: callback() };
+      });
+    }
+  };
+  const react = {
+    useRef(initial) {
+      const index = cursor++;
+      return slots[index] ??= { current: initial };
+    },
+    useState(initial) {
+      const index = cursor++;
+      if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;
+      return [slots[index], value => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
+    },
+    useLayoutEffect: effect,
+    useEffect: effect,
+  };
+  const jsx = (type, props) => ({ type, props });
+  const modules = {
+    react,
+    "react/jsx-runtime": { jsx, jsxs: jsx },
+    "@/hooks/usePersistentState": {
+      storedNumber: (value, fallback) => value ?? fallback,
+      useProjectUIState(_root, key, normalize) {
+        return [normalize(values.get(key)), action => {
+          values.set(key, typeof action === "function" ? action(normalize(values.get(key))) : action);
+        }];
+      },
+    },
+    "@/lib/paths": { pathKey: path => path },
+  };
+  const exports = {};
+  class ResizeObserver {
+    constructor(callback) { resize = callback; }
+    observe() {}
+    disconnect() {}
+  }
+  class IntersectionObserver {
+    observe() {}
+    disconnect() {}
+  }
+  new Function("require", "exports", "ResizeObserver", "IntersectionObserver", compiled)(
+    name => modules[name] ?? {}, exports, ResizeObserver, IntersectionObserver,
+  );
+  const resource = { document: { numPages: 10 } };
+  const render = active => {
+    cursor = 0;
+    const tree = exports.PdfPreview({ resource, active, root: "project", path: "test.pdf" });
+    for (const node of flatten(tree)) {
+      if (node.props?.["data-pdf-page"]) node.props.ref({ offsetTop: 24 + (node.props["data-pdf-page"] - 1) * 1000 });
+      else if (node.props?.ref) node.props.ref.current = host;
+    }
+    const effects = pending;
+    pending = [];
+    effects.forEach(callback => callback());
+    return tree;
+  };
+  render(false);
+  assert.deepEqual(scrolls, []);
+  render(true);
+  assert.equal(host.scrollTop, 4000);
+  host.scrollTop = 4400;
+  render(false);
+  render(true);
+  assert.equal(host.scrollTop, 4400);
+  const zoom = flatten(render(true)).find(node => node.props?.title === "放大");
+  zoom.props.onClick();
+  render(true);
+  assert.equal(host.scrollTop, 4400);
+  host.clientWidth = 1000;
+  resize();
+  render(true);
+  assert.equal(host.scrollTop, 4400);
+  assert.deepEqual(scrolls, [4000]);
 });

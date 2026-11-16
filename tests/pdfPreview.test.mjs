@@ -31,12 +31,15 @@ test("连续预览保留全部页面的位置，仅渲染进入可见范围的�
   }).outputText;
   const React = { createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }) };
   const bindings = {
-    React, useRef: () => ({ current: null }), useEffect() {},
+    React, useRef: initial => ({ current: initial }), useEffect() {}, useLayoutEffect() {},
+    pathKey: path => path,
+    storedNumber: (value, fallback) => value ?? fallback,
+    useProjectUIState: (_root, _key, normalize) => [normalize(undefined), () => {}],
     useState: initial => [typeof initial === "function" ? initial() : initial, () => {}],
     PdfPage: "PdfPage", ChevronLeft: "ChevronLeft", ChevronRight: "ChevronRight", ZoomIn: "ZoomIn", ZoomOut: "ZoomOut",
   };
   const render = new Function(...Object.keys(bindings), `${js}\nreturn PdfPreview;`)(...Object.values(bindings));
-  const tree = render({ resource: { document: { numPages: 120 } }, active: true });
+  const tree = render({ resource: { document: { numPages: 120 } }, active: true, root: "project", path: "test.pdf" });
   const flatten = node => Array.isArray(node) ? node.flatMap(flatten) : node && typeof node === "object" ? [node, ...flatten(node.children)] : [];
   const nodes = flatten(tree);
   const placeholders = nodes.filter(node => node.props["data-pdf-page"]);

@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { storedNumber, useProjectUIState } from "@/hooks/usePersistentState";
+import { useWorkspaceStore } from "@/store/workspaceStore";
+import { pathKey } from "@/lib/paths";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { ChevronLeft, ChevronRight, ExternalLink, RotateCw, ZoomIn, ZoomOut } from "lucide-react";
@@ -46,14 +49,25 @@ function PdfPage({ resource, page, width, zoom, visible }: {
   </div>;
 }
 
-function PdfPreview({ resource, active }: { resource: PdfPreviewResource; active: boolean }) {
+function PdfPreview({ resource, active, root, path }: { resource: PdfPreviewResource; active: boolean; root: string; path: string }) {
   const host = useRef<HTMLDivElement>(null);
   const pages = useRef<(HTMLDivElement | null)[]>([]);
   const scrollFrame = useRef<number | null>(null);
-  const [page, setPage] = useState(1);
-  const [zoom, setZoom] = useState(1);
+  const [page, setPage] = useProjectUIState(root, `pdf.page:${pathKey(path)}`, value => Math.round(storedNumber(value, 1, 1, resource.document.numPages)));
+  const [zoom, setZoom] = useProjectUIState(root, `pdf.zoom:${pathKey(path)}`, value => storedNumber(value, 1, 0.25, 4));
   const [width, setWidth] = useState(800);
-  const [visible, setVisible] = useState(() => new Set([1]));
+  const [visible, setVisible] = useState(() => new Set([page]));
+  const currentPage = useRef(page);
+  const restored = useRef(false);
+  currentPage.current = page;
+  useLayoutEffect(() => {
+    if (!active || !host.current || restored.current) return;
+    const element = pages.current[currentPage.current - 1];
+    if (element) {
+      host.current.scrollTo({ top: element.offsetTop - 24 });
+      restored.current = true;
+    }
+  }, [active, width, zoom, resource]);
   useEffect(() => {
     if (!active) return;
     const element = host.current;
@@ -88,6 +102,7 @@ function PdfPreview({ resource, active }: { resource: PdfPreviewResource; active
     setPage(number);
   };
   const onScroll = () => {
+    if (!active) return;
     if (scrollFrame.current !== null) return;
     scrollFrame.current = requestAnimationFrame(() => {
       scrollFrame.current = null;
@@ -111,8 +126,8 @@ function PdfPreview({ resource, active }: { resource: PdfPreviewResource; active
   </div>;
 }
 
-function SpreadsheetPreview({ workbook }: { workbook: WorkBook }) {
-  const [sheet, setSheet] = useState(workbook.SheetNames[0] ?? "");
+function SpreadsheetPreview({ workbook, root, path }: { workbook: WorkBook; root: string; path: string }) {
+  const [sheet, setSheet] = useProjectUIState(root, `spreadsheet.sheet:${pathKey(path)}`, value => typeof value === "string" && workbook.SheetNames.includes(value) ? value : workbook.SheetNames[0] ?? "");
   const [query, setQuery] = useState("");
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(600);
@@ -161,6 +176,7 @@ function SpreadsheetPreview({ workbook }: { workbook: WorkBook }) {
 }
 
 export function DocumentPreview({ path, active }: { path: string; active: boolean }) {
+  const root = useWorkspaceStore(state => state.rootPath) ?? path;
   const local = !Boolean(isRemotePath(path)) && !path.startsWith("android://");
   const [attempt, setAttempt] = useState(0);
   const [pdf, setPdf] = useState<PdfPreviewResource>();
@@ -218,6 +234,6 @@ export function DocumentPreview({ path, active }: { path: string; active: boolea
     </div>
     {error ? <div role="alert" className="p-6 text-sm"><p className="text-red-400 whitespace-pre-wrap">{error}</p><button className="mt-4 px-3 py-1 border border-ide-panel-border rounded" onClick={() => setAttempt(value => value + 1)}>重试</button></div>
       : status ? <div role="status" className="p-6 text-sm text-gray-400">{status}</div>
-        : <div className="flex-1 min-h-0">{pdf && !pdf.signal.aborted ? <PdfPreview key={`${path}:${attempt}`} resource={pdf} active={active} /> : workbook ? <SpreadsheetPreview key={`${path}:${attempt}`} workbook={workbook} /> : null}</div>}
+        : <div className="flex-1 min-h-0">{pdf && !pdf.signal.aborted ? <PdfPreview key={`${path}:${attempt}`} resource={pdf} active={active} root={root} path={path} /> : workbook ? <SpreadsheetPreview key={`${path}:${attempt}`} workbook={workbook} root={root} path={path} /> : null}</div>}
   </div>;
 }

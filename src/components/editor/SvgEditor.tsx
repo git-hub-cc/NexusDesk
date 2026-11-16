@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useProjectUIState } from "@/hooks/usePersistentState";
+import { pathKey } from "@/lib/paths";
 import { Code, Image } from "lucide-react";
 import { type Tab, useWorkspaceStore } from "@/store/workspaceStore";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
 import { ImageEditor } from "./ImageEditor";
 
 export function SvgEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "right"; active: boolean }) {
-  const [mode, setMode] = useState<"text" | "image">("text");
+  const root = useWorkspaceStore(state => state.rootPath);
+  const [mode, setMode] = useProjectUIState<"text" | "image">(root ?? tab.path, `svg.mode:${pathKey(tab.path)}`, value => value === "image" ? "image" : "text");
   const setFocusedPane = useWorkspaceStore(state => state.setFocusedPane);
 
   return <div className="absolute inset-0 flex min-h-0 flex-col"

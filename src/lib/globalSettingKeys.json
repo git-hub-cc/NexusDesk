@@ -20,7 +20,25 @@
     "nexusdesk.navigation.syncEnabled",
     "nexusdesk.cloudSync.myNavigation",
     "nexusdesk.cloudSync.logicalPartitions",
-    "nexusdesk.cloudSync.graphPartitions"
+    "nexusdesk.cloudSync.graphPartitions",
+    "nexusdesk.music.playbackMode",
+    "nexusdesk.music.volume",
+    "nexusdesk.image.tool",
+    "nexusdesk.image.color",
+    "nexusdesk.image.width",
+    "nexusdesk.search.options",
+    "nexusdesk.android.maxSize"
   ],
-  "prefixes": ["nexusdesk.cloudSync.baseline:", "sftp-profile:", "sftp-label:", "nexusdesk-ui:", "nexusdesk.git.", "nexusdesk.sftp.", "nexusdesk.http.limits.", "nexusdesk.settingsDraft:", "git-credentials:", "sftp-connection:"]
+  "prefixes": [
+    "nexusdesk.cloudSync.baseline:",
+    "sftp-profile:",
+    "sftp-label:",
+    "nexusdesk-ui:",
+    "nexusdesk.git.",
+    "nexusdesk.sftp.",
+    "nexusdesk.http.limits.",
+    "nexusdesk.settingsDraft:",
+    "git-credentials:",
+    "sftp-connection:"
+  ]
 }

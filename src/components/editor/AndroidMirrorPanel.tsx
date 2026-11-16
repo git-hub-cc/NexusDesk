@@ -1,3 +1,4 @@
+import { useGlobalPreference } from "@/hooks/usePersistentState";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -27,7 +28,7 @@ async function wakeMirrorScreen(serial: string, sendControl: () => Promise<unkno
 export function AndroidMirrorPanel({ active }: { active: boolean }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [serial, setSerial] = useState("");
-  const [maxSize, setMaxSize] = useState(1080);
+  const [maxSize, setMaxSize] = useGlobalPreference<number>("nexusdesk.android.maxSize", value => value === 720 || value === 1440 ? value : 1080);
   const [status, setStatus] = useState<"idle" | "connecting" | "connected" | "stopping">("idle");
   const [error, setError] = useState("");
   const [audioStatus, setAudioStatus] = useState("");

@@ -1,3 +1,4 @@
+import { storedNumber, useProjectUIState } from "@/hooks/usePersistentState";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import * as ContextMenu from "@radix-ui/react-context-menu";
@@ -85,8 +86,8 @@ function RepositoryPanel({ root }: { root: string }) {
     const pendingRef = useRef(new Set<string>());
     const queue = useRef(Promise.resolve());
     const [limit, setLimit] = useState(100);
-    const [fileWidth, setFileWidth] = useState(44);
-    const [messageWidth, setMessageWidth] = useState(24);
+    const [fileWidth, setFileWidth] = useProjectUIState(root, "git.fileWidth", value => storedNumber(value, 44, 20, 70));
+    const [messageWidth, setMessageWidth] = useProjectUIState(root, "git.messageWidth", value => storedNumber(value, 24, 16, 45));
     const [resizing, setResizing] = useState(false);
     const columnsRef = useRef<HTMLDivElement>(null);
     const [revision, setRevision] = useState<GitLogEntry | null>(null);

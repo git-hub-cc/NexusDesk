@@ -23,6 +23,8 @@ export interface SessionInfo {
 
 interface TerminalState {
   profiles: TerminalProfile[];
+  autoResizeTerminal: boolean;
+  setAutoResizeTerminal: (enabled: boolean) => void;
   historyTransparency: number;
   setHistoryTransparency: (value: number) => void;
   saveProfiles: (profiles: TerminalProfile[]) => void;
@@ -43,6 +45,8 @@ export const useTerminalStore = create<TerminalState>()(persist(
       { id: "shell", name: "终端", command: "" },
       { id: "codex", name: "Codex", command: "codex" },
     ],
+    autoResizeTerminal: false,
+    setAutoResizeTerminal: (enabled) => set({ autoResizeTerminal: enabled }),
     historyTransparency: DEFAULT_HISTORY_TRANSPARENCY,
     setHistoryTransparency: (value) => set({ historyTransparency: Number.isFinite(value) ? Math.min(80, Math.max(0, Math.round(value))) : DEFAULT_HISTORY_TRANSPARENCY }),
     saveProfiles: (profiles) => set({ profiles }),
@@ -107,6 +111,6 @@ export const useTerminalStore = create<TerminalState>()(persist(
         ],
       };
     },
-    partialize: (state) => ({ profiles: state.profiles, historyTransparency: state.historyTransparency }),
+    partialize: (state) => ({ profiles: state.profiles, historyTransparency: state.historyTransparency, autoResizeTerminal: state.autoResizeTerminal }),
   }
 ));

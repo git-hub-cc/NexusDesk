@@ -1,3 +1,4 @@
+import { storedNumber, useGlobalPreference } from "@/hooks/usePersistentState";
 import { samePath } from "@/lib/paths";
 import { useEffect, useRef, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -15,9 +16,9 @@ const zoomScale = (scale: number, direction: number) =>
 export function ImageEditor({ path, sourceContent, sourceUrl }: { path: string; sourceContent?: string; sourceUrl?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [tool, setTool] = useState<Tool>("move");
-  const [color, setColor] = useState("#ff3434");
-  const [width, setWidth] = useState(6);
+  const [tool, setTool] = useGlobalPreference<Tool>("nexusdesk.image.tool", value => value === "mark" || value === "mosaic" || value === "crop" ? value : "move");
+  const [color, setColor] = useGlobalPreference("nexusdesk.image.color", value => typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : "#ff3434");
+  const [width, setWidth] = useGlobalPreference("nexusdesk.image.width", value => Math.round(storedNumber(value, 6, 1, 40)));
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);

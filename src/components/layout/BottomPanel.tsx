@@ -38,8 +38,7 @@ const sessionSortingStrategy: SortingStrategy = args => {
 
 export function BottomPanel({ onOpenTerminalSettings }: { onOpenTerminalSettings: () => void }) {
   const { bottomPanelTab: activeTab, setBottomPanelTab } = useLayoutStore();
-  const { profiles, sessions, activeSessionId, createSession, removeSession, setActiveSessionId, reorderSessions, toggleSessionPin, launchError, clearLaunchError } = useTerminalStore();
-  const [autoResizeTerminal, setAutoResizeTerminal] = useState(false);
+  const { profiles, sessions, activeSessionId, createSession, removeSession, setActiveSessionId, reorderSessions, toggleSessionPin, launchError, clearLaunchError, autoResizeTerminal, setAutoResizeTerminal } = useTerminalStore();
   const [gitInstalled, setGitInstalled] = useState<boolean | null>(null);
   const [exitedSessions, setExitedSessions] = useState<Record<string, boolean>>({});
   const [autoReviewEnabled, setAutoReviewEnabled] = useState(() => settingsStorage.getItem("nexusdesk.codex.autoReview") === "true");

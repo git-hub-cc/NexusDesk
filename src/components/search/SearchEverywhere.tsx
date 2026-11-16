@@ -1,3 +1,4 @@
+import { useGlobalPreference } from "@/hooks/usePersistentState";
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
 import { useEffect, useRef, useState } from "react";
@@ -6,6 +7,17 @@ import { openWorkspaceFile } from "@/lib/workspaceFile";
 import { fsApi, searchApi, type SearchResult, type SearchOptions } from "@/lib/api";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { HighlightedText } from "./HighlightedText";
+
+function normalizeSearchOptions(value: unknown): SearchOptions {
+    const saved = value as Partial<SearchOptions> | null;
+    return {
+        extensions: typeof saved?.extensions === "string" ? saved.extensions : "",
+        caseSensitive: saved?.caseSensitive === true,
+        regex: saved?.regex === true,
+        wholeWord: saved?.wholeWord === true,
+        includeIgnored: saved?.includeIgnored === true,
+    };
+}
 
 export function SearchEverywhere({ onClose, recent = false }: { onClose: () => void; recent?: boolean }) {
     const root = useWorkspaceStore(state => state.rootPath);
@@ -31,7 +43,7 @@ export function SearchEverywhere({ onClose, recent = false }: { onClose: () => v
     const [loading, setLoading] = useState(false);
     const [opening, setOpening] = useState(false);
     const [error, setError] = useState("");
-    const [options, setOptions] = useState<SearchOptions>({ extensions: "", caseSensitive: false, regex: false, wholeWord: false, includeIgnored: false });
+    const [options, setOptions] = useGlobalPreference("nexusdesk.search.options", normalizeSearchOptions);
     const cancelCurrent = useRef<(() => void) | null>(null);
     const [stopped, setStopped] = useState(false);
     const input = useRef<HTMLInputElement>(null);

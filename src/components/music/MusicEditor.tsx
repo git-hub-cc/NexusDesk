@@ -1,3 +1,4 @@
+import { storedNumber, useGlobalPreference } from "@/hooks/usePersistentState";
 import { settingsStorage } from "@/lib/globalSettings";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -54,13 +55,13 @@ export function MusicEditor({ active }: { active: boolean }) {
   const [current, setCurrent] = useState<MusicTrack | null>(null);
   const [selection, setSelection] = useState<{ tab: LibraryTab; id: string } | null>(null);
   const [playing, setPlaying] = useState(false);
-  const [modeIndex, setModeIndex] = useState(0);
+  const [modeIndex, setModeIndex] = useGlobalPreference("nexusdesk.music.playbackMode", value => Math.round(storedNumber(value, 0, 0, PLAYBACK_MODES.length - 1)));
   const playbackMode = PLAYBACK_MODES[modeIndex];
   const ModeIcon = playbackMode.Icon;
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
   const [chorus, setChorus] = useState<MusicChorus | null>(null);
-  const [volume, setVolume] = useState(0.75);
+  const [volume, setVolume] = useGlobalPreference("nexusdesk.music.volume", value => storedNumber(value, 0.75, 0, 1));
   const [busy, setBusy] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);

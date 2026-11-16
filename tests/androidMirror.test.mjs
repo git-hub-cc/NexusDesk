@@ -99,6 +99,7 @@ function harness({ delayedStart = false, delayedStop = false, delayedAudioClose 
     },
     requestAnimationFrame: () => 1, cancelAnimationFrame() {},
   };
+  bindings.useGlobalPreference = (_key, normalize) => bindings.useState(normalize(undefined));
   for (const name of ["ArrowLeft", "House", "Square", "Power", "RefreshCw", "Smartphone", "Maximize", "Minimize", "FolderOpen", "AndroidFileManager"]) bindings[name] = name;
   const Component = new Function(...Object.keys(bindings), `${compile("../src/components/editor/AndroidMirrorPanel.tsx")}\nreturn AndroidMirrorPanel;`)(...Object.values(bindings));
   const render = (active = true) => {

@@ -15,14 +15,16 @@ export function readUI<T>(root: string, category: string): T | undefined {
 }
 
 export function writeUI(root: string, category: string, value: unknown) {
-  if (isSnapshot) return;
   pending.set(`nexusdesk-ui:${projectKey(root)}:${category}`, JSON.stringify(value));
+  // 快照窗口仅保留内存状态，仍允许切换预览模式等交互。
+  if (isSnapshot) return;
   clearTimeout(timer);
   timer = setTimeout(flushUIState, 300);
   deadline ??= setTimeout(flushUIState, 2000);
 }
 
 export function flushUIState() {
+  if (isSnapshot) return;
   clearTimeout(timer);
   clearTimeout(deadline);
   deadline = undefined;
