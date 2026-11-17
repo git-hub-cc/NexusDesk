@@ -15,7 +15,7 @@ for (const scenario of ['frames', 'hidden', 'cancel']) {
       setTimeout: fn => { timers.set(++id, fn); return id; },
       clearTimeout: id => timers.delete(id),
     };
-    const source = fs.readFileSync(new URL('../src/lib/windowStartup.ts', `file://${__filename.replaceAll('\\', '/')}`), 'utf8');
+    const source = fs.readFileSync(new URL('../src/utils/windowStartup.ts', `file://${__filename.replaceAll('\\', '/')}`), 'utf8');
     vm.runInNewContext(ts.transpileModule(source, {
       compilerOptions: { module: ts.ModuleKind.CommonJS },
     }).outputText, context);

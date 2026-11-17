@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const { test } = require('node:test');
 
-const source = fs.readFileSync(`${__dirname}/../src/lib/terminalLinks.ts`, 'utf8');
+const source = fs.readFileSync(`${__dirname}/../src/utils/terminalLinks.ts`, 'utf8');
 const context = { exports: {}, URL };
 vm.runInNewContext(ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },

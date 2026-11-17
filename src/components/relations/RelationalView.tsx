@@ -1,8 +1,8 @@
-import { openWorkspaceFile } from "@/lib/workspaceFile";
+import { openWorkspaceFile } from "@/utils/workspaceFile";
 import { PanelMinimizeButton } from "@/components/layout/PanelMinimizeButton";
 import React, { useEffect, useState } from "react";
 import { Link, Activity, ChevronDown, ChevronRight } from "lucide-react";
-import { fsApi } from "@/lib/api";
+import { fsApi } from "@/utils/api";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { NetworkMonitor } from "@/components/NetworkMonitor";
 

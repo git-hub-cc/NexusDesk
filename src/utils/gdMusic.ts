@@ -1,4 +1,4 @@
-import type { MusicTrack } from "@/lib/api";
+import type { MusicTrack } from "@/utils/api";
 
 const ORIGIN = "https://music.gdstudio.org";
 let serverTime: { fetchedAt: number; timestamp: number } | null = null;

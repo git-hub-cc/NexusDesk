@@ -3,7 +3,7 @@ import ts from 'typescript';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-const source = fs.readFileSync(new URL('../src/lib/musicPlaylist.ts', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/utils/musicPlaylist.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
 const { rememberPlaylistTracks, resolvePlaylistTracks, removePlaylistTrack } = await import('data:text/javascript;base64,' + Buffer.from(js).toString('base64'));
 const track = { id: '123', title: '原歌曲名称', artist: '歌手', album: '专辑', duration: 120000, path: 'song.mp3', coverPath: 'song.jpg' };

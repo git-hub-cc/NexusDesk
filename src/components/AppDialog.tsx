@@ -1,7 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
 import { AlertTriangle, X } from "lucide-react";
-import { useDialogStore } from "@/lib/dialogs";
+import { useDialogStore } from "@/utils/dialogs";
 
 export function AppDialog() {
   const request = useDialogStore(state => state.queue[0]);

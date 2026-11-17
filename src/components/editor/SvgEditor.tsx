@@ -1,5 +1,5 @@
 import { useProjectUIState } from "@/hooks/usePersistentState";
-import { pathKey } from "@/lib/paths";
+import { pathKey } from "@/utils/paths";
 import { Code, Image } from "lucide-react";
 import { type Tab, useWorkspaceStore } from "@/stores/workspaceStore";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
-import { codexProxyLaunchCommand, detectCodexProvider, startCodexProxy, stopCodexProxy, type ProxyInfo } from "@/lib/codexProxy";
+import { codexProxyLaunchCommand, detectCodexProvider, startCodexProxy, stopCodexProxy, type ProxyInfo } from "@/utils/codexProxy";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";

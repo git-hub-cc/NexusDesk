@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
 
-const source = fs.readFileSync(new URL('../src/lib/codexCommitMessage.ts', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/utils/codexCommitMessage.ts', import.meta.url), 'utf8');
 function setup(saved = '', beforeWrite = async () => {}, gitDir = 'repo/.git') {
   const writes = [];
   const api = {

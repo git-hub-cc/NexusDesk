@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
 
-const source = fs.readFileSync(new URL('../src/lib/documentOcr.ts', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/utils/documentOcr.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source
     .replace(/^import .*;\r?\n/gm, '')
     .replace(/export /g, '')

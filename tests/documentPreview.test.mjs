@@ -39,13 +39,13 @@ function setup() {
     "@tauri-apps/api/core": { invoke: async () => {} },
     "@tauri-apps/plugin-opener": { openPath: async () => {} },
     "lucide-react": {},
-    "@/lib/api": { fsApi: { readBinaryFile: async () => { reads++; return [37, 80, 68, 70]; } } },
-    "@/lib/remote": { isRemotePath: path => path.startsWith("sftp://") },
-    "@/lib/pdfPreview": {},
-    "@/lib/spreadsheetPreview": {},
+    "@/utils/api": { fsApi: { readBinaryFile: async () => { reads++; return [37, 80, 68, 70]; } } },
+    "@/utils/remote": { isRemotePath: path => path.startsWith("sftp://") },
+    "@/utils/pdfPreview": {},
+    "@/utils/spreadsheetPreview": {},
     "@/hooks/usePersistentState": {},
     "@/stores/workspaceStore": { useWorkspaceStore: selector => selector({ rootPath: "project" }) },
-    "@/lib/paths": {},
+    "@/utils/paths": {},
     "pdfjs-dist": { GlobalWorkerOptions: {}, getDocument: () => ({ promise: Promise.resolve(document), destroy: async () => { destroyed++; } }) },
     "pdfjs-dist/build/pdf.worker.min.mjs?url": { default: "worker.mjs" },
     "@e965/xlsx": { read: () => ({ SheetNames: ["Sheet1"], Sheets: { Sheet1: {} } }) },
@@ -178,7 +178,7 @@ test("PDF 首次激活恢复页码，切换标签、缩放和调整宽度保留�
         }];
       },
     },
-    "@/lib/paths": { pathKey: path => path },
+    "@/utils/paths": { pathKey: path => path },
   };
   const exports = {};
   class ResizeObserver {

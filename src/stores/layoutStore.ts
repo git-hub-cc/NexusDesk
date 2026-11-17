@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { readUI, writeUI } from "@/lib/uiPersistence";
+import { readUI, writeUI } from "@/utils/uiPersistence";
 
 interface LayoutState {
   leftSidebarVisible: boolean;

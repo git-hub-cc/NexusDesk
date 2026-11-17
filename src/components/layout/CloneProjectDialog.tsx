@@ -3,11 +3,11 @@ import { DialogShell } from "@/components/DialogShell";
 import { OperationProgress } from "@/components/OperationProgress";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { X } from "lucide-react";
-import { fsApi, gitApi, type GitCloneAuth, type GitProvider, type GitRepository } from "@/lib/api";
-import { getProjectSaveLocation, rememberProjectSaveLocation } from "@/lib/projectLocation";
+import { fsApi, gitApi, type GitCloneAuth, type GitProvider, type GitRepository } from "@/utils/api";
+import { getProjectSaveLocation, rememberProjectSaveLocation } from "@/utils/projectLocation";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { validateEntryName } from "@/components/explorer/CreateNameDialog";
-import { settingsStorage } from "@/lib/globalSettings";
+import { settingsStorage } from "@/utils/globalSettings";
 
 function savedProvider(): GitProvider {
   const value = settingsStorage.getItem("nexusdesk.git.provider");

@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { globalJsonStorage } from "@/lib/globalSettings";
+import { globalJsonStorage } from "@/utils/globalSettings";
 import { invoke } from "@tauri-apps/api/core";
-import { isRemotePath, remotePath } from "@/lib/remote";
+import { isRemotePath, remotePath } from "@/utils/remote";
 
 export const DEFAULT_HISTORY_TRANSPARENCY = 25;
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
 
-const code = ts.transpileModule(fs.readFileSync(new URL('../src/lib/treeGraph.ts', import.meta.url), 'utf8'), {
+const code = ts.transpileModule(fs.readFileSync(new URL('../src/utils/treeGraph.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.ESNext },
 }).outputText.replace('"d3-hierarchy"', JSON.stringify(import.meta.resolve('d3-hierarchy')));
 const { parseTreeGraph, layoutTreeMindMap, countTreeGraphNames, buildReverseTree, changeTreeNode, getTreeSubtree } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'));

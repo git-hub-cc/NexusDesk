@@ -16,7 +16,7 @@ test('existing file API routes SFTP tree entries, reads, writes and renames to t
   const context = { exports: {}, require: name => name === './remote' ? remote
     : name === './treeFileCache' ? { invalidateTreeFiles() {}, readCachedTreeFile: read => read() }
       : {} };
-  vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/api.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, context);
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/utils/api.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, context);
   const api = context.exports.fsApi;
   const tree = await api.readDirectory('sftp://server-1/home');
   assert.equal(tree[0].id, 'sftp://server-1/home/Folder');
@@ -67,7 +67,7 @@ test('shared TerminalSession starts separate remote shells, preserves early repl
   }
   const mocks = {
     '@/stores/terminalStore': { useTerminalStore: selector => selector({ historyTransparency: 0 }) },
-    '@/lib/terminalHistory': { matchTerminalHistory: () => [], terminalPromptInput: () => undefined },
+    '@/utils/terminalHistory': { matchTerminalHistory: () => [], terminalPromptInput: () => undefined },
     react: { useRef: value => ({ current: value === null ? element : value }), useState: value => [value, () => {}], useEffect: fn => effects.push(fn) },
     'react/jsx-runtime': { jsx() {}, jsxs() {} },
     '@tauri-apps/api/core': {
@@ -80,7 +80,7 @@ test('shared TerminalSession starts separate remote shells, preserves early repl
         }
       },
     },
-    '@/lib/remote': loadRemote(),
+    '@/utils/remote': loadRemote(),
     '@xterm/xterm': { Terminal: MockTerminal },
     '@xterm/addon-fit': { FitAddon: class { fit() {} } },
     '@xterm/addon-unicode11': { Unicode11Addon: class {} },

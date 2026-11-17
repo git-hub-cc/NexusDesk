@@ -10,7 +10,7 @@ import { deflateSync } from 'node:zlib';
 
 globalThis.DOMParser = DOMParser;
 
-const source = fs.readFileSync(new URL('../src/lib/documentConverter.ts', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/utils/documentConverter.ts', import.meta.url), 'utf8');
 // Use Mammoth's browser entry to exercise the same ArrayBuffer API that Vite selects.
 const compiled = ts.transpileModule(source.replace(/export /g, '').replace('import("mammoth")', 'import("mammoth/mammoth.browser.js")')
     .replace('import("@tauri-apps/api/core")', 'Promise.resolve({ invoke: invokeLegacy })'), {

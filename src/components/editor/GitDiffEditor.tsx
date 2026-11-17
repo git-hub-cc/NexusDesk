@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { diffChanges, fullTextDiffRows, parseGitDiff } from "@/lib/gitDiff";
+import { diffChanges, fullTextDiffRows, parseGitDiff } from "@/utils/gitDiff";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import { DiffOverview } from "./DiffOverview";
 import { useDiffSplit } from "./useDiffSplit";

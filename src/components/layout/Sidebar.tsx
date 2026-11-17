@@ -5,7 +5,7 @@ import { GraphView } from "@/components/relations/GraphView";
 import { PhysicalTree } from "@/components/explorer/PhysicalTree";
 import { LogicalTree } from "@/components/explorer/LogicalTree";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { isRemotePath } from "@/lib/remote";
+import { isRemotePath } from "@/utils/remote";
 
 export const Sidebar: React.FC = () => {
     const { sidebarMode, setSidebarMode, rootPath } = useWorkspaceStore();

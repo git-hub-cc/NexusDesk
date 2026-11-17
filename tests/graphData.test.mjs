@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { moduleUrl, pathsUrl } from "./helpers/loadSource.mjs";
 
-const { createGraphDataResource } = await import(moduleUrl("lib/graphData.ts", {
+const { createGraphDataResource } = await import(moduleUrl("utils/graphData.ts", {
   "./paths": pathsUrl,
-  "./treeGraph": moduleUrl("lib/treeGraph.ts", { "d3-hierarchy": import.meta.resolve("d3-hierarchy") }),
+  "./treeGraph": moduleUrl("utils/treeGraph.ts", { "d3-hierarchy": import.meta.resolve("d3-hierarchy") }),
 }));
 
 test("graph consumers share requests, deduplicate paths, skip missing files and prefer buffers", async () => {

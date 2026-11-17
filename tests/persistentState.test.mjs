@@ -34,7 +34,7 @@ function setup(isSnapshot = false) {
     }, exports, events, () => 1, () => {});
     return exports;
   }
-  const ui = load("../src/lib/uiPersistence.ts", {
+  const ui = load("../src/utils/uiPersistence.ts", {
     "./globalSettings": { settingsStorage: storage },
     "./paths": { pathKey: path => path.toLowerCase().replaceAll("\\", "/") },
     "./snapshot": { isSnapshot },
@@ -48,8 +48,8 @@ function setup(isSnapshot = false) {
         return read();
       },
     },
-    "@/lib/globalSettings": { settingsStorage: storage },
-    "@/lib/uiPersistence": ui,
+    "@/utils/globalSettings": { settingsStorage: storage },
+    "@/utils/uiPersistence": ui,
   });
   return {
     hooks, storage, ui,
@@ -99,7 +99,7 @@ test("对象偏好在相同存储内容下保持引用稳定，新增全局键�
   assert.equal(render()[0], initial);
   render()[1]({ regex: true });
   assert.equal(render()[0].regex, true);
-  const { keys } = JSON.parse(readFileSync(new URL("../src/lib/globalSettingKeys.json", import.meta.url), "utf8"));
+  const { keys } = JSON.parse(readFileSync(new URL("../src/utils/globalSettingKeys.json", import.meta.url), "utf8"));
   for (const key of ["music.volume", "music.playbackMode", "search.options", "image.tool", "image.color", "image.width", "android.maxSize"]) {
     assert.ok(keys.includes(`nexusdesk.${key}`));
   }

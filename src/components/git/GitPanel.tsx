@@ -3,14 +3,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { Copy, GitCommit, RefreshCw, RotateCcw, Undo2, Upload } from "lucide-react";
-import { gitApi, fsApi, type GitFileStatus, type GitLogEntry, type GitRevisionChange } from "@/lib/api";
+import { gitApi, fsApi, type GitFileStatus, type GitLogEntry, type GitRevisionChange } from "@/utils/api";
 import { useWorkspaceStore, flushPendingWrites } from "@/stores/workspaceStore";
 import { GitFileTree, type GitTreeTarget } from "./GitFileTree";
-import { isBinaryAsset, isImage } from "@/lib/assets";
-import { confirmAction } from "@/lib/dialogs";
-import { isRemotePath } from "@/lib/remote";
-import { codexCommitMessagePath, commitDraftEvent, getCommitDraft, rememberCommitDraft } from "@/lib/codexCommitMessage";
-import { setSpeechTarget } from "@/lib/speechTarget";
+import { isBinaryAsset, isImage } from "@/utils/assets";
+import { confirmAction } from "@/utils/dialogs";
+import { isRemotePath } from "@/utils/remote";
+import { codexCommitMessagePath, commitDraftEvent, getCommitDraft, rememberCommitDraft } from "@/utils/codexCommitMessage";
+import { setSpeechTarget } from "@/utils/speechTarget";
 import { OperationProgress } from "@/components/OperationProgress";
 
 export function GitPanel() {

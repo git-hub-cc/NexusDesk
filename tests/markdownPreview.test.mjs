@@ -8,7 +8,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import vm from 'node:vm';
 
-const source = fs.readFileSync(new URL('../src/lib/markdownPreview.ts', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/utils/markdownPreview.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 }).outputText.replace(/from "([^"]+)"/g, (_match, name) => `from "${import.meta.resolve(name)}"`);
@@ -66,7 +66,7 @@ test('worker preserves an escaped pipe at the end of a table row without outer p
 });
 
 test('asset resolution preserves Base64 and decodes exported local image filenames', () => {
-    const source = fs.readFileSync(new URL('../src/lib/assets.ts', import.meta.url), 'utf8');
+    const source = fs.readFileSync(new URL('../src/utils/assets.ts', import.meta.url), 'utf8');
     const js = ts.transpileModule(source.replace(/^import .*;\r?\n/m, '').replace(/export /g, ''), {
         compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
     }).outputText;

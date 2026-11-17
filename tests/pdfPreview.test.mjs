@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 
-const source = readFileSync(new URL("../src/lib/pdfPreview.ts", import.meta.url), "utf8");
+const source = readFileSync(new URL("../src/utils/pdfPreview.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 }).outputText;

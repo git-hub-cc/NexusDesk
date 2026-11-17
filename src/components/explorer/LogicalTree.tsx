@@ -1,21 +1,21 @@
-import { displayPath, isWithinPath, pathKey } from "@/lib/paths";
-import { openWorkspaceFile } from "@/lib/workspaceFile";
+import { displayPath, isWithinPath, pathKey } from "@/utils/paths";
+import { openWorkspaceFile } from "@/utils/workspaceFile";
 import { FileIcon } from "./FileIcon";
 import { selectTreeNode, activateTreeFile } from "./treeInteraction";
 import { useTreeSpeedSearch } from "./useTreeSpeedSearch";
 import { useTreeOpenState } from "./useTreeOpenState";
-import * as ContextMenu from "@/lib/nativeMenu";
+import * as ContextMenu from "@/utils/nativeMenu";
 import { useDeleteConfirmation } from "./useDeleteConfirmation";
-import { openContextMenuFromKeyboard } from "@/lib/contextMenu";
+import { openContextMenuFromKeyboard } from "@/utils/contextMenu";
 import { CreateNameDialog } from "./CreateNameDialog";
 import React, { useEffect, useState, useRef } from "react";
 import { Tree, type NodeRendererProps } from "react-arborist";
 import { ChevronRight, ChevronDown, File } from "lucide-react";
 import { useElementSize } from "@/hooks/useElementSize";
 import { useWorkspaceStore, flushPendingWrites } from "@/stores/workspaceStore";
-import { fsApi } from "@/lib/api";
+import { fsApi } from "@/utils/api";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { isRemotePath } from "@/lib/remote";
+import { isRemotePath } from "@/utils/remote";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 

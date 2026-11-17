@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { settingsStorage } from "@/lib/globalSettings";
-import { readSpeechPreferences, speechPreferencesKey, speechModels as models, speechLanguages as languages, type SpeechPreferences } from "@/lib/speechPreferences";
+import { settingsStorage } from "@/utils/globalSettings";
+import { readSpeechPreferences, speechPreferencesKey, speechModels as models, speechLanguages as languages, type SpeechPreferences } from "@/utils/speechPreferences";
 import { SettingsPage } from "./SettingsPage";
 
 export function SpeechRecognitionSettings() {

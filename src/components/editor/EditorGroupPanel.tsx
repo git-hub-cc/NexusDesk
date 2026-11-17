@@ -6,9 +6,9 @@ import { MarkdownEditor, VideoTabPreview } from "./MarkdownEditor";
 import { ImageEditor } from "./ImageEditor";
 import { HttpEditor } from "./HttpEditor";
 import { DocumentPreview } from "./DocumentPreview";
-import { isImage, isVideo, isPreviewDocument } from "@/lib/assets";
+import { isImage, isVideo, isPreviewDocument } from "@/utils/assets";
 import { MIRROR_HOME, isFileConflict, resolveFileConflict, useWorkspaceStore, type Tab } from "@/stores/workspaceStore";
-import { confirmAction, showError } from "@/lib/dialogs";
+import { confirmAction, showError } from "@/utils/dialogs";
 
 function FileConflictNotice({ tab }: { tab: Tab }) {
   const [busy, setBusy] = useState(false);

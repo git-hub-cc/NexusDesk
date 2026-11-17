@@ -1,7 +1,7 @@
 import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Folder } from "lucide-react";
 import { Tree, type NodeRendererProps, type RowRendererProps } from "react-arborist";
-import { buildGitTree, summarizeGitTree, type GitTreeNode } from "@/lib/gitFileTree";
+import { buildGitTree, summarizeGitTree, type GitTreeNode } from "@/utils/gitFileTree";
 
 export interface GitTreeTarget { path: string; directory: boolean }
 

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../src/lib/browserPool.ts', import.meta.url), 'utf8')
+const source = readFileSync(new URL('../src/utils/browserPool.ts', import.meta.url), 'utf8')
   .replace(/^import .*;$/gm, '').replace(/export /g, '');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 

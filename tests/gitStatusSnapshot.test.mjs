@@ -6,7 +6,7 @@ import ts from "typescript";
 
 function fixture(invoke) {
   const context = { exports: {}, setTimeout, require: name => name === "./remote" ? { invokePathCommand: invoke } : {} };
-  const source = readFileSync(new URL("../src/lib/api.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../src/utils/api.ts", import.meta.url), "utf8");
   vm.runInNewContext(ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText, context);

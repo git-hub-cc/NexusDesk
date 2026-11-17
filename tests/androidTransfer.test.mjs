@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 
-const source = readFileSync(new URL("../src/lib/androidTransfer.ts", import.meta.url), "utf8")
+const source = readFileSync(new URL("../src/utils/androidTransfer.ts", import.meta.url), "utf8")
   .replace(/^import .*;\r?$/gm, "").replace(/^export /gm, "");
 const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 function harness({ local = [], text = "", failDownload = 0 } = {}) {

@@ -1,5 +1,5 @@
 import { storedNumber, useGlobalPreference } from "@/hooks/usePersistentState";
-import { settingsStorage } from "@/lib/globalSettings";
+import { settingsStorage } from "@/utils/globalSettings";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -7,12 +7,12 @@ import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
 import { CircleCheck, Download, FolderOpen, Import, ListMusic, LoaderCircle, Music2, Pause, Play, Plus, Repeat, Repeat1, Search, Shuffle, SkipBack, SkipForward, Volume2, Volume1, VolumeX, Trash2, X, AlertTriangle } from "lucide-react";
-import { musicApi, type MusicPlaylist, type MusicTrack } from "@/lib/api";
-import { resolveGDStudioPlayUrl, searchGDStudio } from "@/lib/gdMusic";
-import { rememberPlaylistTracks, removePlaylistTrack, resolvePlaylistTracks } from "@/lib/musicPlaylist";
-import { importMedia, importSummary } from "@/lib/mediaImport";
+import { musicApi, type MusicPlaylist, type MusicTrack } from "@/utils/api";
+import { resolveGDStudioPlayUrl, searchGDStudio } from "@/utils/gdMusic";
+import { rememberPlaylistTracks, removePlaylistTrack, resolvePlaylistTracks } from "@/utils/musicPlaylist";
+import { importMedia, importSummary } from "@/utils/mediaImport";
 import { useVirtualList } from "@/hooks/useVirtualList";
-import { chorusRange, type MusicChorus } from "@/lib/musicChorus";
+import { chorusRange, type MusicChorus } from "@/utils/musicChorus";
 
 type LibraryTab = "online" | "local" | `playlist:${string}`;
 const LIBRARY_TAB_KEY = "nexusdesk.music.libraryTab";

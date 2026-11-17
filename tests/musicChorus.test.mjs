@@ -3,7 +3,7 @@ import ts from 'typescript';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-const source = fs.readFileSync(new URL('../src/lib/musicChorus.ts', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/utils/musicChorus.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
 const { getMusicChorus, chorusRange } = await import('data:text/javascript;base64,' + Buffer.from(js).toString('base64'));
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { flushPendingWrites, useWorkspaceStore } from "@/stores/workspaceStore";
-import { showError } from "@/lib/dialogs";
+import { showError } from "@/utils/dialogs";
 
 export const useShortcuts = (openSearch: () => void, openRecent: () => void) => {
   const { toggleLeftSidebar } = useLayoutStore();

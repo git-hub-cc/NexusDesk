@@ -4,7 +4,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { KeyRound, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { confirmAction } from "@/lib/dialogs";
+import { confirmAction } from "@/utils/dialogs";
 
 type PasswordStats = { sites: number; passwords: number; updated_at: string | null };
 

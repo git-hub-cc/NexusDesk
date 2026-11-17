@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { gitApi, type GitSettings as GitSettingsValue } from "@/lib/api";
-import { readSettingsDraft, useSettingsAutosave, waitForSettingsSave } from "@/lib/useSettingsAutosave";
+import { gitApi, type GitSettings as GitSettingsValue } from "@/utils/api";
+import { readSettingsDraft, useSettingsAutosave, waitForSettingsSave } from "@/utils/useSettingsAutosave";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { SettingsPage } from "./SettingsPage";
 

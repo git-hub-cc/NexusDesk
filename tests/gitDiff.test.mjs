@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
-const source = fs.readFileSync(new URL('../src/lib/gitDiff.ts', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/utils/gitDiff.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
 const { diffChanges, fullTextDiffRows, parseGitDiff, originalFromPatch } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 

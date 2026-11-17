@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore, type SetStateAction } from "react";
-import { settingsStorage } from "@/lib/globalSettings";
-import { readUI, writeUI } from "@/lib/uiPersistence";
+import { settingsStorage } from "@/utils/globalSettings";
+import { readUI, writeUI } from "@/utils/uiPersistence";
 
 const changeEvent = "persistent-state-changed";
 

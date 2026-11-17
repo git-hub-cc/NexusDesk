@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
 
-const source = fs.readFileSync(new URL('../src/lib/documentConverter.ts', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/utils/documentConverter.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source.replace(/export /g, '')
     .replace('import("pdfjs-dist")', 'Promise.resolve(mockPdfjs)')
     .replace('import("pdfjs-dist/build/pdf.worker.min.mjs?url")', 'Promise.resolve({ default: "worker.mjs" })'), {

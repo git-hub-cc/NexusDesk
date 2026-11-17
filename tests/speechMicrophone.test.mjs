@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 
-const source = readFileSync(new URL("../src/lib/speechMicrophone.ts", import.meta.url), "utf8");
+const source = readFileSync(new URL("../src/utils/speechMicrophone.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source.replace(/export /g, ""), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText;

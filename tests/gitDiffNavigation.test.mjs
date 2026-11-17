@@ -15,7 +15,7 @@ function visit(node) {
 visit(ast);
 assert.ok(boundary);
 const compiled = ts.transpileModule(`return ${boundary};`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-const diffSource = fs.readFileSync(new URL('../src/lib/gitDiff.ts', import.meta.url), 'utf8');
+const diffSource = fs.readFileSync(new URL('../src/utils/gitDiff.ts', import.meta.url), 'utf8');
 const diffCompiled = ts.transpileModule(diffSource, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
 const { diffChanges, parseGitDiff } = await import(`data:text/javascript;base64,${Buffer.from(diffCompiled).toString('base64')}`);
 const patch = '@@ -1 +1 @@\n-old\n+new\n';

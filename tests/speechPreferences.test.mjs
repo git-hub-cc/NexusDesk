@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 
-const source = readFileSync(new URL("../src/lib/speechPreferences.ts", import.meta.url), "utf8")
+const source = readFileSync(new URL("../src/utils/speechPreferences.ts", import.meta.url), "utf8")
   .replace(/^import .*;$/gm, "");
 const compiled = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },

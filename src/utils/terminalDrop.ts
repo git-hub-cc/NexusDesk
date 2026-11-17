@@ -1,5 +1,5 @@
-import { resolveTerminalPath } from "@/lib/terminalLinks";
-import { isRemotePath, remotePath, shellQuote } from "@/lib/remote";
+import { resolveTerminalPath } from "@/utils/terminalLinks";
+import { isRemotePath, remotePath, shellQuote } from "@/utils/remote";
 
 export const terminalDropEvent = "nexusdesk-terminal-external-drop";
 export type TerminalDropDetail = { sessionId: string; paths: string[]; error?: string };

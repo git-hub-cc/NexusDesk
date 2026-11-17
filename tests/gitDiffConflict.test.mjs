@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { moduleUrl } from "./helpers/loadSource.mjs";
 
-const { originalFromPatch } = await import(moduleUrl("lib/gitDiff.ts"));
+const { originalFromPatch } = await import(moduleUrl("utils/gitDiff.ts"));
 const comparisonSource = readFileSync(new URL("../src/components/editor/GitComparison.tsx", import.meta.url), "utf8");
 const comparisonCode = ts.transpileModule(comparisonSource.replace(/^import .*;$/gm, "").replace("export function", "function"), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React },

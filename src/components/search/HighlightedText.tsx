@@ -1,5 +1,5 @@
 ﻿import { useMemo } from "react";
-import type { SearchOptions } from "@/lib/api";
+import type { SearchOptions } from "@/utils/api";
 
 export function HighlightedText({ text, query, options }: { text: string; query: string; options?: SearchOptions }) {
     const matches = useMemo(() => {

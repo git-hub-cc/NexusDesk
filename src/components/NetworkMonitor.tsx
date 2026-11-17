@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { Trash2, Pause, Play, X } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
-import { type NetworkRequest } from "@/lib/networkMonitor";
+import { type NetworkRequest } from "@/utils/networkMonitor";
 import { NetworkInspector } from "./NetworkInspector";
-import { watchCodexProxy, type ProxyInfo } from "@/lib/codexProxy";
+import { watchCodexProxy, type ProxyInfo } from "@/utils/codexProxy";
 import { CodexProxyControls } from "./CodexProxyControls";
 
 const size = (value: number) => value < 1024 ? `${value} B` : value < 1024 * 1024 ? `${(value / 1024).toFixed(1)} KB` : `${(value / 1048576).toFixed(1)} MB`;

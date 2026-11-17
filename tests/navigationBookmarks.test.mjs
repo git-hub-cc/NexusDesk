@@ -18,7 +18,7 @@ function createNavigation(stored) {
       setItem: (key, value) => values.set(key, value),
       removeItem: key => values.delete(key),
     },
-    require: name => name === '@/lib/globalSettings'
+    require: name => name === '@/utils/globalSettings'
       ? { settingsStorage: {
         getItem: key => values.get(key) ?? null,
         setItem: (key, value) => values.set(key, value),

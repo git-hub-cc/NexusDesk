@@ -1,19 +1,19 @@
-import { snapshotCommit } from "@/lib/snapshot";
+import { snapshotCommit } from "@/utils/snapshot";
 import React, { useEffect, useState } from "react";
 import nexusdeskIcon from "@/assets/nexusdesk.svg";
-import * as DropdownMenu from "@/lib/nativeDropdownMenu";
+import * as DropdownMenu from "@/utils/nativeDropdownMenu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
-import { flushGlobalSettings, settingsStorage } from "@/lib/globalSettings";
+import { flushGlobalSettings, settingsStorage } from "@/utils/globalSettings";
 import { Check, X, ChevronDown, Trash2 } from "lucide-react";
-import { fsApi, gitApi, type GitCloneAuth } from "@/lib/api";
+import { fsApi, gitApi, type GitCloneAuth } from "@/utils/api";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { CloneProjectDialog } from "./CloneProjectDialog";
 import { SftpConnectDialog } from "./SftpConnectDialog";
-import { confirmAction, showError } from "@/lib/dialogs";
+import { confirmAction, showError } from "@/utils/dialogs";
 
 export const TitleBar: React.FC<{ expanded?: boolean }> = ({ expanded = false } = {}) => {
   const appWindow = getCurrentWindow();

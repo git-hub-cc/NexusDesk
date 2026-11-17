@@ -1,10 +1,10 @@
 import { storedNumber, useGlobalPreference } from "@/hooks/usePersistentState";
-import { samePath } from "@/lib/paths";
+import { samePath } from "@/utils/paths";
 import { useEffect, useRef, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
-import { fsApi } from "@/lib/api";
-import { imageUrl } from "@/lib/assets";
-import { imagePreviewScale } from "@/lib/imagePreview";
+import { fsApi } from "@/utils/api";
+import { imageUrl } from "@/utils/assets";
+import { imagePreviewScale } from "@/utils/imagePreview";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { ZoomIn, ZoomOut } from "lucide-react";
 

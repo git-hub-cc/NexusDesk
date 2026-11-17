@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
-import { gitApi } from "@/lib/api";
+import { gitApi } from "@/utils/api";
 import { GitDiffEditor } from "./GitDiffEditor";
-import { isBinaryAsset } from "@/lib/assets";
+import { isBinaryAsset } from "@/utils/assets";
 import { Undo2 } from "lucide-react";
-import { confirmAction } from "@/lib/dialogs";
+import { confirmAction } from "@/utils/dialogs";
 
 type History = Awaited<ReturnType<typeof gitApi.pathHistory>>;
 

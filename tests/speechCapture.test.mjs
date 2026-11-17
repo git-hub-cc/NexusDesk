@@ -8,7 +8,7 @@ import ts from "typescript";
 const load = path => readFileSync(new URL(path, import.meta.url), "utf8");
 const source = [
   load("../src/components/editor/speechBuffer.ts"),
-  load("../src/lib/speechMicrophone.ts"),
+  load("../src/utils/speechMicrophone.ts"),
   load("../src/components/editor/SpeechToText.tsx"),
 ].join("\n").replace(/^import .*;\r?$/gm, "").replace(/export /g, "");
 const compiled = ts.transpileModule(source + "\nglobalThis.render = SpeechToText;", {

@@ -1,4 +1,4 @@
-import { samePath } from "@/lib/paths";
+import { samePath } from "@/utils/paths";
 // src/components/layout/TerminalSession.tsx
 import { useEffect, useRef, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
@@ -10,14 +10,14 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 import { useTerminalStore, type SessionInfo } from "@/stores/terminalStore";
-import { fsApi } from "@/lib/api";
+import { fsApi } from "@/utils/api";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { resolveTerminalPath, terminalBufferFileLinks } from "@/lib/terminalLinks";
-import { isRemotePath, remotePath, remoteUri } from "@/lib/remote";
-import { matchTerminalHistory, terminalPromptInput } from "@/lib/terminalHistory";
-import { codexComposerInput, fillCodexCommitMessage } from "@/lib/codexCommitMessage";
-import { codexProxyLaunchCommand, getCodexProxyStatus } from "@/lib/codexProxy";
-import { terminalDropEvent, terminalDropText, type TerminalDropDetail } from "@/lib/terminalDrop";
+import { resolveTerminalPath, terminalBufferFileLinks } from "@/utils/terminalLinks";
+import { isRemotePath, remotePath, remoteUri } from "@/utils/remote";
+import { matchTerminalHistory, terminalPromptInput } from "@/utils/terminalHistory";
+import { codexComposerInput, fillCodexCommitMessage } from "@/utils/codexCommitMessage";
+import { codexProxyLaunchCommand, getCodexProxyStatus } from "@/utils/codexProxy";
+import { terminalDropEvent, terminalDropText, type TerminalDropDetail } from "@/utils/terminalDrop";
 
 export function TerminalSession({ session, active, autoResize, resizeRequest, onExit }: {
   session: SessionInfo;

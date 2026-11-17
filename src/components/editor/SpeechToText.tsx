@@ -3,9 +3,9 @@ import { createPortal } from "react-dom";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { Activity, Pause, Play, X } from "lucide-react";
 import { acquireSpeechSession, releaseSpeechSession, SpeechBuffer, SpeechTask } from "./speechBuffer";
-import { settingsStorage } from "@/lib/globalSettings";
-import { readSpeechPreferences, speechPreferencesKey } from "@/lib/speechPreferences";
-import { listSpeechMicrophones, openSpeechMicrophone, resumeSpeechAudio, speechStartupError } from "@/lib/speechMicrophone";
+import { settingsStorage } from "@/utils/globalSettings";
+import { readSpeechPreferences, speechPreferencesKey } from "@/utils/speechPreferences";
+import { listSpeechMicrophones, openSpeechMicrophone, resumeSpeechAudio, speechStartupError } from "@/utils/speechMicrophone";
 
 let nextSpeechSession = 1;
 

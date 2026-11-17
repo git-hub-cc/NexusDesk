@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
-import * as ContextMenu from "@/lib/nativeMenu";
+import * as ContextMenu from "@/utils/nativeMenu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
 import { X } from "lucide-react";
 import { ReactFlow, Background, Controls, MiniMap, Handle, Position, useNodesState, type Node, type Edge, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { parseTreeGraph, layoutTreeMindMap, buildReverseTree, changeTreeNode, getTreeSubtree, type ReverseTreeNode } from "@/lib/treeGraph";
+import { parseTreeGraph, layoutTreeMindMap, buildReverseTree, changeTreeNode, getTreeSubtree, type ReverseTreeNode } from "@/utils/treeGraph";
 import { useGraphData } from "@/hooks/useGraphData";
-import { samePath } from "@/lib/paths";
-import { findWorkspaceFile } from "@/lib/workspaceFile";
+import { samePath } from "@/utils/paths";
+import { findWorkspaceFile } from "@/utils/workspaceFile";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 function MindMapNode({ data }: NodeProps) {

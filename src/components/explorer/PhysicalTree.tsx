@@ -1,12 +1,12 @@
-import { isWithinPath, normalizePath, pathKey, samePath } from "@/lib/paths";
-import { openWorkspaceFile } from "@/lib/workspaceFile";
-import { isSnapshot } from "@/lib/snapshot";
-import { fileOperationHistory } from "@/lib/fileOperationHistory";
+import { isWithinPath, normalizePath, pathKey, samePath } from "@/utils/paths";
+import { openWorkspaceFile } from "@/utils/workspaceFile";
+import { isSnapshot } from "@/utils/snapshot";
+import { fileOperationHistory } from "@/utils/fileOperationHistory";
 import { LocalHistoryDialog } from "@/components/editor/LocalHistoryDialog";
 import { GitHistoryDialog } from "@/components/editor/GitHistoryDialog";
 import { useDeleteConfirmation } from "./useDeleteConfirmation";
 import { CreateNameDialog, validateEntryName } from "./CreateNameDialog";
-import * as ContextMenu from "@/lib/nativeMenu";
+import * as ContextMenu from "@/utils/nativeMenu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
 import React, { useState, useEffect, useRef } from "react";
@@ -18,19 +18,19 @@ import { ChevronRight, ChevronDown, AlertTriangle, X, Square } from "lucide-reac
 import { useWorkspaceStore, flushPendingWrites } from "@/stores/workspaceStore";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { fsApi, videoApi } from "@/lib/api";
-import { documentExtension, isConvertibleDocument } from "@/lib/documentConverter";
-import { isOcrDocument } from "@/lib/documentOcr";
+import { fsApi, videoApi } from "@/utils/api";
+import { documentExtension, isConvertibleDocument } from "@/utils/documentConverter";
+import { isOcrDocument } from "@/utils/documentOcr";
 import { useElementSize } from "@/hooks/useElementSize";
-import { openContextMenuFromKeyboard } from "@/lib/contextMenu";
+import { openContextMenuFromKeyboard } from "@/utils/contextMenu";
 
 import { FileIcon } from "./FileIcon";
 import { selectTreeNode, activateTreeFile } from "./treeInteraction";
 import { useTreeSpeedSearch } from "./useTreeSpeedSearch";
 import { useTreeOpenState } from "./useTreeOpenState";
-import { treeStatusFor, statusLabels } from "@/lib/fileTreeAppearance";
-import { isRemotePath, remotePath, remoteUri } from "@/lib/remote";
-import { ANDROID_FILE_TYPE, downloadAndroidFiles, parseAndroidFiles, readAndroidClipboard, type AndroidFiles } from "@/lib/androidTransfer";
+import { treeStatusFor, statusLabels } from "@/utils/fileTreeAppearance";
+import { isRemotePath, remotePath, remoteUri } from "@/utils/remote";
+import { ANDROID_FILE_TYPE, downloadAndroidFiles, parseAndroidFiles, readAndroidClipboard, type AndroidFiles } from "@/utils/androidTransfer";
 
 type PhysicalNodeRenderer = (props: NodeRendererProps<any>) => React.ReactElement;
 const PhysicalNodeContext = React.createContext<PhysicalNodeRenderer | null>(null);
@@ -235,7 +235,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
         setConverting(true);
         try {
             const extension = documentExtension(sourcePath);
-            const { convertDocumentToMarkdown } = await import("@/lib/documentConverter");
+            const { convertDocumentToMarkdown } = await import("@/utils/documentConverter");
             const bytes = await fsApi.readBinaryFile(sourcePath);
             const name = sourcePath.split(/[/\\]/).pop()!.replace(/\.[^.]+$/, ocr ? ".ocr.md" : ".md");
             const directory = parent(sourcePath);
@@ -243,7 +243,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
                 const asset = await fsApi.importAsset(`${directory}/${name}`, { name: assetName, bytes: Array.from(assetBytes) });
                 return `.asset/${encodeURIComponent(asset.split(/[/\\]/).pop()!)}`;
             };
-            const content = controller ? await (await import("@/lib/documentOcr")).convertDocumentWithOcr(new Uint8Array(bytes), extension, {
+            const content = controller ? await (await import("@/utils/documentOcr")).convertDocumentWithOcr(new Uint8Array(bytes), extension, {
                 signal: controller.signal,
                 onProgress: (page, total) => setOcrProgress(`正在识别，第 ${page} / ${total} 页`),
             }) : await convertDocumentToMarkdown(new Uint8Array(bytes).buffer, extension, {

@@ -1,4 +1,4 @@
-import { fsApi } from "@/lib/api";
+import { fsApi } from "@/utils/api";
 
 const STORAGE_KEY = "note.project-save-location";
 

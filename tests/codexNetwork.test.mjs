@@ -4,7 +4,7 @@ import ts from 'typescript';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const source = fs.readFileSync(new URL('../src/lib/codexNetwork.ts', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/utils/codexNetwork.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 
 function setup(invoke, desktop = true) {

@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const source = fs.readFileSync(
-  new URL("../src/lib/networkInspection.ts", import.meta.url),
+  new URL("../src/utils/networkInspection.ts", import.meta.url),
   "utf8",
 );
 const context = vm.createContext({ exports: {} });

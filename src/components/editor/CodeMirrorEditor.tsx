@@ -1,28 +1,28 @@
-import { samePath } from "@/lib/paths";
-import { isSnapshot } from "@/lib/snapshot";
+import { samePath } from "@/utils/paths";
+import { isSnapshot } from "@/utils/snapshot";
 import { invoke } from "@tauri-apps/api/core";
-import { openNativePopup } from "@/lib/nativePopup";
+import { openNativePopup } from "@/utils/nativePopup";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Compartment, EditorState, StateEffect, StateField } from "@codemirror/state";
 import { editorHighlighting, httpHighlightPlugin, languageForPath } from "./syntaxHighlight";
 import { Decoration, EditorView, WidgetType, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, highlightActiveLine, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess, insertBlankLine, copyLineDown, deleteLine, moveLineUp, moveLineDown, toggleComment, redo, selectAll } from "@codemirror/commands";
 import { search, searchKeymap, openSearchPanel } from "@codemirror/search";
-import * as ContextMenu from "@/lib/nativeMenu";
+import * as ContextMenu from "@/utils/nativeMenu";
 import { Heading2, Bold, Italic, Code, Quote, Link as LinkIcon, Image as ImageIcon, Minus, Table as TableIcon, Video as VideoIcon, Globe, Send } from "lucide-react";
 import { flushEditorContent, hasPendingEditorContent, queueEditorContent, useWorkspaceStore } from "@/stores/workspaceStore";
 import { createLinkWire, fileHeadings, headingAt, highlightLinkTarget, linkEditors, linkTargetDecoration, relativeNotePath } from "./dragLink";
 import { InsertTableDialog } from "./InsertTableDialog";
-import { fsApi } from "@/lib/api";
-import { assetMarkdown } from "@/lib/assets";
+import { fsApi } from "@/utils/api";
+import { assetMarkdown } from "@/utils/assets";
 import { wikiLinkRange } from "./wikiLink";
 import { wikiLinkCompletion } from "./wikiLinkCompletion";
 import { expandSelection } from "./expandSelection";
 import { formatCode } from "./formatCode";
 import { useGraphData } from "@/hooks/useGraphData";
-import { readUI, writeUI, projectKey } from "@/lib/uiPersistence";
-import { getSpeechTarget, setSpeechTarget } from "@/lib/speechTarget";
-import { curlToHttp } from "@/lib/curlToHttp";
+import { readUI, writeUI, projectKey } from "@/utils/uiPersistence";
+import { getSpeechTarget, setSpeechTarget } from "@/utils/speechTarget";
+import { curlToHttp } from "@/utils/curlToHttp";
 
 class SharedNodeCountWidget extends WidgetType {
   constructor(readonly count: number) { super(); }

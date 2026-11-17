@@ -1,5 +1,5 @@
-import { reserveBrowser } from "@/lib/browserPool";
-import { browserVisibility } from "@/lib/browserVisibility";
+import { reserveBrowser } from "@/utils/browserPool";
+import { browserVisibility } from "@/utils/browserVisibility";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";

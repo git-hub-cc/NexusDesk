@@ -1,9 +1,9 @@
-import "./lib/logging";
+import "./utils/logging";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { flushGlobalSettings, initializeGlobalSettings } from "./lib/globalSettings";
-import { flushSettingsAutosaves } from "./lib/useSettingsAutosave";
-import { flushUIState } from "./lib/uiPersistence";
+import { flushGlobalSettings, initializeGlobalSettings } from "./utils/globalSettings";
+import { flushSettingsAutosaves } from "./utils/useSettingsAutosave";
+import { flushUIState } from "./utils/uiPersistence";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
 // Cancel the native menu after application context-menu handlers have run.
@@ -89,7 +89,7 @@ async function boot() {
       }
       catch (error) {
         closeReady = false;
-        const { showError } = await import("./lib/dialogs");
+        const { showError } = await import("./utils/dialogs");
         showError(`${savingFiles ? "文件保存失败，请先处理文件保存问题。" : "全局配置保存失败，请重试关闭窗口。"}\n${String(error)}`);
       } finally { closing = false; }
     });

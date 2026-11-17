@@ -6,12 +6,12 @@ import { FileIcon } from "@/components/explorer/FileIcon";
 import { CreateNameDialog, validateEntryName } from "@/components/explorer/CreateNameDialog";
 import { activateTreeFile, selectTreeNode } from "@/components/explorer/treeInteraction";
 import { useDeleteConfirmation } from "@/components/explorer/useDeleteConfirmation";
-import { isImage } from "@/lib/assets";
+import { isImage } from "@/utils/assets";
 import { useElementSize } from "@/hooks/useElementSize";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { flushPendingWrites } from "@/stores/workspaceStore";
-import * as ContextMenu from "@/lib/nativeMenu";
-import { ANDROID_FILE_TYPE, copyAndroidFiles, localDropPaths, parseAndroidFiles, pasteToAndroid, topLevelPaths, uploadLocalFiles } from "@/lib/androidTransfer";
+import * as ContextMenu from "@/utils/nativeMenu";
+import { ANDROID_FILE_TYPE, copyAndroidFiles, localDropPaths, parseAndroidFiles, pasteToAndroid, topLevelPaths, uploadLocalFiles } from "@/utils/androidTransfer";
 
 type Entry = { name: string; path: string; is_dir: boolean };
 type FileNode = Entry & { children?: FileNode[] };

@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
-import { displayPath } from "@/lib/paths";
+import { displayPath } from "@/utils/paths";
 import { AlertTriangle, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 

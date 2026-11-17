@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const ts = require('typescript');
 
 module.exports = function loadRemote(invoke = async () => {}) {
-  const source = fs.readFileSync(path.join(__dirname, '../../src/lib/remote.ts'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '../../src/utils/remote.ts'), 'utf8');
   const context = { exports: {}, require: name => {
     if (name === '@tauri-apps/api/core') return { invoke };
     throw new Error(`Unexpected dependency: ${name}`);

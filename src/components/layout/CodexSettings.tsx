@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { codexSettingsApi } from "@/lib/api";
-import { settingsStorage } from "@/lib/globalSettings";
-import { AUTO_REVIEW_PROMPT_KEY, DEFAULT_AUTO_REVIEW_PROMPT } from "@/lib/codexReview";
-import { readSettingsDraft, useSettingsAutosave, waitForSettingsSave } from "@/lib/useSettingsAutosave";
+import { codexSettingsApi } from "@/utils/api";
+import { settingsStorage } from "@/utils/globalSettings";
+import { AUTO_REVIEW_PROMPT_KEY, DEFAULT_AUTO_REVIEW_PROMPT } from "@/utils/codexReview";
+import { readSettingsDraft, useSettingsAutosave, waitForSettingsSave } from "@/utils/useSettingsAutosave";
 import { SettingsPage } from "./SettingsPage";
 
 const DRAFT_KEY = "nexusdesk.settingsDraft:codex";

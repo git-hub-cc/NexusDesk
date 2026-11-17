@@ -10,9 +10,9 @@ export function moduleUrl(path, dependencies = {}) {
   return `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`;
 }
 
-export const pathsUrl = moduleUrl("lib/paths.ts");
+export const pathsUrl = moduleUrl("utils/paths.ts");
 export const paths = await import(pathsUrl);
-export const pathDeclarations = readFileSync(new URL("../../src/lib/paths.ts", import.meta.url), "utf8").replace(/export /g, "");
-export const assetsUrl = moduleUrl("lib/assets.ts", {
+export const pathDeclarations = readFileSync(new URL("../../src/utils/paths.ts", import.meta.url), "utf8").replace(/export /g, "");
+export const assetsUrl = moduleUrl("utils/assets.ts", {
   "@tauri-apps/api/core": "data:text/javascript,export const convertFileSrc = path => path;",
 });

@@ -1,20 +1,20 @@
 // src/components/layout/BottomPanel.tsx
 import { PanelMinimizeButton } from "./PanelMinimizeButton";
-import { isSnapshot } from "@/lib/snapshot";
+import { isSnapshot } from "@/utils/snapshot";
 import { useEffect, useRef, useState } from "react";
-import { gitApi } from "@/lib/api";
+import { gitApi } from "@/utils/api";
 import { ClipboardCheck, GitBranch, Terminal, X, CircleDot, ChevronDown, Pin } from "lucide-react";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, horizontalListSortingStrategy, useSortable, type SortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import * as DropdownMenu from "@/lib/nativeDropdownMenu";
-import * as ContextMenu from "@/lib/nativeMenu";
+import * as DropdownMenu from "@/utils/nativeDropdownMenu";
+import * as ContextMenu from "@/utils/nativeMenu";
 import openaiIcon from "@/assets/openai.svg";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { isRemotePath } from "@/lib/remote";
-import { settingsStorage } from "@/lib/globalSettings";
-import { AUTO_REVIEW_PROMPT_KEY, DEFAULT_AUTO_REVIEW_PROMPT } from "@/lib/codexReview";
+import { isRemotePath } from "@/utils/remote";
+import { settingsStorage } from "@/utils/globalSettings";
+import { AUTO_REVIEW_PROMPT_KEY, DEFAULT_AUTO_REVIEW_PROMPT } from "@/utils/codexReview";
 import { useTerminalStore, type TerminalProfile } from "@/stores/terminalStore";
 import { GitPanel } from "@/components/git/GitPanel";
 import { TerminalSession } from "./TerminalSession";

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-const sizingSource = readFileSync(new URL('../src/lib/workspacePanelSizing.ts', import.meta.url), 'utf8');
+const sizingSource = readFileSync(new URL('../src/utils/workspacePanelSizing.ts', import.meta.url), 'utf8');
 const sizing = ts.transpileModule(sizingSource.replace(/export /g, ''), {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
 }).outputText;

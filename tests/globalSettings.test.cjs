@@ -9,9 +9,9 @@ function setup({ native = true, values = {}, write, read } = {}) {
   const calls = [], errors = [];
   const disk = { ...values };
   const window = Object.assign(new EventTarget(), { setInterval() {} });
-  const source = fs.readFileSync('src/lib/globalSettings.ts', 'utf8').replace(/^import .*;$/gm, '');
+  const source = fs.readFileSync('src/utils/globalSettings.ts', 'utf8').replace(/^import .*;$/gm, '');
   const context = { exports: {}, createJSONStorage, window, Event,
-    globalSettingKeys: JSON.parse(fs.readFileSync("src/lib/globalSettingKeys.json", "utf8")),
+    globalSettingKeys: JSON.parse(fs.readFileSync("src/utils/globalSettingKeys.json", "utf8")),
     document: { visibilityState: 'visible' }, isTauri: () => native,
     console: { error: (...args) => errors.push(args) },
     localStorage: { getItem: key => disk[key] ?? null, setItem: (key, value) => { disk[key] = value; } },

@@ -1,15 +1,15 @@
 import { storedNumber, useProjectUIState } from "@/hooks/usePersistentState";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { pathKey } from "@/lib/paths";
+import { pathKey } from "@/utils/paths";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { ChevronLeft, ChevronRight, ExternalLink, RotateCw, ZoomIn, ZoomOut } from "lucide-react";
 import type { WorkBook } from "@e965/xlsx";
-import { fsApi } from "@/lib/api";
-import { isRemotePath } from "@/lib/remote";
-import { pdfPageAtScrollOffset, pdfPreviewPageSize, renderPdfPreviewPage, type PdfPreviewResource } from "@/lib/pdfPreview";
-import { filterSpreadsheetRows, prepareSpreadsheetPreview } from "@/lib/spreadsheetPreview";
+import { fsApi } from "@/utils/api";
+import { isRemotePath } from "@/utils/remote";
+import { pdfPageAtScrollOffset, pdfPreviewPageSize, renderPdfPreviewPage, type PdfPreviewResource } from "@/utils/pdfPreview";
+import { filterSpreadsheetRows, prepareSpreadsheetPreview } from "@/utils/spreadsheetPreview";
 
 function PdfPage({ resource, page, width, zoom, visible }: {
   resource: PdfPreviewResource; page: number; width: number; zoom: number; visible: boolean;

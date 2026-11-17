@@ -2,8 +2,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { X } from "lucide-react";
-import { fsApi } from "@/lib/api";
-import { getProjectSaveLocation, rememberProjectSaveLocation } from "@/lib/projectLocation";
+import { fsApi } from "@/utils/api";
+import { getProjectSaveLocation, rememberProjectSaveLocation } from "@/utils/projectLocation";
 import { validateEntryName } from "@/components/explorer/CreateNameDialog";
 
 interface CreateProjectDialogProps {

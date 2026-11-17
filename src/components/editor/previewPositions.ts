@@ -1,4 +1,4 @@
-import { readUI, writeUI } from "@/lib/uiPersistence";
+import { readUI, writeUI } from "@/utils/uiPersistence";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 type PreviewPosition = { top: number; left: number };
 

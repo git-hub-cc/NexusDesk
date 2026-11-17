@@ -19,7 +19,7 @@ function harness(disk = new Map(), isSnapshot = false) {
   let nextTimer = 0;
   const timers = new Map();
   const writes = [];
-  const ui = load("../src/lib/uiPersistence.ts", {
+  const ui = load("../src/utils/uiPersistence.ts", {
     ...paths, isSnapshot, setTimeout: (callback, delay) => { const id = ++nextTimer; timers.set(id, { callback, delay }); return id; },
     clearTimeout: id => timers.delete(id),
     settingsStorage: {

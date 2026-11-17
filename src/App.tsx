@@ -7,12 +7,12 @@ import "./App.css";
 import { useCallback, useState, useEffect, useRef } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { scheduleWindowReveal } from "@/lib/windowStartup";
+import { scheduleWindowReveal } from "@/utils/windowStartup";
 import { SearchEverywhere } from "@/components/search/SearchEverywhere";
 import { flushEditorContent, useWorkspaceStore } from "@/stores/workspaceStore";
-import { isSnapshot } from "@/lib/snapshot";
-import { isImage, isTextFile, isVideo, isPreviewDocument } from "@/lib/assets";
-import { openWorkspaceFile } from "@/lib/workspaceFile";
+import { isSnapshot } from "@/utils/snapshot";
+import { isImage, isTextFile, isVideo, isPreviewDocument } from "@/utils/assets";
+import { openWorkspaceFile } from "@/utils/workspaceFile";
 
 function App() {
   const [searchOpen, setSearchOpen] = useState(false);

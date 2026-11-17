@@ -1,8 +1,8 @@
 import { useEffect } from "react";
-import { isSnapshot } from "@/lib/snapshot";
+import { isSnapshot } from "@/utils/snapshot";
 import { listen } from "@tauri-apps/api/event";
 import debounce from "lodash/debounce";
-import { fsApi, gitApi } from "@/lib/api";
+import { fsApi, gitApi } from "@/utils/api";
 import { refreshOpenFiles, useWorkspaceStore } from "@/stores/workspaceStore";
 
 export function useWorkspaceWatcher() {

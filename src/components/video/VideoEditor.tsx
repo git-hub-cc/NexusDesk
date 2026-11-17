@@ -3,8 +3,8 @@ import { homeDir, join } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Download, FolderOpen, Import, LoaderCircle, Maximize, Minimize, Search, Trash2, Video, X } from "lucide-react";
-import { importMedia, importSummary } from "@/lib/mediaImport";
-import { videoApi, type LocalVideo, type VideoToolStatus } from "@/lib/api";
+import { importMedia, importSummary } from "@/utils/mediaImport";
+import { videoApi, type LocalVideo, type VideoToolStatus } from "@/utils/api";
 import { AssetVideo } from "@/components/editor/MarkdownEditor";
 import { useVirtualList } from "@/hooks/useVirtualList";
 

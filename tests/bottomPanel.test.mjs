@@ -27,7 +27,7 @@ function harness(installed) {
       useEffect: effect => effects.push(effect),
     },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-    '@/lib/api': { gitApi: { isInstalled: async () => installed } },
+    '@/utils/api': { gitApi: { isInstalled: async () => installed } },
     '@/stores/layoutStore': { useLayoutStore: () => layout },
     '@/stores/terminalStore': { useTerminalStore: Object.assign(() => terminal, { getState: () => terminal, setState: () => {} }) },
     '@/stores/workspaceStore': { useWorkspaceStore: { getState: () => ({ rootPath: 'C:/workspace' }) } },

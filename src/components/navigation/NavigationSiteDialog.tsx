@@ -2,7 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
 import { X } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
-import { confirmAction } from "@/lib/dialogs";
+import { confirmAction } from "@/utils/dialogs";
 import { navigationFaviconUrl, type NavigationSite } from "./navigationData";
 import { NavigationSiteIcon } from "./NavigationSiteIcon";
 

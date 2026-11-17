@@ -3,7 +3,7 @@ import { File, FileCode, FileJson, FileText, Image, FileArchive, FileAudio, File
 export function FileIcon({ name, directory = false, open = false }: { name: string; directory?: boolean; open?: boolean }) {
   if (directory) {
     const lower = name.toLowerCase();
-    const [ClosedIcon, color] = ["src", "source", "lib", "components"].includes(lower) ? [FolderCode, "#74b0f4"]
+    const [ClosedIcon, color] = ["src", "source", "lib", "utils", "components"].includes(lower) ? [FolderCode, "#74b0f4"]
       : ["test", "tests", "__tests__", "spec"].includes(lower) ? [FolderCheck, "#85c88a"]
       : ["assets", "images", "public", "static"].includes(lower) ? [Folder, "#b79ad8"]
       : lower === ".git" ? [FolderGit2, "#dfa082"]

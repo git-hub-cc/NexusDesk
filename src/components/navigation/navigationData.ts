@@ -1,6 +1,6 @@
 import resourceDataUrl from "@/assets/navigation/data/01资源.json?url";
 import serviceDataUrl from "@/assets/navigation/data/02服务.json?url";
-import { settingsStorage } from "@/lib/globalSettings";
+import { settingsStorage } from "@/utils/globalSettings";
 
 export type NavigationSite = {
   id: string;

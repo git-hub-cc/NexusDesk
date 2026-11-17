@@ -11,7 +11,7 @@ const compiled = ts.transpileModule(source.slice(start, end), {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const visibilityCompiled = ts.transpileModule(
-  readFileSync(new URL('../src/lib/browserVisibility.ts', import.meta.url), 'utf8').replace(/export /g, ''),
+  readFileSync(new URL('../src/utils/browserVisibility.ts', import.meta.url), 'utf8').replace(/export /g, ''),
   { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
 ).outputText;
 const musicEditorSource = readFileSync(new URL('../src/components/music/MusicEditor.tsx', import.meta.url), 'utf8');

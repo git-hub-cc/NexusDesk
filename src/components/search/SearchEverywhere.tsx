@@ -3,8 +3,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
 import { useEffect, useRef, useState } from "react";
 import { FileText, Search, X } from "lucide-react";
-import { openWorkspaceFile } from "@/lib/workspaceFile";
-import { fsApi, searchApi, type SearchResult, type SearchOptions } from "@/lib/api";
+import { openWorkspaceFile } from "@/utils/workspaceFile";
+import { fsApi, searchApi, type SearchResult, type SearchOptions } from "@/utils/api";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { HighlightedText } from "./HighlightedText";
 

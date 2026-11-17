@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { moduleUrl, pathsUrl } from "./helpers/loadSource.mjs";
 
-const { readCachedTreeFile: read, invalidateTreeFiles: invalidate } = await import(moduleUrl("lib/treeFileCache.ts", { "./paths": pathsUrl }));
+const { readCachedTreeFile: read, invalidateTreeFiles: invalidate } = await import(moduleUrl("utils/treeFileCache.ts", { "./paths": pathsUrl }));
 
 test('tree cache deduplicates concurrent reads and reuses content until invalidated', async () => {
   invalidate([]);

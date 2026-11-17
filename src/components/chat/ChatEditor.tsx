@@ -4,8 +4,8 @@ import { DialogShell } from "@/components/DialogShell";
 import { OperationProgress } from "@/components/OperationProgress";
 import { Check, Copy, GitBranch, LoaderCircle, MessageCircle, Pencil, Plus, Save, Send, Settings2, Trash2, X } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
-import { chatApi, codexSettingsApi, fsApi, type ChatImage, type ChatOverrides, type CodexSettings } from "@/lib/api";
-import { flushGlobalSettings, settingsStorage } from "@/lib/globalSettings";
+import { chatApi, codexSettingsApi, fsApi, type ChatImage, type ChatOverrides, type CodexSettings } from "@/utils/api";
+import { flushGlobalSettings, settingsStorage } from "@/utils/globalSettings";
 
 type Message = { role: "user" | "assistant"; content: string; images?: ChatImage[] };
 type SavedConversation = { id: string; title: string; messages: Message[]; savedAt: number };

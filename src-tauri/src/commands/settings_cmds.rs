@@ -71,7 +71,7 @@ fn allowed(key: &str) -> bool {
     }
     static CONTRACT: std::sync::OnceLock<Contract> = std::sync::OnceLock::new();
     let contract = CONTRACT.get_or_init(|| {
-        serde_json::from_str(include_str!("../../../src/lib/globalSettingKeys.json"))
+        serde_json::from_str(include_str!("../../../src/utils/globalSettingKeys.json"))
             .expect("Invalid global setting key contract")
     });
     contract.keys.iter().any(|allowed| allowed == key)

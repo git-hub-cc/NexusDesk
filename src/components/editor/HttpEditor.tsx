@@ -1,15 +1,15 @@
-import { settingsStorage } from "@/lib/globalSettings";
+import { settingsStorage } from "@/utils/globalSettings";
 import { memo, useEffect, useRef, useState, useMemo } from "react";
 import { Code, Eye, Columns2, Play, Square, Clock, HardDrive, Globe, AlertTriangle, LoaderCircle } from "lucide-react";
 import { useWorkspaceStore, type Tab } from "@/stores/workspaceStore";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
-import { extractStreamContent, extractResponseUrls } from "@/lib/httpStreamExtraction";
+import { extractStreamContent, extractResponseUrls } from "@/utils/httpStreamExtraction";
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
-import { compactResponseBase64 } from "@/lib/httpResponsePreview";
-import { extractResponseBase64 } from "@/lib/httpBase64Extraction";
-import { formatHttpMessage, recordNetworkRequest } from "@/lib/networkMonitor";
-import { isRemotePath, remotePath, remoteUri } from "@/lib/remote";
+import { compactResponseBase64 } from "@/utils/httpResponsePreview";
+import { extractResponseBase64 } from "@/utils/httpBase64Extraction";
+import { formatHttpMessage, recordNetworkRequest } from "@/utils/networkMonitor";
+import { isRemotePath, remotePath, remoteUri } from "@/utils/remote";
 
 const ResponseText = memo(({ content, className }: { content: string; className: string }) => {
   const preview = useMemo(() => compactResponseBase64(content), [content]);

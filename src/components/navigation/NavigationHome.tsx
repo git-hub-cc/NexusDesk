@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ExternalLink, Globe, Plus, Search, Trash2 } from "lucide-react";
-import { confirmAction, showMessage } from "@/lib/dialogs";
+import { confirmAction, showMessage } from "@/utils/dialogs";
 import engineConfigUrl from "@/assets/navigation/data/00engines.json?url";
 import { loadNavigationData, mergeNavigationData, saveNavigationData, type NavigationCategory, type NavigationData, type NavigationSite, CUSTOM_CATEGORY_ID, upsertNavigationSite } from "./navigationData";
 import { initializeNavigationSync } from "./navigationSync";

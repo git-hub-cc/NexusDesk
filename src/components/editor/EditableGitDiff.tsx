@@ -3,8 +3,8 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { Decoration, EditorView, drawSelection, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
-import { fsApi, type TextSnapshot } from "@/lib/api";
-import { diffChanges, originalFromPatch, parseGitDiff, type DiffChange } from "@/lib/gitDiff";
+import { fsApi, type TextSnapshot } from "@/utils/api";
+import { diffChanges, originalFromPatch, parseGitDiff, type DiffChange } from "@/utils/gitDiff";
 import { DiffOverview } from "./DiffOverview";
 import { useDiffSplit } from "./useDiffSplit";
 

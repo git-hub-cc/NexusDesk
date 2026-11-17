@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../src/lib/httpBase64Extraction.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../src/utils/httpBase64Extraction.ts', import.meta.url), 'utf8');
 const js = ts.transpile(source, { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 });
 const { extractResponseBase64: extract } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 

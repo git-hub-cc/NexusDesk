@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const { test } = require('node:test');
 const context = { exports: {} };
-vm.runInNewContext(ts.transpileModule(fs.readFileSync(`${__dirname}/../src/lib/terminalHistory.ts`, 'utf8'), {
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(`${__dirname}/../src/utils/terminalHistory.ts`, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
 }).outputText, context);
 const { matchTerminalHistory: match, terminalPromptInput: input } = context.exports;

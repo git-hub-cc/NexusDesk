@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 
-const source = readFileSync(new URL("../src/lib/curlToHttp.ts", import.meta.url), "utf8");
+const source = readFileSync(new URL("../src/utils/curlToHttp.ts", import.meta.url), "utf8");
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
 const exports = {};
 new Function("exports", code)(exports);

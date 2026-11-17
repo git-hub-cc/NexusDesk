@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { isRemotePath, uploadLocal } from "@/lib/remote";
-import { openWorkspaceFile } from "@/lib/workspaceFile";
-import { fsApi } from "@/lib/api";
+import { isRemotePath, uploadLocal } from "@/utils/remote";
+import { openWorkspaceFile } from "@/utils/workspaceFile";
+import { fsApi } from "@/utils/api";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { terminalDropEvent, type TerminalDropDetail } from "@/lib/terminalDrop";
+import { terminalDropEvent, type TerminalDropDetail } from "@/utils/terminalDrop";
 
 export function useFileDrop() {
   const [isDragging, setIsDragging] = useState(false);

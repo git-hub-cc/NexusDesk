@@ -1,5 +1,5 @@
-import { settingsStorage } from "@/lib/globalSettings";
-import { fsApi, type GraphSyncData, type LogicalSyncData } from "@/lib/api";
+import { settingsStorage } from "@/utils/globalSettings";
+import { fsApi, type GraphSyncData, type LogicalSyncData } from "@/utils/api";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { loadNavigationData, mergeNavigationData, saveNavigationData, type NavigationCategory, type NavigationData } from "./navigationData";
 

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { utils } from "@e965/xlsx";
 
-const source = readFileSync(new URL("../src/lib/spreadsheetPreview.ts", import.meta.url), "utf8");
+const source = readFileSync(new URL("../src/utils/spreadsheetPreview.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 }).outputText;

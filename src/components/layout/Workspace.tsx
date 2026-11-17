@@ -21,7 +21,7 @@ import { SoftwareSettings } from "./SoftwareSettings";
 import { CodexSettings } from "./CodexSettings";
 import { NavigationSyncSettings } from "@/components/navigation/NavigationSyncSettings";
 import openAiIcon from "@/assets/openai.svg";
-import { sidebarMaxSize, workspacePanelMinSize } from "@/lib/workspacePanelSizing";
+import { sidebarMaxSize, workspacePanelMinSize } from "@/utils/workspacePanelSizing";
 
 export const Workspace: React.FC = () => {
   const rightSidebarWidth = useLayoutStore(state => state.rightSidebarWidth);

@@ -1,6 +1,6 @@
 import { Check, Download, LoaderCircle, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { softwareApi, type ManagedSoftware } from "@/lib/api";
+import { softwareApi, type ManagedSoftware } from "@/utils/api";
 import { SettingsPage } from "./SettingsPage";
 
 export function SoftwareSettings() {

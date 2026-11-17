@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Cloud, LoaderCircle, Unplug } from "lucide-react";
-import { settingsStorage } from "@/lib/globalSettings";
+import { settingsStorage } from "@/utils/globalSettings";
 import {
   connectNavigationSync,
   disconnectNavigationSync,

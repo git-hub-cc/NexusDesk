@@ -5,8 +5,8 @@ import {
   readableItems,
   responseItems,
   type ReadableItem,
-} from "@/lib/networkInspection";
-import type { NetworkRequest } from "@/lib/networkMonitor";
+} from "@/utils/networkInspection";
+import type { NetworkRequest } from "@/utils/networkMonitor";
 import { NetworkMessage } from "./NetworkMessage";
 
 const pretty = (value: unknown) => JSON.stringify(value, null, 2) ?? "";

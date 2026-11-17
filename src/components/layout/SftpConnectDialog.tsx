@@ -1,15 +1,15 @@
-import { settingsStorage } from "@/lib/globalSettings";
+import { settingsStorage } from "@/utils/globalSettings";
 import { useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
 import { OperationProgress } from "@/components/OperationProgress";
 import { X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { remoteUri } from "@/lib/remote";
+import { remoteUri } from "@/utils/remote";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { readSettingsDraft } from "@/lib/useSettingsAutosave";
+import { readSettingsDraft } from "@/utils/useSettingsAutosave";
 
 const FORM_KEY = "nexusdesk.sftp.form";
 type ConnectionForm = { host: string; port: string; username: string; password: string };

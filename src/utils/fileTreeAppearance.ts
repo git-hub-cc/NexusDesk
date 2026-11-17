@@ -1,4 +1,4 @@
-import type { TreeFileStatus } from "@/lib/api";
+import type { TreeFileStatus } from "@/utils/api";
 
 export function buildTreeStatuses(
     entries: { path: string; status: string }[],

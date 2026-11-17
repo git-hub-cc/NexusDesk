@@ -84,7 +84,7 @@ test("filesystem text reads use the same file capabilities as previews and compa
     };
     return {};
   } };
-  const source = readFileSync(new URL("../src/lib/api.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../src/utils/api.ts", import.meta.url), "utf8");
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, context);
   const api = context.exports.fsApi;
   assert.equal(await api.readFile("image.avif"), "");
