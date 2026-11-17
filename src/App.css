@@ -156,6 +156,8 @@
 .chat-error { align-self: flex-start; color: #f08a8a; font-size: 11px; overflow-wrap: anywhere; }
 .chat-notice { align-self: flex-start; color: #94c4a2; font-size: 11px; }
 .chat-composer { width: min(100% - 32px, 860px); flex: 0 0 auto; align-self: center; margin-bottom: 18px; padding: 10px 12px 8px; border-radius: 6px; }
+.chat-composer.is-dragging-images { outline: 2px dashed var(--ide-accent); outline-offset: -2px; }
+.chat-drop-hint { margin-bottom: 8px; color: var(--ide-accent); font-size: 12px; }
 .chat-composer textarea { display: block; width: 100%; min-height: 58px; max-height: 180px; resize: vertical; color: var(--ide-control-fg); background: transparent; outline: none; font-size: 12px; line-height: 1.6; user-select: text; }
 .chat-composer-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; color: #737780; font-size: 10px; }
 .chat-composer-footer button { display: grid; place-items: center; width: 30px; height: 28px; border-radius: 4px; }

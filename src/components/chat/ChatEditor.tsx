@@ -4,12 +4,27 @@ import { DialogShell } from "@/components/DialogShell";
 import { OperationProgress } from "@/components/OperationProgress";
 import { Check, Copy, GitBranch, LoaderCircle, MessageCircle, Pencil, Plus, Save, Send, Settings2, Trash2, X } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
-import { chatApi, codexSettingsApi, type ChatImage, type ChatOverrides, type CodexSettings } from "@/lib/api";
+import { chatApi, codexSettingsApi, fsApi, type ChatImage, type ChatOverrides, type CodexSettings } from "@/lib/api";
 import { flushGlobalSettings, settingsStorage } from "@/lib/globalSettings";
 
 type Message = { role: "user" | "assistant"; content: string; images?: ChatImage[] };
 type SavedConversation = { id: string; title: string; messages: Message[]; savedAt: number };
 const HISTORY_KEY = "nexusdesk-chat-history-v1";
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const FILE_DRAG_TYPES = ["Files", "application/x-nexusdesk-files", "application/x-nexusdesk-file", "application/x-nexusdesk-logical-file"];
+
+async function referenceFilesFromPaths(paths: string[]): Promise<File[]> {
+  if (paths.length > 4) throw new Error("最多上传 4 张参考图片");
+  return Promise.all(paths.map(async path => {
+    const name = path.split(/[/\\]/).pop() || "参考图片";
+    const extension = name.split(".").pop()?.toLowerCase();
+    const type = extension === "png" ? "image/png" : extension === "jpg" || extension === "jpeg" ? "image/jpeg" : extension === "webp" ? "image/webp" : "";
+    if (!type) throw new Error("请选择不超过 20 MB 的 PNG、JPEG 或 WebP 图片");
+    const bytes = await fsApi.readBinaryFileLimited(path, MAX_IMAGE_BYTES);
+    return new File([new Uint8Array(bytes)], name, { type });
+  }));
+}
 
 function readHistory(): SavedConversation[] {
   try {
@@ -35,6 +50,9 @@ export function ChatEditor({ active }: { active: boolean }) {
   const [imageSize, setImageSize] = useState("1024x1024");
   const [attachments, setAttachments] = useState<ChatImage[]>([]);
   const [readingImages, setReadingImages] = useState(false);
+  const imageImportLock = useRef(false);
+  const [draggingImages, setDraggingImages] = useState(false);
+  const dragDepth = useRef(0);
   const [preview, setPreview] = useState<ChatImage | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const requestOverrides = mode === "image" ? imageOverrides : overrides;
@@ -95,27 +113,105 @@ export function ChatEditor({ active }: { active: boolean }) {
   }, []);
 
   const updateOverride = (key: keyof ChatOverrides, value: string) => (mode === "image" ? setImageOverrides : setOverrides)(current => ({ ...current, [key]: value || undefined }));
-  const addImages = async (files: File[]) => {
-    if (!files.length || busy || readingImages) return;
-    if (attachments.length + files.length > 4) { setError("最多上传 4 张参考图片"); return; }
+  useEffect(() => {
+    dragDepth.current = 0;
+    setDraggingImages(false);
+  }, [active, mode, busy, readingImages]);
+  useEffect(() => {
+    const clearDrag = () => { dragDepth.current = 0; setDraggingImages(false); };
+    window.addEventListener("dragend", clearDrag);
+    window.addEventListener("drop", clearDrag);
+    window.addEventListener("blur", clearDrag);
+    return () => {
+      window.removeEventListener("dragend", clearDrag);
+      window.removeEventListener("drop", clearDrag);
+      window.removeEventListener("blur", clearDrag);
+    };
+  }, []);
+
+  const addImages = async (source: File[] | (() => Promise<File[]>)) => {
+    if (!active || mode !== "image" || busy || imageImportLock.current) return;
+    imageImportLock.current = true;
     setReadingImages(true);
     try {
-      const images = await Promise.all(files.map(file => new Promise<ChatImage>((resolve, reject) => {
-        if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || !file.size || file.size > 20 * 1024 * 1024) {
-          reject(new Error("请选择不超过 20 MB 的 PNG、JPEG 或 WebP 图片")); return;
-        }
+      const files = typeof source === "function" ? await source() : source;
+      if (!files.length) return;
+      if (attachments.length + files.length > 4) throw new Error("最多上传 4 张参考图片");
+      if (files.some(file => !IMAGE_TYPES.includes(file.type) || !file.size || file.size > MAX_IMAGE_BYTES)) {
+        throw new Error("请选择不超过 20 MB 的 PNG、JPEG 或 WebP 图片");
+      }
+      const images = await Promise.all(files.map((file, index) => new Promise<ChatImage>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve({ name: file.name, url: String(reader.result) });
+        const extension = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
+        reader.onload = () => resolve({ name: file.name || `粘贴图片-${Date.now()}-${index + 1}.${extension}`, url: String(reader.result) });
         reader.onerror = () => reject(new Error("读取图片失败，请重新选择"));
+        reader.onabort = () => reject(new Error("图片读取已取消，请重试"));
         reader.readAsDataURL(file);
       })));
       setAttachments(current => [...current, ...images]);
       setError("");
+      setNotice(`已添加 ${images.length} 张参考图片`);
     } catch (reason) { setError(String(reason).replace(/^Error: /, "")); }
-    finally { setReadingImages(false); }
+    finally { imageImportLock.current = false; setReadingImages(false); }
+  };
+  const pasteImages = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (mode !== "image") return;
+    const files = Array.from(event.clipboardData.files);
+    if (!files.length) {
+      for (const item of Array.from(event.clipboardData.items)) {
+        if (item.kind !== "file") continue;
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    const text = event.clipboardData.getData("text/plain");
+    if (imageImportLock.current && !files.length && text) return;
+    const target = event.currentTarget;
+    const value = target.value;
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+    event.preventDefault();
+    if (busy || imageImportLock.current) return;
+    const pasteText = () => {
+      if (!text) return;
+      const from = target.value === value ? start : target.selectionStart;
+      const to = target.value === value ? end : target.selectionEnd;
+      setInput(current => current.slice(0, from) + text + current.slice(to));
+      requestAnimationFrame(() => target.setSelectionRange(from + text.length, from + text.length));
+    };
+    void addImages(async () => {
+      if (files.length) return files;
+      let paths: string[];
+      try { paths = (await fsApi.readFileClipboard()).paths; }
+      catch (reason) {
+        if (!text) throw reason;
+        pasteText();
+        return [];
+      }
+      if (paths.length) return referenceFilesFromPaths(paths);
+      pasteText();
+      return [];
+    });
+  };
+  const isFileDrag = (event: React.DragEvent) => mode === "image" && event.dataTransfer.types.some(type => FILE_DRAG_TYPES.includes(type));
+  const dropImages = (event: React.DragEvent) => {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepth.current = 0;
+    setDraggingImages(false);
+    const files = Array.from(event.dataTransfer.files);
+    const pathsData = event.dataTransfer.getData("application/x-nexusdesk-files");
+    const path = event.dataTransfer.getData("application/x-nexusdesk-file") || event.dataTransfer.getData("application/x-nexusdesk-logical-file");
+    void addImages(async () => {
+      if (files.length) return files;
+      const paths: unknown = pathsData ? JSON.parse(pathsData) : path ? [path] : [];
+      if (!Array.isArray(paths) || !paths.every(item => typeof item === "string")) throw new Error("无法读取拖入的图片");
+      return referenceFilesFromPaths(paths);
+    });
   };
   const useReference = (image: ChatImage) => {
-    if (busy || readingImages) return;
+    if (busy || imageImportLock.current) return;
     if (attachments.length >= 4) { setError("最多上传 4 张参考图片"); return; }
     setMode("image");
     setAttachments(current => [...current, image]);
@@ -189,7 +285,7 @@ export function ChatEditor({ active }: { active: boolean }) {
   const send = async (event: React.FormEvent) => {
     event.preventDefault();
     const content = input.trim();
-    if (!content || busy || readingImages) return;
+    if (!content || busy || imageImportLock.current) return;
     if (mode === "image") {
       const previousMessages = messages;
       const references = attachments;
@@ -240,10 +336,27 @@ export function ChatEditor({ active }: { active: boolean }) {
       <header className="chat-header"><div className="chat-heading"><MessageCircle size={16} /><div><h2>对话</h2><p>{requestOverrides.model || settings?.model || "使用 Codex 设置中的模型"}</p></div></div><div className="chat-header-actions"><span className={`chat-config-state ${settings ? "is-ready" : ""}`}><span />{settings ? "配置已读取" : "读取配置中"}</span><button type="button" className="chat-icon-button" title="对话设置" aria-label="对话设置" onClick={() => setShowConfig(value => !value)}><Settings2 size={16} /></button><button type="button" className="chat-icon-button" title="新对话" aria-label="新对话" disabled={(!messages.length && !attachments.length) || busy || readingImages} onClick={() => { setAttachments([]); setMessages([]); setActiveHistoryId(null); setError(""); setNotice(""); composer.current?.focus(); }}><Plus size={16} /></button></div></header>
       {showConfig && <section className="chat-config-panel" aria-label="对话请求设置"><div className="chat-config-title"><strong>请求设置</strong><button type="button" className="chat-icon-button" title="关闭" aria-label="关闭" onClick={() => setShowConfig(false)}><X size={15} /></button></div><label>API 地址<input className="ide-control" value={requestOverrides.api ?? ""} onChange={event => updateOverride("api", event.target.value)} placeholder={settings?.proxyUrl || "留空使用当前 API 地址"} spellCheck={false} /></label><label>API Key<input className="ide-control" type="password" value={requestOverrides.key ?? ""} onChange={event => updateOverride("key", event.target.value)} placeholder="sk-xxx" autoComplete="new-password" /></label><label>模型<input className="ide-control" value={requestOverrides.model ?? ""} onChange={event => updateOverride("model", event.target.value)} placeholder={settings?.model || "留空使用当前模型"} spellCheck={false} /></label>{mode === "text" && <label>参数格式<select className="ide-control" value={overrides.format ?? "responses"} onChange={event => updateOverride("format", event.target.value)}><option value="responses">Responses（input）</option><option value="chat">Chat Completions（messages）</option></select></label>}{mode === "image" && <label>图片尺寸<select className="ide-control" value={imageSize} onChange={event => setImageSize(event.target.value)}><option value="1024x1024">1024 × 1024（方图）</option><option value="1536x1024">1536 × 1024（横图）</option><option value="1024x1536">1024 × 1536（竖图）</option><option value="auto">自动</option></select></label>}<p className="chat-config-hint">{mode === "image" ? "留空的地址和 Key 使用 Codex 配置。可填写基础地址或完整图片接口地址；支持的尺寸以提供方为准。" : "参数格式仅对后续消息生效。"}</p></section>}
       <main className="chat-conversation" ref={conversation} aria-live="polite">{!messages.length && <div className="chat-empty"><MessageCircle size={24} /><h3>开始新对话</h3><p>可发送文字，或切换图片模式生成图片、上传参考图进行修改。请求参数可在右上角设置。</p></div>}{messages.map((message, index) => <article key={`${index}-${message.role}`} className={`chat-message ${message.role === "user" ? "is-user" : "is-assistant"}`}><div className="chat-message-label">{message.role === "user" ? "你" : "助手"}</div><p>{message.content}</p>{!!message.images?.length && <div className="chat-images">{message.images.map((image, imageIndex) => <figure key={imageIndex}><button type="button" className="chat-image-preview" title="查看图片" onClick={() => setPreview(image)}><img src={image.url} alt={image.name} loading="lazy" onLoad={() => { const container = conversation.current; if (container && conversationScroll.current.atBottom) container.scrollTop = container.scrollHeight; }} /></button><figcaption><span>{image.name}</span><button type="button" disabled={busy || readingImages} onClick={() => useReference(image)}>用作参考图</button></figcaption></figure>)}</div>}{message.role === "assistant" && message.content && <div className="chat-message-actions"><button type="button" className="chat-icon-button" title="复制回复" aria-label="复制回复" onClick={() => void copyReply(message.content)}><Copy size={14} /></button><button type="button" className="chat-icon-button" title="保存对话" aria-label="保存对话" disabled={busy} onClick={() => openSaveDialog(index)}><Save size={14} /></button><button type="button" className="chat-icon-button" title="从此处分支" aria-label="从此处分支" disabled={busy} onClick={() => branchAt(index)}><GitBranch size={14} /></button></div>}</article>)}{busy && <OperationProgress label={stage} className="chat-working" elapsedLabel={stage === "正在接收回复" ? "已用时" : "已等待"} />}{(error || notice) && <p className={error ? "chat-error" : "chat-notice"} role={error ? "alert" : "status"}>{error || notice}</p>}</main>
-      <form className="chat-composer ide-control-shell" onSubmit={event => void send(event)}>
-        <div className="chat-composer-tools"><select className="ide-control" aria-label="对话模式" value={mode} disabled={busy || readingImages} onChange={event => setMode(event.target.value as "text" | "image")}><option value="text">文字对话</option><option value="image">图片生成 / 修改</option></select>{mode === "image" && <><input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={event => { void addImages(Array.from(event.target.files ?? [])); event.target.value = ""; }} /><button type="button" className="ide-button ide-button-secondary" disabled={busy || readingImages || attachments.length >= 4} onClick={() => fileInput.current?.click()}>{readingImages ? "读取中…" : "添加参考图"}</button><span>{attachments.length ? "将根据参考图修改" : "输入描述生成图片"}（最多 4 张）</span></>}</div>
+      <form className={`chat-composer ide-control-shell ${draggingImages ? "is-dragging-images" : ""}`} onSubmit={event => void send(event)}
+        onDragEnter={event => {
+          if (!isFileDrag(event)) return;
+          event.preventDefault(); event.stopPropagation();
+          if (!busy && !imageImportLock.current) { dragDepth.current += 1; setDraggingImages(true); }
+        }}
+        onDragOver={event => {
+          if (!isFileDrag(event)) return;
+          event.preventDefault(); event.stopPropagation();
+          event.dataTransfer.dropEffect = busy || imageImportLock.current ? "none" : "copy";
+        }}
+        onDragLeave={event => {
+          if (!isFileDrag(event)) return;
+          event.stopPropagation();
+          dragDepth.current = Math.max(0, dragDepth.current - 1);
+          if (!dragDepth.current) setDraggingImages(false);
+        }} onDrop={dropImages}>
+        {draggingImages && <p className="chat-drop-hint" role="status">松开以添加参考图</p>}
+        <div className="chat-composer-tools"><select className="ide-control" aria-label="对话模式" value={mode} disabled={busy || readingImages} onChange={event => setMode(event.target.value as "text" | "image")}><option value="text">文字对话</option><option value="image">图片生成 / 修改</option></select>{mode === "image" && <><input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={event => { void addImages(Array.from(event.target.files ?? [])); event.target.value = ""; }} /><button type="button" className="ide-button ide-button-secondary" disabled={busy || readingImages || attachments.length >= 4} onClick={() => fileInput.current?.click()}>{readingImages ? "读取中…" : "添加参考图"}</button><span>{attachments.length ? "将根据参考图修改" : "输入描述生成图片"} · 支持粘贴或拖入参考图（最多 4 张）</span></>}</div>
         {mode === "image" && !!attachments.length && <div className="chat-attachments">{attachments.map((image, index) => <div key={index}><button type="button" title="查看参考图" onClick={() => setPreview(image)}><img src={image.url} alt={image.name} /></button><button type="button" className="chat-icon-button" aria-label={`移除参考图：${image.name}`} disabled={busy || readingImages} onClick={() => setAttachments(current => current.filter((_, itemIndex) => itemIndex !== index))}><X size={12} /></button></div>)}</div>}
-        <textarea ref={composer} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={mode === "image" ? (attachments.length ? "描述如何修改参考图片…" : "描述要生成的图片…") : "发送消息…"} aria-label="消息内容" rows={3} disabled={busy} /><div className="chat-composer-footer"><span>Shift + Enter 换行</span><button className="ide-button ide-button-primary" type="submit" title="发送消息" aria-label="发送消息" disabled={busy || readingImages || !input.trim()}>{busy ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button></div></form>
+        <textarea ref={composer} onPaste={pasteImages} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={mode === "image" ? (attachments.length ? "描述如何修改参考图片…" : "描述要生成的图片…") : "发送消息…"} aria-label="消息内容" rows={3} disabled={busy} /><div className="chat-composer-footer"><span>Shift + Enter 换行</span><button className="ide-button ide-button-primary" type="submit" title="发送消息" aria-label="发送消息" disabled={busy || readingImages || !input.trim()}>{busy ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button></div></form>
     </section>
     <Dialog.Root open={preview !== null} onOpenChange={open => { if (!open) setPreview(null); }}><DialogShell wide className="chat-image-dialog"><header><Dialog.Title>{preview?.name || "图片预览"}</Dialog.Title><Dialog.Close className="chat-icon-button" aria-label="关闭"><X size={16} /></Dialog.Close></header><Dialog.Description className="sr-only">查看对话中的图片</Dialog.Description>{preview && <img src={preview.url} alt={preview.name} />}</DialogShell></Dialog.Root>
     <Dialog.Root open={saveOpen} onOpenChange={setSaveOpen}><DialogShell wide className="chat-save-dialog">

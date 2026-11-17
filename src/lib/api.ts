@@ -89,6 +89,7 @@ export const fsApi = {
     getGraphSyncData: (root: string): Promise<GraphSyncData> => invoke("get_graph_sync_data", { root }),
     applyGraphSyncData: async (root: string, data: GraphSyncData): Promise<void> => { await invoke("apply_graph_sync_data", { root, data }); notifyGraphChanged(); },
     readBinaryFile: (path: string): Promise<number[]> => invoke("read_binary_file", { path }),
+    readBinaryFileLimited: (path: string, maxSizeBytes: number): Promise<number[]> => invoke("read_binary_file_limited", { path, maxSizeBytes }),
     writeBinaryFile: (path: string, bytes: number[]): Promise<void> => invoke("write_binary_file", { path, bytes }),
     importAsset: (notePath: string, asset: { sourcePath?: string; name?: string; bytes?: number[] }): Promise<string> => invoke("import_asset", { notePath, ...asset }),
     importFile: (targetDir: string, name: string, bytes: number[]): Promise<string> => invoke("import_asset", { notePath: "", targetDir, name, bytes }),
