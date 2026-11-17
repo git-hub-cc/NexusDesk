@@ -235,6 +235,7 @@ pub fn run() {
             commands::android_mirror::mirror_delete_files,
             commands::android_mirror::mirror_create_folder,
             commands::android_mirror::mirror_copy_file,
+            commands::android_mirror::mirror_move_files,
             commands::android_mirror::mirror_start,
             commands::android_mirror::mirror_stop,
             commands::android_mirror::mirror_visible,

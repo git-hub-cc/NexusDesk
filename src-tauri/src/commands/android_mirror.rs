@@ -447,6 +447,97 @@ pub async fn mirror_copy_file(
     }).await.map_err(|e| e.to_string())?
 }
 
+fn move_files_script(paths: &[String], remote_dir: &str) -> Result<String, String> {
+    let normalize = |path: &str| -> Result<String, String> {
+        remote_path(path)?;
+        let parts: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
+        if parts.iter().any(|part| matches!(*part, "." | "..")) {
+            return Err("移动路径不能包含相对路径分段".into());
+        }
+        Ok(format!("/{}", parts.join("/")))
+    };
+    let destination = normalize(remote_dir)?;
+    if paths.is_empty() {
+        return Err("请选择要移动的项目".into());
+    }
+    let mut sources = Vec::new();
+    for path in paths {
+        let source = normalize(path)?;
+        if source == "/" {
+            return Err("不能移动根目录".into());
+        }
+        if !sources.contains(&source) {
+            sources.push(source);
+        }
+    }
+    let sources: Vec<_> = sources
+        .iter()
+        .filter(|source| {
+            !sources
+                .iter()
+                .any(|parent| *source != parent && source.starts_with(&format!("{parent}/")))
+        })
+        .collect();
+    let mut names = std::collections::HashSet::new();
+    for source in &sources {
+        if destination == **source || destination.starts_with(&format!("{source}/")) {
+            return Err("不能将目录移动到自身或子目录".into());
+        }
+        if !names.insert(source.rsplit('/').next().unwrap()) {
+            return Err("选中的项目存在同名文件，请分别移动".into());
+        }
+    }
+    // 先检查全部目标，再移动；解析真实父目录，防止路径别名绕过检查。
+    Ok(format!(
+        r#"destination=$(cd -- {destination} && pwd -P) || exit 1
+set -- {sources}
+for source do
+  name=${{source##*/}}
+  parent=$(cd -- "${{source%/*}}/" && pwd -P) || exit 1
+  source="${{parent%/}}/$name"
+  [ -e "$source" ] || [ -L "$source" ] || {{ echo "源项目不存在：$source" >&2; exit 1; }}
+  case "$destination/" in "$source/"*) echo '不能将目录移动到自身或子目录' >&2; exit 1;; esac
+  [ "$parent" = "$destination" ] && continue
+  [ ! -e "$destination/$name" ] && [ ! -L "$destination/$name" ] || {{ echo "目标已存在同名项目：$name，请重命名后重试" >&2; exit 1; }}
+done
+count=0
+for source do
+  name=${{source##*/}}
+  parent=$(cd -- "${{source%/*}}/" && pwd -P) || exit 1
+  [ "$parent" = "$destination" ] && continue
+  mv -nT -- "$source" "$destination/$name" || exit 1
+  [ ! -e "$source" ] && [ ! -L "$source" ] || {{ echo "移动未完成：$name，目标可能已存在" >&2; exit 1; }}
+  count=$((count + 1))
+done
+echo "$count""#,
+        destination = shell_quote(&destination),
+        sources = sources
+            .iter()
+            .map(|source| shell_quote(source))
+            .collect::<Vec<_>>()
+            .join(" "),
+    ))
+}
+
+#[tauri::command]
+pub async fn mirror_move_files(
+    serial: String,
+    paths: Vec<String>,
+    remote_dir: String,
+) -> Result<usize, String> {
+    let script = move_files_script(&paths, &remote_dir)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut command = adb();
+        command.args(["-s", &serial, "shell", &script]);
+        output_with_timeout(command, Duration::from_secs(1800))?
+            .trim()
+            .parse::<usize>()
+            .map_err(|error| format!("无法读取移动结果：{error}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 impl Session {
     fn initialize(
         &self,
@@ -1506,6 +1597,35 @@ mod tests {
         assert!(parse_file_entries("f\0../escape\0", "/sdcard").is_err());
         assert!(parse_file_entries("f\0", "/sdcard").is_err());
         assert!(parse_file_entries("", "/sdcard").unwrap().is_empty());
+    }
+
+    #[test]
+    fn move_files_rejects_invalid_destinations_and_prunes_nested_selections() {
+        for (paths, target) in [
+            (vec![], "/sdcard"),
+            (vec!["/"], "/sdcard"),
+            (vec!["relative"], "/sdcard"),
+            (vec!["/sdcard/a"], "/sdcard/a"),
+            (vec!["/sdcard/a"], "/sdcard/a/child"),
+            (vec!["/sdcard/a"], "/sdcard/../other"),
+            (vec!["/sdcard/a", "/sdcard/folder/a"], "/sdcard/Download"),
+        ] {
+            let paths = paths.into_iter().map(String::from).collect::<Vec<_>>();
+            assert!(move_files_script(&paths, target).is_err());
+        }
+        let script = move_files_script(
+            &[
+                "/sdcard/中文 ' $x".into(),
+                "/sdcard/folder".into(),
+                "/sdcard/folder/child".into(),
+            ],
+            "/sdcard/Download",
+        )
+        .unwrap();
+        assert!(script.contains("set -- '/sdcard/中文 '\\'' $x' '/sdcard/folder'"));
+        assert!(!script.contains("'/sdcard/folder/child'"));
+        assert!(script.contains("mv -nT --"));
+        assert!(script.find("目标已存在同名项目").unwrap() < script.find("mv -nT").unwrap());
     }
 
     #[test]

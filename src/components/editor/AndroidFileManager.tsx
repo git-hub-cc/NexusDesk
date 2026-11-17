@@ -11,7 +11,7 @@ import { useElementSize } from "@/hooks/useElementSize";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { flushPendingWrites } from "@/store/workspaceStore";
 import * as ContextMenu from "@/lib/nativeMenu";
-import { ANDROID_FILE_TYPE, copyAndroidFiles, localDropPaths, pasteToAndroid, topLevelPaths, uploadLocalFiles } from "@/lib/androidTransfer";
+import { ANDROID_FILE_TYPE, copyAndroidFiles, localDropPaths, parseAndroidFiles, pasteToAndroid, topLevelPaths, uploadLocalFiles } from "@/lib/androidTransfer";
 
 type Entry = { name: string; path: string; is_dir: boolean };
 type FileNode = Entry & { children?: FileNode[] };
@@ -34,7 +34,7 @@ function AndroidFileNode({ node, style, dragHandle }: NodeRendererProps<FileNode
     draggable={!disabled} onDragStart={event => {
       event.stopPropagation();
       event.dataTransfer.setData(ANDROID_FILE_TYPE, JSON.stringify({ serial, paths: selectedEntries().map(entry => entry.path) }));
-      event.dataTransfer.effectAllowed = "copy";
+      event.dataTransfer.effectAllowed = "copyMove";
       if (!node.isSelected) node.select();
     }} onDragOver={event => dragOver(event, directory)} onDrop={event => drop(event, directory)}
     onContextMenu={event => { event.stopPropagation(); if (!node.isSelected) node.select(); }}
@@ -149,15 +149,39 @@ export function AndroidFileManager({ serial, onClose }: { serial: string; onClos
     }
   }); };
   const dragOver = (event: DragEvent, directory: string) => {
-    if (!event.dataTransfer.types.some(type => ["application/x-nexusdesk-file", "application/x-nexusdesk-files", "application/x-nexusdesk-logical-file"].includes(type))) return;
+    const android = event.dataTransfer.types.includes(ANDROID_FILE_TYPE);
+    if (!android && !event.dataTransfer.types.some(type => ["application/x-nexusdesk-file", "application/x-nexusdesk-files", "application/x-nexusdesk-logical-file"].includes(type))) return;
     event.preventDefault(); event.stopPropagation();
-    event.dataTransfer.dropEffect = disabled ? "none" : "copy";
+    event.dataTransfer.dropEffect = disabled ? "none" : android ? "move" : "copy";
     if (!disabled) setDropTarget(directory);
   };
   const drop = (event: DragEvent, directory: string) => {
     event.preventDefault(); event.stopPropagation(); setDropTarget(null);
     if (disabled) return;
     void run(async () => {
+      if (event.dataTransfer.types.includes(ANDROID_FILE_TYPE)) {
+        const android = parseAndroidFiles(event.dataTransfer.getData(ANDROID_FILE_TYPE));
+        if (!android) throw new Error("无效的安卓文件拖拽数据");
+        if (android.serial !== serial) throw new Error("暂不支持在不同安卓设备间移动，请先下载到本地");
+        if (android.paths.some(source => directory === source || directory.startsWith(source.replace(/\/+$/, "") + "/"))) {
+          throw new Error("不能将目录移动到自身或子目录");
+        }
+        const paths = topLevelPaths(android.paths).filter(source => parentDirectory(source) !== directory);
+        if (!paths.length) { setMessage("项目已在目标目录中"); return; }
+        try {
+          const count = await invoke<number>("mirror_move_files", { serial, paths, remoteDir: directory });
+          if (alive.current) setMessage(count ? `已移动 ${count} 个项目` : "项目已在目标目录中");
+        } finally {
+          if (alive.current) {
+            setSelection([]);
+            setDirectories(previous => Object.fromEntries(Object.entries(previous).filter(([cached]) => !paths.some(source => cached === source || cached.startsWith(source + "/")))));
+            const results = await Promise.allSettled([...new Set([directory, ...paths.map(parentDirectory)])].map(refreshDirectory));
+            const failure = results.find(result => result.status === "rejected");
+            if (failure) setError(`目录刷新失败，请手动刷新：${String(failure.reason)}`);
+          }
+        }
+        return;
+      }
       const paths = localDropPaths(event.dataTransfer);
       if (!paths.length) return;
       await flushPendingWrites();
@@ -195,6 +219,6 @@ export function AndroidFileManager({ serial, onClose }: { serial: string; onClos
       </Tree></FileTreeContext.Provider>}
       {!loading && directories[path]?.length === 0 && <p className="p-2 text-gray-500">此目录为空</p>}
     </div>
-    <div role="status" className="break-words border-t border-ide-panel-border p-2 text-gray-400">{busy || (loading ? "正在读取目录…" : message || "双击打开；复制粘贴或拖拽文件可上传、下载")}</div>
+    <div role="status" className="break-words border-t border-ide-panel-border p-2 text-gray-400">{busy || (loading ? "正在读取目录…" : message || "拖入手机文件夹可移动；拖到本地可下载；列表按名称排序")}</div>
   </aside>;
 }

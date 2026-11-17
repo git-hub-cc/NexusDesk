@@ -12,10 +12,15 @@ const flatten = node => Array.isArray(node) ? node.flatMap(flatten)
   : node && typeof node === "object" ? [node, ...flatten(node.children)] : [];
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-function harness({ confirmed = true, failDelete = false } = {}) {
+function harness({ confirmed = true, failDelete = false, failMove = false } = {}) {
   const states = [], refs = [], calls = [], tabs = [], confirmations = [];
   let si = 0, ri = 0;
   const bindings = {
+    ANDROID_FILE_TYPE: "application/x-nexusdesk-android-files",
+    parseAndroidFiles: text => { try { return JSON.parse(text); } catch { return null; } },
+    flushPendingWrites: async () => {},
+    localDropPaths: data => JSON.parse(data.getData("application/x-nexusdesk-files") || "[]"),
+    uploadLocalFiles: async (serial, paths, remoteDir) => calls.push({ command: "upload", args: { serial, paths, remoteDir } }),
     React, createContext: () => ({ Provider: "provider" }), useEffect() {},
     useState: initial => {
       const i = si++; if (!(i in states)) states[i] = initial;
@@ -31,6 +36,10 @@ function harness({ confirmed = true, failDelete = false } = {}) {
     invoke: async (command, args) => {
       calls.push({ command, args });
       if (command === "mirror_delete_files" && failDelete) throw new Error("permission denied");
+      if (command === "mirror_move_files") {
+        if (failMove) throw new Error("目标已存在同名项目");
+        return args.paths.length;
+      }
       if (command === "mirror_list_files") return [];
       return command === "mirror_read_image" ? "data:image/png;base64,AP+A" : "<svg/>";
     },
@@ -53,6 +62,55 @@ test("Android images open with image data while SVG keeps editable source text",
   assert.equal(h.tabs[0].content, "data:image/png;base64,AP+A");
   assert.equal(h.tabs[0].path, "android://phone/sdcard/中文.png");
   assert.equal(h.tabs[1].content, "<svg/>");
+});
+
+const androidDrag = (paths, serial = "phone") => ({
+  preventDefault() {}, stopPropagation() {},
+  dataTransfer: {
+    types: ["application/x-nexusdesk-android-files"],
+    getData: () => JSON.stringify({ serial, paths }),
+  },
+});
+
+test("Android drops move selected roots and refresh both directories after success or failure", async () => {
+  for (const failMove of [false, true]) {
+    const h = harness({ failMove });
+    const event = androidDrag(["/sdcard/a", "/sdcard/a/child", "/sdcard/b"]);
+    h.actions().dragOver(event, "/sdcard/Download");
+    assert.equal(event.dataTransfer.dropEffect, "move");
+    h.actions().drop(event, "/sdcard/Download");
+    await tick();
+    assert.deepEqual(h.calls[0], { command: "mirror_move_files", args: { serial: "phone", paths: ["/sdcard/a", "/sdcard/b"], remoteDir: "/sdcard/Download" } });
+    assert.deepEqual(h.calls.slice(1).map(call => call.args.path).sort(), ["/sdcard", "/sdcard/Download"]);
+    if (failMove) assert.match(h.render().find(node => node.props.role === "alert").children.join(""), /同名/);
+  }
+});
+
+test("Android drops reject descendants and other devices, and skip the current directory", async () => {
+  for (const [directory, serial, error] of [
+    ["/sdcard/a/child", "phone", /自身或子目录/],
+    ["/sdcard/a", "phone", /自身或子目录/],
+    ["/sdcard/Download", "other", /不同安卓设备/],
+    ["/sdcard", "phone", null],
+  ]) {
+    const h = harness();
+    h.actions().drop(androidDrag(["/sdcard/a"], serial), directory);
+    await tick();
+    assert.deepEqual(h.calls, []);
+    if (error) assert.match(h.render().find(node => node.props.role === "alert").children.join(""), error);
+  }
+});
+
+test("local drops still upload instead of moving", async () => {
+  const h = harness();
+  const event = { preventDefault() {}, stopPropagation() {}, dataTransfer: {
+    types: ["application/x-nexusdesk-files"], getData: () => '["C:/a.txt"]',
+  } };
+  h.actions().dragOver(event, "/sdcard");
+  assert.equal(event.dataTransfer.dropEffect, "copy");
+  h.actions().drop(event, "/sdcard");
+  await tick();
+  assert.deepEqual(h.calls[0], { command: "upload", args: { serial: "phone", paths: ["C:/a.txt"], remoteDir: "/sdcard" } });
 });
 
 test("cancelling deletion sends no device command", async () => {

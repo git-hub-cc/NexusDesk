@@ -74,7 +74,7 @@ test("selection pruning preserves case-sensitive Android paths and folds Windows
   assert.deepEqual(h.topLevelPaths(["C:\\Notes", "c:/notes/child", "C:/notes"], true), ["C:/notes"]);
 });
 
-test("Android rows select on click, activate on double click, and drag the selected files as a copy", () => {
+test("Android rows select on click, activate on double click, and allow copy or move drags", () => {
   const transpile = path => ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8")
     .replace(/^import .*;\r?$/gm, "").replace(/^export /gm, ""), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React },
@@ -99,7 +99,7 @@ test("Android rows select on click, activate on double click, and drag the selec
   const dragData = {};
   const dataTransfer = { setData: (type, value) => { dragData[type] = value; } };
   row.props.onDragStart({ ...event, dataTransfer });
-  assert.equal(dataTransfer.effectAllowed, "copy");
+  assert.equal(dataTransfer.effectAllowed, "copyMove");
   assert.deepEqual(JSON.parse(dragData["application/x-nexusdesk-android-files"]), { serial: "phone", paths: [data.path, "/sdcard/b.txt"] });
   row.props.onDragOver(event); row.props.onDrop(event);
   assert.deepEqual(calls.slice(-2), [["over", "/sdcard/folder"], ["drop", "/sdcard/folder"]]);
