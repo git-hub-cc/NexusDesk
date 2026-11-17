@@ -41,6 +41,7 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
   const frameRate = useRef({ frames: 0, started: 0 });
   const fullscreenRequested = useRef(false);
   const fullscreenQueue = useRef(Promise.resolve());
+  const displayWakeQueue = useRef(Promise.resolve());
   const previousWindow = useRef<{ fullscreen: boolean; maximized: boolean } | null>(null);
   const [screenOff, setScreenOff] = useState(false);
   const screenOffRef = useRef(false);
@@ -248,6 +249,29 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
   };
   useEffect(() => () => setMirrorFullscreen(false), []);
   const toggleFullscreen = () => setMirrorFullscreen(!fullscreenRequested.current);
+  useEffect(() => {
+    const current = connection.current;
+    if (!current || status !== "connected") return;
+    const update = (enabled: boolean) => {
+      // 串行处理，避免快速切换全屏时旧的常亮请求覆盖释放请求。
+      displayWakeQueue.current = displayWakeQueue.current.then(() => {
+        if (current.ended || connection.current !== current) return;
+        return invoke<void>("mirror_keep_display_awake", { id: current.id, enabled });
+      }).catch(reason => {
+        console.warn("[android-mirror] display wake request failed", reason);
+        if (enabled && mounted.current && connection.current === current) {
+          setError(`电脑屏幕常亮设置失败：${String(reason)}`);
+        }
+      });
+    };
+    const visibilityChanged = () => update(fullscreen && active && !document.hidden);
+    visibilityChanged();
+    document.addEventListener("visibilitychange", visibilityChanged);
+    return () => {
+      document.removeEventListener("visibilitychange", visibilityChanged);
+      update(false);
+    };
+  }, [fullscreen, active, status]);
   useEffect(() => {
     if (!active || status === "idle" || status === "stopping") setMirrorFullscreen(false);
   }, [active, status]);

@@ -238,6 +238,7 @@ pub fn run() {
             commands::android_mirror::mirror_start,
             commands::android_mirror::mirror_stop,
             commands::android_mirror::mirror_visible,
+            commands::android_mirror::mirror_keep_display_awake,
             commands::android_mirror::mirror_control,
               commands::android_mirror::mirror_refresh_brightness,
             commands::snapshot_cmds::open_git_snapshot,

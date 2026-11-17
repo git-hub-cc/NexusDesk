@@ -117,7 +117,7 @@ function harness({ delayedStart = false, delayedStop = false, delayedAudioClose 
     new Uint8Array(buffer).set(bytes, 12);
     currentChannel.onmessage(buffer);
   };
-  return { render, calls, decoders, canvas, drawnFrames, releaseStart, releaseStop, releaseAudioClose, releaseScreenOff, releaseKey, packet, document, host, fullscreenCalls, advance: ms => { now += ms; }, poll: () => timers.forEach(callback => callback()), unmount: () => effects.forEach(effect => effect.cleanup?.()) };
+  return { render, calls, decoders, canvas, drawnFrames, releaseStart, releaseStop, releaseAudioClose, releaseScreenOff, releaseKey, packet, document, host, fullscreenCalls, visibility: hidden => { document.hidden = hidden; listeners.get("visibilitychange")?.forEach(callback => callback()); }, advance: ms => { now += ms; }, poll: () => timers.forEach(callback => callback()), unmount: () => effects.forEach(effect => effect.cleanup?.()) };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const connect = tree => tree.find(node => node.type === "button" && node.children.includes("连接")).props.onClick();
@@ -341,6 +341,39 @@ test("mirror fullscreen covers the monitor and Escape restores the window withou
   assert.deepEqual(h.calls.filter(call => call.command === "mirror_control").map(call => call.args.data), [[10, 0]]);
   assert.equal(h.calls.filter(call => call.command === "mirror_stop").length, 0);
   h.unmount();
+});
+
+test("fullscreen keeps the computer display awake only while the mirror is visible", async () => {
+  const h = harness(); h.render(); await tick(); connect(h.render()); await tick();
+  h.render(); await tick();
+  const requests = () => h.calls.filter(call => call.command === "mirror_keep_display_awake").map(call => call.args.enabled);
+  assert.deepEqual(requests(), [false]);
+  h.render().find(node => node.props["aria-label"] === "投屏全屏").props.onClick();
+  h.render(); await tick();
+  assert.equal(requests().at(-1), true);
+  h.visibility(true); await tick();
+  assert.equal(requests().at(-1), false);
+  h.visibility(false); await tick();
+  assert.equal(requests().at(-1), true);
+  h.render().find(node => node.props["aria-label"] === "退出投屏全屏").props.onClick();
+  h.render(); await tick();
+  assert.equal(requests().at(-1), false);
+  h.render().find(node => node.props["aria-label"] === "投屏全屏").props.onClick();
+  h.render(); await tick();
+  assert.equal(requests().at(-1), true);
+  h.render(false); await tick();
+  assert.equal(requests().at(-1), false);
+  h.unmount(); await tick();
+});
+
+test("rapid fullscreen changes leave the latest display wake request in effect", async () => {
+  const h = harness(); h.render(); await tick(); connect(h.render()); await tick();
+  h.render().find(node => node.props["aria-label"] === "投屏全屏").props.onClick();
+  h.render().find(node => node.props["aria-label"] === "退出投屏全屏").props.onClick();
+  h.render(); await tick();
+  const requests = h.calls.filter(call => call.command === "mirror_keep_display_awake");
+  assert.equal(requests.at(-1).args.enabled, false);
+  h.unmount(); await tick();
 });
 
 test("mirror fullscreen restores maximize state so the title bar can switch window sizes", async () => {

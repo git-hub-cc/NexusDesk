@@ -35,4 +35,5 @@ pub(crate) mod native_capture;
 pub mod snapshot_cmds;
 
 pub mod android_mirror;
+mod mirror_display_power;
 pub mod software_manager;

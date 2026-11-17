@@ -1,4 +1,5 @@
 //! scrcpy 5.0.0+ 协议，统一转换为前端数据包格式。
+use super::mirror_display_power::DisplayWakeLock;
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read, Write},
@@ -53,6 +54,7 @@ struct Session {
     control: Mutex<Option<TcpStream>>,
     stopped: AtomicBool,
     visible: AtomicBool,
+    display_wake_lock: Mutex<Option<DisplayWakeLock>>,
 }
 
 fn adb() -> Command {
@@ -476,6 +478,7 @@ impl Session {
 
     // 调用方持有设备锁，确保旧会话资源释放后才启动新会话。
     fn release_resources(&self, cleanup_forward: bool) {
+        self.display_wake_lock.lock().unwrap().take();
         let started = Instant::now();
         log::info!(target: "android_mirror", "stop begin id={} serial={} owner={} cleanup_forward={cleanup_forward}", self.id, self.serial, self.owner);
         for socket in [&self.video, &self.audio, &self.control] {
@@ -553,6 +556,7 @@ impl MirrorState {
             control: Mutex::new(None),
             stopped: AtomicBool::new(false),
             visible: AtomicBool::new(true),
+            display_wake_lock: Mutex::new(None),
         });
         map.insert(id.into(), session.clone());
         Ok((session, previous))
@@ -1239,10 +1243,34 @@ pub fn mirror_visible(
     id: String,
     visible: bool,
 ) -> Result<(), String> {
-    state
-        .session(window.label(), &id)?
-        .visible
-        .store(visible, Ordering::Release);
+    let session = state.session(window.label(), &id)?;
+    let mut wake_lock = session.display_wake_lock.lock().unwrap();
+    session.visible.store(visible, Ordering::Release);
+    if !visible {
+        wake_lock.take();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn mirror_keep_display_awake(
+    window: tauri::Window,
+    state: tauri::State<'_, MirrorState>,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let session = state.session(window.label(), &id)?;
+    let mut wake_lock = session.display_wake_lock.lock().unwrap();
+    if enabled
+        && !session.stopped.load(Ordering::Acquire)
+        && session.visible.load(Ordering::Acquire)
+    {
+        if wake_lock.is_none() {
+            *wake_lock = Some(DisplayWakeLock::acquire()?);
+        }
+    } else {
+        wake_lock.take();
+    }
     Ok(())
 }
 
@@ -1516,6 +1544,7 @@ mod tests {
             control: Mutex::new(None),
             stopped: AtomicBool::new(false),
             visible: AtomicBool::new(true),
+            display_wake_lock: Mutex::new(None),
         })
     }
 
