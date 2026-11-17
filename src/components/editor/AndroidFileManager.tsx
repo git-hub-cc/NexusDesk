@@ -8,8 +8,8 @@ import { activateTreeFile, selectTreeNode } from "@/components/explorer/treeInte
 import { useDeleteConfirmation } from "@/components/explorer/useDeleteConfirmation";
 import { isImage } from "@/lib/assets";
 import { useElementSize } from "@/hooks/useElementSize";
-import { useWorkspaceStore } from "@/store/workspaceStore";
-import { flushPendingWrites } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { flushPendingWrites } from "@/stores/workspaceStore";
 import * as ContextMenu from "@/lib/nativeMenu";
 import { ANDROID_FILE_TYPE, copyAndroidFiles, localDropPaths, parseAndroidFiles, pasteToAndroid, topLevelPaths, uploadLocalFiles } from "@/lib/androidTransfer";
 

@@ -3,7 +3,7 @@ import { PanelMinimizeButton } from "@/components/layout/PanelMinimizeButton";
 import React, { useEffect, useState } from "react";
 import { Link, Activity, ChevronDown, ChevronRight } from "lucide-react";
 import { fsApi } from "@/lib/api";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { NetworkMonitor } from "@/components/NetworkMonitor";
 
 type FileLink = [string, string];

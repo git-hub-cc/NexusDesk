@@ -2,7 +2,7 @@ import { fsApi } from "./api";
 import { canPreview, canReadAsText, isPreviewDocument } from "./assets";
 import { normalizePath, pathName, samePath } from "./paths";
 import { isRemotePath } from "./remote";
-import { flushEditorContent, useWorkspaceStore, type Tab } from "@/store/workspaceStore";
+import { flushEditorContent, useWorkspaceStore, type Tab } from "@/stores/workspaceStore";
 
 export function findWorkspaceFile(tabs: readonly Tab[], path: string): Tab | undefined {
   return tabs.find(tab => samePath(tab.path, path) && !tab.revision && tab.diff === undefined

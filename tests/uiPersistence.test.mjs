@@ -27,7 +27,7 @@ function harness(disk = new Map(), isSnapshot = false) {
       setItem: (key, value) => { writes.push([key, value]); disk.set(key, value); },
     },
   });
-  const layout = load("../src/store/layoutStore.ts", { create, readUI: ui.readUI, writeUI: ui.writeUI });
+  const layout = load("../src/stores/layoutStore.ts", { create, readUI: ui.readUI, writeUI: ui.writeUI });
   return { ...ui, ...layout, timers, writes, disk };
 }
 

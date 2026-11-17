@@ -8,7 +8,7 @@ import { findWorkspaceFile, openWorkspaceFile } from "@/lib/workspaceFile";
 import { fsApi, type GraphCategory } from "@/lib/api";
 import { buildReverseTree, changeTreeNode, parseTreeGraph, type TreeGraphNode } from "@/lib/treeGraph";
 import { openContextMenuFromKeyboard } from "@/lib/contextMenu";
-import { flushEditorContent, flushPendingWrites, useWorkspaceStore } from "@/store/workspaceStore";
+import { flushEditorContent, flushPendingWrites, useWorkspaceStore } from "@/stores/workspaceStore";
 import { CreateNameDialog } from "@/components/explorer/CreateNameDialog";
 import { useDeleteConfirmation } from "@/components/explorer/useDeleteConfirmation";
 import { matchTreeName, useNameSpeedSearch } from "@/components/explorer/useTreeSpeedSearch";

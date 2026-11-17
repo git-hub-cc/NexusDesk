@@ -41,7 +41,7 @@ function createSync(fetch, data = { categories: [] }, logicalData = { workspace:
     require(name) {
       if (name === '@/lib/globalSettings') return { settingsStorage: storage };
       if (name === '@/lib/api') return { fsApi: { getLogicalSyncData: async () => logicalData, applyLogicalSyncData: async (_root, next) => { applied.push(next); logicalData = { workspace: next.workspace, folders: next.folders, entries: next.entries }; } } };
-      if (name === '@/store/workspaceStore') return { useWorkspaceStore: { getState: () => ({ rootPath }) } };
+      if (name === '@/stores/workspaceStore') return { useWorkspaceStore: { getState: () => ({ rootPath }) } };
       if (name === './navigationData') return { loadNavigationData: async () => data, mergeNavigationData: (local) => local, saveNavigationData() {} };
       throw new Error(`Unexpected import: ${name}`);
     },

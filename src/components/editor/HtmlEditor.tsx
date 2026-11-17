@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Code, Globe, RefreshCw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { type Tab, useWorkspaceStore } from "@/store/workspaceStore";
+import { type Tab, useWorkspaceStore } from "@/stores/workspaceStore";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
 
 export function HtmlEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "right"; active: boolean }) {

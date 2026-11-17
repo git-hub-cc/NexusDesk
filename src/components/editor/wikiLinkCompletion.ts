@@ -2,7 +2,7 @@ import { autocompletion, acceptCompletion } from "@codemirror/autocomplete";
 import { Prec } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { fsApi } from "@/lib/api";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { relativeNotePath } from "./dragLink";
 import { wikiCompletionRange } from "./wikiLink";
 

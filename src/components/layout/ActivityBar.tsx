@@ -5,7 +5,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { SpeechToText } from "@/components/editor/SpeechToText";
 import { setSpeechTarget } from "@/lib/speechTarget";
-import { useLayoutStore } from "@/store/layoutStore";
+import { useLayoutStore } from "@/stores/layoutStore";
 import * as Dialog from "@radix-ui/react-dialog";
 
 type LayoutIconProps = SVGProps<SVGSVGElement> & { size?: number | string };

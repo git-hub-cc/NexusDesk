@@ -9,7 +9,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { scheduleWindowReveal } from "@/lib/windowStartup";
 import { SearchEverywhere } from "@/components/search/SearchEverywhere";
-import { flushEditorContent, useWorkspaceStore } from "@/store/workspaceStore";
+import { flushEditorContent, useWorkspaceStore } from "@/stores/workspaceStore";
 import { isSnapshot } from "@/lib/snapshot";
 import { isImage, isTextFile, isVideo, isPreviewDocument } from "@/lib/assets";
 import { openWorkspaceFile } from "@/lib/workspaceFile";

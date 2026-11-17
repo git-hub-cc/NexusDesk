@@ -10,7 +10,7 @@ import { defaultKeymap, history, historyKeymap, indentMore, indentLess, insertBl
 import { search, searchKeymap, openSearchPanel } from "@codemirror/search";
 import * as ContextMenu from "@/lib/nativeMenu";
 import { Heading2, Bold, Italic, Code, Quote, Link as LinkIcon, Image as ImageIcon, Minus, Table as TableIcon, Video as VideoIcon, Globe, Send } from "lucide-react";
-import { flushEditorContent, hasPendingEditorContent, queueEditorContent, useWorkspaceStore } from "@/store/workspaceStore";
+import { flushEditorContent, hasPendingEditorContent, queueEditorContent, useWorkspaceStore } from "@/stores/workspaceStore";
 import { createLinkWire, fileHeadings, headingAt, highlightLinkTarget, linkEditors, linkTargetDecoration, relativeNotePath } from "./dragLink";
 import { InsertTableDialog } from "./InsertTableDialog";
 import { fsApi } from "@/lib/api";

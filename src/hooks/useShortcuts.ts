@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { useLayoutStore } from "@/store/layoutStore";
-import { flushPendingWrites, useWorkspaceStore } from "@/store/workspaceStore";
+import { useLayoutStore } from "@/stores/layoutStore";
+import { flushPendingWrites, useWorkspaceStore } from "@/stores/workspaceStore";
 import { showError } from "@/lib/dialogs";
 
 export const useShortcuts = (openSearch: () => void, openRecent: () => void) => {

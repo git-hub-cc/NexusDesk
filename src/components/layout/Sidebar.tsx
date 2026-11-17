@@ -4,7 +4,7 @@ import { FolderGit2, Tags, LocateFixed, Network } from "lucide-react";
 import { GraphView } from "@/components/relations/GraphView";
 import { PhysicalTree } from "@/components/explorer/PhysicalTree";
 import { LogicalTree } from "@/components/explorer/LogicalTree";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { isRemotePath } from "@/lib/remote";
 
 export const Sidebar: React.FC = () => {

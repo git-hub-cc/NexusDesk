@@ -1,5 +1,5 @@
 import { Plus, Trash2 } from "lucide-react";
-import { DEFAULT_HISTORY_TRANSPARENCY, useTerminalStore } from "@/store/terminalStore";
+import { DEFAULT_HISTORY_TRANSPARENCY, useTerminalStore } from "@/stores/terminalStore";
 import { SettingsPage } from "./SettingsPage";
 
 export function TerminalSettings() {

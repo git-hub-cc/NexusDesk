@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { gitApi } from "@/lib/api";
 import { canCompareAsText } from "@/lib/assets";
 import { diffChanges, parseGitDiff } from "@/lib/gitDiff";
-import { flushPendingWrites, useWorkspaceStore, type Tab } from "@/store/workspaceStore";
+import { flushPendingWrites, useWorkspaceStore, type Tab } from "@/stores/workspaceStore";
 import { EditableGitDiff } from "./EditableGitDiff";
 import { GitDiffEditor } from "./GitDiffEditor";
 

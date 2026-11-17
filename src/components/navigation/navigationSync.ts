@@ -1,6 +1,6 @@
 import { settingsStorage } from "@/lib/globalSettings";
 import { fsApi, type GraphSyncData, type LogicalSyncData } from "@/lib/api";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { loadNavigationData, mergeNavigationData, saveNavigationData, type NavigationCategory, type NavigationData } from "./navigationData";
 
 export type NavigationSyncProvider = "github" | "gitlab" | "gitee";

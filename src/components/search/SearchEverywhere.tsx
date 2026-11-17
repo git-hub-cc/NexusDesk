@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { FileText, Search, X } from "lucide-react";
 import { openWorkspaceFile } from "@/lib/workspaceFile";
 import { fsApi, searchApi, type SearchResult, type SearchOptions } from "@/lib/api";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { HighlightedText } from "./HighlightedText";
 
 function normalizeSearchOptions(value: unknown): SearchOptions {

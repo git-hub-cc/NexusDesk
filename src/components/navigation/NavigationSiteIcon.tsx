@@ -1,10 +1,10 @@
 import { Globe } from "lucide-react";
 import { useState } from "react";
-import sprite01 from "@/assets/navigation/img/sprite-01.webp";
-import sprite02 from "@/assets/navigation/img/sprite-02.webp";
-import sprite03 from "@/assets/navigation/img/sprite-03.webp";
-import sprite04 from "@/assets/navigation/img/sprite-04.webp";
-import sprite05 from "@/assets/navigation/img/sprite-05.webp";
+import sprite01 from "@/assets/navigation/images/sprite-01.webp";
+import sprite02 from "@/assets/navigation/images/sprite-02.webp";
+import sprite03 from "@/assets/navigation/images/sprite-03.webp";
+import sprite04 from "@/assets/navigation/images/sprite-04.webp";
+import sprite05 from "@/assets/navigation/images/sprite-05.webp";
 import type { NavigationSite } from "./navigationData";
 
 const spriteUrls: Record<string, string> = {

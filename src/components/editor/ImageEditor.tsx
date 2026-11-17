@@ -5,7 +5,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { fsApi } from "@/lib/api";
 import { imageUrl } from "@/lib/assets";
 import { imagePreviewScale } from "@/lib/imagePreview";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { ZoomIn, ZoomOut } from "lucide-react";
 
 type Tool = "move" | "mark" | "mosaic" | "crop";

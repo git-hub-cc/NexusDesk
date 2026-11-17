@@ -10,12 +10,12 @@ import { CSS } from "@dnd-kit/utilities";
 import * as DropdownMenu from "@/lib/nativeDropdownMenu";
 import * as ContextMenu from "@/lib/nativeMenu";
 import openaiIcon from "@/assets/openai.svg";
-import { useLayoutStore } from "@/store/layoutStore";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useLayoutStore } from "@/stores/layoutStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { isRemotePath } from "@/lib/remote";
 import { settingsStorage } from "@/lib/globalSettings";
 import { AUTO_REVIEW_PROMPT_KEY, DEFAULT_AUTO_REVIEW_PROMPT } from "@/lib/codexReview";
-import { useTerminalStore, type TerminalProfile } from "@/store/terminalStore";
+import { useTerminalStore, type TerminalProfile } from "@/stores/terminalStore";
 import { GitPanel } from "@/components/git/GitPanel";
 import { TerminalSession } from "./TerminalSession";
 

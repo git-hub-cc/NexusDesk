@@ -10,7 +10,7 @@ import { parseTreeGraph, layoutTreeMindMap, buildReverseTree, changeTreeNode, ge
 import { useGraphData } from "@/hooks/useGraphData";
 import { samePath } from "@/lib/paths";
 import { findWorkspaceFile } from "@/lib/workspaceFile";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 function MindMapNode({ data }: NodeProps) {
   const comment = data.comment ? <span className="ml-1 text-[11px] text-amber-300" title={String(data.comment)}>*</span> : null;

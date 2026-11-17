@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { Copy, GitCommit, RefreshCw, RotateCcw, Undo2, Upload } from "lucide-react";
 import { gitApi, fsApi, type GitFileStatus, type GitLogEntry, type GitRevisionChange } from "@/lib/api";
-import { useWorkspaceStore, flushPendingWrites } from "@/store/workspaceStore";
+import { useWorkspaceStore, flushPendingWrites } from "@/stores/workspaceStore";
 import { GitFileTree, type GitTreeTarget } from "./GitFileTree";
 import { isBinaryAsset, isImage } from "@/lib/assets";
 import { confirmAction } from "@/lib/dialogs";

@@ -30,7 +30,7 @@ globalThis.__saveTest = { fileOperationHistory: { selectProject() {}, clear() {}
   touchFile: async () => {},
   readDirectory: async path => [{ id: `${path}/child.txt`, name: 'child.txt' }],
 } };
-const source = pathDeclarations + readFileSync(new URL("../src/store/workspaceStore.ts", import.meta.url), "utf8")
+const source = pathDeclarations + readFileSync(new URL("../src/stores/workspaceStore.ts", import.meta.url), "utf8")
   .replace(/^import .*;$/gm, "");
 const compiled = ts.transpileModule("const isSnapshot = false; const isTauri = () => false; const window = { dispatchEvent() {} }; const globalJsonStorage = undefined; const settingsStorage = { getItem: () => null }; const { fileOperationHistory, create, debounce, fsApi, persist, isRemotePath, remotePath, tauriInvoke, useTerminalStore, useLayoutStore, restoreProjectLayout, showError } = globalThis.__saveTest;\n" + source,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;

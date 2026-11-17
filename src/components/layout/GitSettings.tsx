@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { gitApi, type GitSettings as GitSettingsValue } from "@/lib/api";
 import { readSettingsDraft, useSettingsAutosave, waitForSettingsSave } from "@/lib/useSettingsAutosave";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { SettingsPage } from "./SettingsPage";
 
 export function GitSettings() {

@@ -1,5 +1,5 @@
 import { Minus } from "lucide-react";
-import { useLayoutStore } from "@/store/layoutStore";
+import { useLayoutStore } from "@/stores/layoutStore";
 
 const panels = {
   left: { visibility: "leftSidebarVisible", label: "最小化左侧面板" },

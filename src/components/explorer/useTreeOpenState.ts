@@ -1,5 +1,5 @@
 import { useEffect, type RefObject } from "react";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 const emptyOpenState: Record<string, boolean> = {};
 

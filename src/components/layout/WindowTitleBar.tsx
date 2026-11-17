@@ -1,8 +1,8 @@
 import { Minus, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { EditorTabs } from "@/components/editor/EditorTabs";
-import { useWorkspaceStore } from "@/store/workspaceStore";
-import { useLayoutStore } from "@/store/layoutStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useLayoutStore } from "@/stores/layoutStore";
 import { TitleBar } from "./TitleBar";
 
 export function WindowTitleBar({ editorLayout }: { editorLayout: { left: number; split: number } | null }) {

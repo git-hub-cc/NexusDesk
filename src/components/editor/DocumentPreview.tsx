@@ -1,5 +1,5 @@
 import { storedNumber, useProjectUIState } from "@/hooks/usePersistentState";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { pathKey } from "@/lib/paths";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";

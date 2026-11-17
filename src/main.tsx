@@ -53,8 +53,8 @@ async function boot() {
     return;
   }
   const [{ default: App }, { useWorkspaceStore }, { useTerminalStore }] = await Promise.all([
-    import("./App"), import("./store/workspaceStore"),
-    import("./store/terminalStore"),
+    import("./App"), import("./stores/workspaceStore"),
+    import("./stores/terminalStore"),
   ]);
   window.addEventListener("global-settings-changed", () => {
     void useWorkspaceStore.persist?.rehydrate();
@@ -78,7 +78,7 @@ async function boot() {
       let savingFiles = true;
       try {
         snapshotUI();
-        const { flushPendingWrites } = await import("./store/workspaceStore");
+        const { flushPendingWrites } = await import("./stores/workspaceStore");
         await flushPendingWrites();
         savingFiles = false;
         await flushSettingsAutosaves();

@@ -1,5 +1,5 @@
 import { useRef, useState, type CSSProperties } from "react";
-import { useLayoutStore } from "@/store/layoutStore";
+import { useLayoutStore } from "@/stores/layoutStore";
 
 export function useDiffSplit() {
   const position = useLayoutStore(state => state.gitDiffSplitRatio);

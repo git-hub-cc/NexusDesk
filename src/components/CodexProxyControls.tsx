@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { codexProxyLaunchCommand, detectCodexProvider, startCodexProxy, stopCodexProxy, type ProxyInfo } from "@/lib/codexProxy";
-import { useTerminalStore } from "@/store/terminalStore";
-import { useWorkspaceStore } from "@/store/workspaceStore";
-import { useLayoutStore } from "@/store/layoutStore";
+import { useTerminalStore } from "@/stores/terminalStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useLayoutStore } from "@/stores/layoutStore";
 
 export function CodexProxyControls({ info, onChange }: { info: ProxyInfo | null; onChange: (info: ProxyInfo | null) => void }) {
   const [upstream, setUpstream] = useState("");

@@ -7,7 +7,7 @@ import { ImageEditor } from "./ImageEditor";
 import { HttpEditor } from "./HttpEditor";
 import { DocumentPreview } from "./DocumentPreview";
 import { isImage, isVideo, isPreviewDocument } from "@/lib/assets";
-import { MIRROR_HOME, isFileConflict, resolveFileConflict, useWorkspaceStore, type Tab } from "@/store/workspaceStore";
+import { MIRROR_HOME, isFileConflict, resolveFileConflict, useWorkspaceStore, type Tab } from "@/stores/workspaceStore";
 import { confirmAction, showError } from "@/lib/dialogs";
 
 function FileConflictNotice({ tab }: { tab: Tab }) {

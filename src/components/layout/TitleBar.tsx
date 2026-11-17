@@ -9,7 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { flushGlobalSettings, settingsStorage } from "@/lib/globalSettings";
 import { Check, X, ChevronDown, Trash2 } from "lucide-react";
 import { fsApi, gitApi, type GitCloneAuth } from "@/lib/api";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { CloneProjectDialog } from "./CloneProjectDialog";
 import { SftpConnectDialog } from "./SftpConnectDialog";

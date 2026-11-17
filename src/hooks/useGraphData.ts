@@ -2,7 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { fsApi } from "@/lib/api";
 import { createGraphDataResource } from "@/lib/graphData";
 import { findWorkspaceFile } from "@/lib/workspaceFile";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 const resource = createGraphDataResource({
   root: () => useWorkspaceStore.getState().rootPath,

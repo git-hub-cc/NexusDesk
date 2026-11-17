@@ -6,9 +6,9 @@ import { OperationProgress } from "@/components/OperationProgress";
 import { X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { remoteUri } from "@/lib/remote";
-import { useWorkspaceStore } from "@/store/workspaceStore";
-import { useTerminalStore } from "@/store/terminalStore";
-import { useLayoutStore } from "@/store/layoutStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useTerminalStore } from "@/stores/terminalStore";
+import { useLayoutStore } from "@/stores/layoutStore";
 import { readSettingsDraft } from "@/lib/useSettingsAutosave";
 
 const FORM_KEY = "nexusdesk.sftp.form";

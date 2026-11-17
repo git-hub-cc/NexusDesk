@@ -7,7 +7,7 @@ import * as ContextMenu from "@/lib/nativeMenu";
 import * as DropdownMenu from "@/lib/nativeDropdownMenu";
 import { X, ChevronDown, Pin, ExternalLink, GitBranch, Clock, Globe, Compass, Music2, Video, Smartphone, MessageCircle } from "lucide-react";
 import { openNavigationHome } from "./BrowserEditor";
-import { MUSIC_HOME, VIDEO_HOME, CHAT_HOME, MIRROR_HOME, retryFileSave, useWorkspaceStore, type Tab } from "@/store/workspaceStore";
+import { MUSIC_HOME, VIDEO_HOME, CHAT_HOME, MIRROR_HOME, retryFileSave, useWorkspaceStore, type Tab } from "@/stores/workspaceStore";
 import { openContextMenuFromKeyboard } from "@/lib/contextMenu";
 import { confirmAction } from "@/lib/dialogs";
 import { setSpeechTarget } from "@/lib/speechTarget";

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Tab } from "@/store/workspaceStore";
+import type { Tab } from "@/stores/workspaceStore";
 import { useDiffSplit } from "./useDiffSplit";
 
 export function GitImageDiffEditor({ tab }: { tab: Tab }) {

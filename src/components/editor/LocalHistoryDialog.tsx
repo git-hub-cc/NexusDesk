@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { DialogShell } from "@/components/DialogShell";
 import { fsApi, type LocalHistoryEntry } from "@/lib/api";
-import { flushPendingWrites, restoreLocalVersion, useWorkspaceStore } from "@/store/workspaceStore";
+import { flushPendingWrites, restoreLocalVersion, useWorkspaceStore } from "@/stores/workspaceStore";
 import { EditableGitDiff } from "./EditableGitDiff";
 import { isBinaryAsset } from "@/lib/assets";
 import { samePath } from "@/lib/paths";

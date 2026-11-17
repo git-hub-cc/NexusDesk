@@ -1,7 +1,7 @@
 import { settingsStorage } from "@/lib/globalSettings";
 import { memo, useEffect, useRef, useState, useMemo } from "react";
 import { Code, Eye, Columns2, Play, Square, Clock, HardDrive, Globe, AlertTriangle, LoaderCircle } from "lucide-react";
-import { useWorkspaceStore, type Tab } from "@/store/workspaceStore";
+import { useWorkspaceStore, type Tab } from "@/stores/workspaceStore";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
 import { extractStreamContent, extractResponseUrls } from "@/lib/httpStreamExtraction";
 import { save } from "@tauri-apps/plugin-dialog";

@@ -12,12 +12,12 @@ import React, { useEffect, useState, useRef } from "react";
 import { Tree, type NodeRendererProps } from "react-arborist";
 import { ChevronRight, ChevronDown, File } from "lucide-react";
 import { useElementSize } from "@/hooks/useElementSize";
-import { useWorkspaceStore, flushPendingWrites } from "@/store/workspaceStore";
+import { useWorkspaceStore, flushPendingWrites } from "@/stores/workspaceStore";
 import { fsApi } from "@/lib/api";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { isRemotePath } from "@/lib/remote";
-import { useTerminalStore } from "@/store/terminalStore";
-import { useLayoutStore } from "@/store/layoutStore";
+import { useTerminalStore } from "@/stores/terminalStore";
+import { useLayoutStore } from "@/stores/layoutStore";
 
 const LogicalNodeContext = React.createContext<((props: NodeRendererProps<any>) => React.ReactElement) | null>(null);
 function LogicalTreeNode(props: NodeRendererProps<any>) {

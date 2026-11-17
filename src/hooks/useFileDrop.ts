@@ -4,7 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isRemotePath, uploadLocal } from "@/lib/remote";
 import { openWorkspaceFile } from "@/lib/workspaceFile";
 import { fsApi } from "@/lib/api";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { terminalDropEvent, type TerminalDropDetail } from "@/lib/terminalDrop";
 
 export function useFileDrop() {

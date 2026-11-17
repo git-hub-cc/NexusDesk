@@ -66,7 +66,7 @@ test('shared TerminalSession starts separate remote shells, preserves early repl
     writeln() {}
   }
   const mocks = {
-    '@/store/terminalStore': { useTerminalStore: selector => selector({ historyTransparency: 0 }) },
+    '@/stores/terminalStore': { useTerminalStore: selector => selector({ historyTransparency: 0 }) },
     '@/lib/terminalHistory': { matchTerminalHistory: () => [], terminalPromptInput: () => undefined },
     react: { useRef: value => ({ current: value === null ? element : value }), useState: value => [value, () => {}], useEffect: fn => effects.push(fn) },
     'react/jsx-runtime': { jsx() {}, jsxs() {} },

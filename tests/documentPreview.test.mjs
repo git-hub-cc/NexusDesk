@@ -44,7 +44,7 @@ function setup() {
     "@/lib/pdfPreview": {},
     "@/lib/spreadsheetPreview": {},
     "@/hooks/usePersistentState": {},
-    "@/store/workspaceStore": { useWorkspaceStore: selector => selector({ rootPath: "project" }) },
+    "@/stores/workspaceStore": { useWorkspaceStore: selector => selector({ rootPath: "project" }) },
     "@/lib/paths": {},
     "pdfjs-dist": { GlobalWorkerOptions: {}, getDocument: () => ({ promise: Promise.resolve(document), destroy: async () => { destroyed++; } }) },
     "pdfjs-dist/build/pdf.worker.min.mjs?url": { default: "worker.mjs" },

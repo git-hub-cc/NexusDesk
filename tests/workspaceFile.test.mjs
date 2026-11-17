@@ -14,7 +14,7 @@ const runtime = "data:text/javascript,export const { useWorkspaceStore, fsApi, f
 const { openWorkspaceFile: open } = await import(moduleUrl("lib/workspaceFile.ts", {
   "./api": runtime, "./assets": assetsUrl, "./paths": pathsUrl,
   "./remote": moduleUrl("lib/remote.ts", { "@tauri-apps/api/core": "data:text/javascript,export const invoke = () => {};" }),
-  "@/store/workspaceStore": runtime,
+  "@/stores/workspaceStore": runtime,
 }));
 
 function reset() {

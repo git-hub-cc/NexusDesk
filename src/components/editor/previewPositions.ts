@@ -1,5 +1,5 @@
 import { readUI, writeUI } from "@/lib/uiPersistence";
-import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 type PreviewPosition = { top: number; left: number };
 
 function positionsForPane(pane: string) {

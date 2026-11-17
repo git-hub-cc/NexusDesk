@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { MIRROR_HOME, useWorkspaceStore } from "@/store/workspaceStore";
+import { MIRROR_HOME, useWorkspaceStore } from "@/stores/workspaceStore";
 import { AndroidMirrorPanel } from "./AndroidMirrorPanel";
 
 // Keep mirror components under one React parent so moving a tab between panes
