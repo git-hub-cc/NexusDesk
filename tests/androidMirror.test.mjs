@@ -500,10 +500,14 @@ test("H.264 config, keyframe recovery, background skipping and pointer coordinat
   canvas.props.onPointerDown(event); canvas.props.onPointerUp(event); await tick();
   const controls = h.calls.filter(call => call.command === "mirror_control" && call.args.data[0] === 2);
   assert.equal(controls.length, 2);
+  assert.equal(h.calls.some(call => call.command === "mirror_control" && call.args.data[0] === 0), false);
   const down = new DataView(Uint8Array.from(controls[0].args.data).buffer);
   assert.equal(down.byteLength, 32); assert.equal(down.getUint8(0), 2); assert.equal(down.getUint8(1), 0);
   assert.equal(down.getUint32(10), 540); assert.equal(down.getUint32(14), 960);
   assert.equal(down.getUint16(18), 1080); assert.equal(down.getUint16(20), 1920);
   assert.equal(controls[1].args.data[1], 1);
+  canvas.props.onPointerDown({ ...event, button: 2 }); await tick();
+  assert.deepEqual(h.calls.filter(call => call.command === "mirror_control" && call.args.data[0] === 0)
+    .map(call => [call.args.data[1], new DataView(Uint8Array.from(call.args.data).buffer).getUint32(2)]), [[0, 4], [1, 4]]);
   h.unmount();
 });

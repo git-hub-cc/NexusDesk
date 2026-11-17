@@ -103,8 +103,6 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
     }
     setImeOpen(true);
     setTimeout(() => imeInput.current?.focus(), 0);
-    // 先收起手机端输入法，再把焦点交给电脑端输入框。
-    sendAndroidBack();
   };
 
   const refresh = async (recover = false) => {
