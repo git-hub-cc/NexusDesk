@@ -561,28 +561,33 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
       void send(touchMessage(current.x, current.y, current.width, current.height, 1));
     }
   };
-  const startGesture = (action: "up" | "down" | "doubleTap") => {
+  const startGesture = (action: "up" | "down" | "left" | "right" | "doubleTap") => {
     const session = connection.current;
     const target = canvas.current;
     if (!session || session.ended || !target || !dimensions.width || !dimensions.height
       || gesture.current || pointer.current !== null || performance.now() < gestureCooldown.current) return;
     const { width, height } = target;
+    const horizontal = action === "left" || action === "right";
+    const startX = width * (action === "left" ? 0.75 : 0.25);
+    const endX = width * (action === "left" ? 0.25 : 0.75);
     const startY = height * (action === "up" ? 0.75 : 0.25);
     const endY = height * (action === "up" ? 0.25 : 0.75);
     const steps = action === "doubleTap"
       ? [
-        { y: height * 0.5, action: 0, delay: 40 },
-        { y: height * 0.5, action: 1, delay: 90 },
-        { y: height * 0.5, action: 0, delay: 40 },
-        { y: height * 0.5, action: 1, delay: 0 },
+        { x: width * 0.5, y: height * 0.5, action: 0, delay: 40 },
+        { x: width * 0.5, y: height * 0.5, action: 1, delay: 90 },
+        { x: width * 0.5, y: height * 0.5, action: 0, delay: 40 },
+        { x: width * 0.5, y: height * 0.5, action: 1, delay: 0 },
       ]
       : [
         ...Array.from({ length: 11 }, (_, index) => ({
-          y: startY + (endY - startY) * index / 10, action: index === 0 ? 0 : 2, delay: index === 10 ? 0 : 25,
+          x: horizontal ? startX + (endX - startX) * index / 10 : width * 0.5,
+          y: horizontal ? height * 0.5 : startY + (endY - startY) * index / 10,
+          action: index === 0 ? 0 : 2, delay: index === 10 ? 0 : 25,
         })),
-        { y: endY, action: 1, delay: 0 },
+        { x: horizontal ? endX : width * 0.5, y: horizontal ? height * 0.5 : endY, action: 1, delay: 0 },
       ];
-    const current: Gesture = { connection: session, width, height, x: width * 0.5, y: steps[0].y, pressed: false };
+    const current: Gesture = { connection: session, width, height, x: steps[0].x, y: steps[0].y, pressed: false };
     gesture.current = current;
     let step = 0;
     // 等待每个控制包写入后再发送下一步，避免慢连接积压手势。
@@ -594,7 +599,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
         return;
       }
       const next = steps[step++];
-      current.y = next.y;
+      current.x = next.x; current.y = next.y;
       current.pressed = next.action !== 1;
       await send(touchMessage(current.x, current.y, width, height, next.action));
       if (gesture.current !== current) return;
@@ -630,14 +635,14 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
         return;
       }
       if (!fullscreenRequested.current || !active || !connected || document.hidden || !document.hasFocus()
-        || (e.key !== "ArrowUp" && e.key !== "ArrowDown" && e.key !== " ") || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey
+        || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key) || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey
         || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229 || imeComposingRef.current
         || imeTextRef.current || imeText || imeInput.current?.value) return;
       const target = e.target as HTMLElement;
       if (target !== canvas.current && target !== imeInput.current
         && target.closest('input, textarea, select, button, [role="button"], [contenteditable]:not([contenteditable="false"]), [role="dialog"]')) return;
       e.preventDefault(); e.stopPropagation();
-      if (!e.repeat) startGesture(e.key === " " ? "doubleTap" : e.key === "ArrowUp" ? "up" : "down");
+      if (!e.repeat) startGesture(e.key === " " ? "doubleTap" : e.key === "ArrowUp" ? "up" : e.key === "ArrowDown" ? "down" : e.key === "ArrowLeft" ? "left" : "right");
     }}>
     <div className="markdown-toolbar shrink-0 flex-wrap gap-1" style={{ justifyContent: "flex-start", alignItems: "center", display: fullscreen ? "none" : undefined }} role="toolbar" aria-label="安卓投屏控制">
       <Smartphone size={15} />
@@ -673,11 +678,11 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
           }
         }).catch(reason => { if (mounted.current) setError(String(reason)); });
       }}><Power size={14} /></button>
-      <button aria-label="投屏全屏" title="投屏全屏（↑ 上划，↓ 下滑，空格双击暂停/播放，Esc 退出）" disabled={!connected} onClick={toggleFullscreen}><Maximize size={14} /></button>
+      <button aria-label="投屏全屏" title="投屏全屏（方向键滑动，空格双击暂停/播放，Esc 退出）" disabled={!connected} onClick={toggleFullscreen}><Maximize size={14} /></button>
       <button aria-label="文件管理" title="文件管理" aria-pressed={filesOpen} disabled={!serial} onClick={() => setFilesOpen(!filesOpen)}><FolderOpen size={14} /><span>文件管理</span></button>
     </div>
     {fullscreen && <button aria-label="退出投屏全屏" title="退出全屏（Esc）" className="absolute right-4 top-4 z-10 rounded bg-black/60 p-2 text-white opacity-40 hover:opacity-100 focus:opacity-100" onClick={toggleFullscreen}><Minimize size={20} /></button>}
-    {fullscreen && fullscreenHint && <div role="status" className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded bg-black/60 px-3 py-2 text-xs text-white">↑ 上划 · ↓ 下滑 · 空格双击暂停/播放 · Esc 退出</div>}
+    {fullscreen && fullscreenHint && <div role="status" className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded bg-black/60 px-3 py-2 text-xs text-white">方向键滑动 · 空格双击暂停/播放 · Esc 退出</div>}
     {error && <div role="alert" className="shrink-0 break-words border-b border-ide-panel-border p-2 text-xs text-red-400">{error}</div>}
     <div className="flex min-h-0 min-w-0 flex-1">
     <div ref={mirrorStage} className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden" style={{ containerType: "size" }}>

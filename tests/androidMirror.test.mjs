@@ -240,16 +240,30 @@ test("fullscreen arrows generate paced swipes in both directions and ignore repe
     }
     assert.equal(packets.at(-1).getUint16(22), 0);
     assert.equal(packets.at(-1).getUint32(28), 0);
-    h.press("ArrowDown"); await tick(); assert.equal(h.touches().length, 12);
+    await h.runTimeouts(200);
+    h.press("ArrowLeft"); await tick();
+    for (let i = 0; i < 10; i++) await h.runTimeouts(25);
+    const left = h.touches().slice(12).map(call => new DataView(Uint8Array.from(call.args.data).buffer));
+    assert.equal(left[0].getUint32(10), 810);
+    assert.equal(left.at(-1).getUint32(10), 270);
+    assert.ok(left.every(view => view.getUint32(14) === 960));
+    await h.runTimeouts(200);
+    h.press("ArrowRight"); await tick();
+    for (let i = 0; i < 10; i++) await h.runTimeouts(25);
+    const right = h.touches().slice(24).map(call => new DataView(Uint8Array.from(call.args.data).buffer));
+    assert.equal(right[0].getUint32(10), 270);
+    assert.equal(right.at(-1).getUint32(10), 810);
+    assert.ok(right.every(view => view.getUint32(14) === 960));
+    h.press("ArrowDown"); await tick(); assert.equal(h.touches().length, 36);
     await h.runTimeouts(200);
     h.press("ArrowDown"); await tick();
     for (let i = 0; i < 10; i++) await h.runTimeouts(25);
-    const down = h.touches().slice(12).map(call => new DataView(Uint8Array.from(call.args.data).buffer));
+    const down = h.touches().slice(36).map(call => new DataView(Uint8Array.from(call.args.data).buffer));
     assert.equal(down[0].getUint32(14), 480);
     assert.equal(down.at(-1).getUint32(14), 1440);
     assert.equal(h.calls.some(call => call.command === "mirror_control" && call.args.data[0] === 0), false);
     await h.runTimeouts(3000);
-    assert.equal(h.render().some(node => node.children.includes("↑ 上划 · ↓ 下滑 · 空格双击暂停/播放 · Esc 退出")), false);
+    assert.equal(h.render().some(node => node.children.includes("方向键滑动 · 空格双击暂停/播放 · Esc 退出")), false);
   } finally { h.unmount(); await tick(); }
 });
 
