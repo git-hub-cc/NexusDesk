@@ -29,10 +29,11 @@ test("moving the mirror tab across panes preserves its React key and inactive ta
   assert.equal(panel(), undefined);
 });
 
-function harness({ delayedStart = false, delayedStop = false, delayedAudioClose = false, delayedScreenOff = false, delayedKey = false, discover = () => [{ serial: "phone", status: "device", model: "Phone" }], initiallyFullscreen = false, initiallyMaximized = false } = {}) {
+function harness({ delayedStart = false, delayedStop = false, delayedAudioClose = false, delayedScreenOff = false, delayedKey = false, controlledTimeouts = false, discover = () => [{ serial: "phone", status: "device", model: "Phone" }], initiallyFullscreen = false, initiallyMaximized = false } = {}) {
   const states = [], refs = [], effects = [], calls = [], decoders = [];
   const timers = new Set();
   const listeners = new Map(), fullscreenCalls = [];
+  const windowListeners = new Map(), timeouts = new Map();
   const host = {
     fullscreen: initiallyFullscreen,
     maximized: initiallyMaximized,
@@ -50,6 +51,7 @@ function harness({ delayedStart = false, delayedStop = false, delayedAudioClose 
   };
   const document = {
     hidden: false, fullscreenElement: null,
+    focused: true, hasFocus() { return this.focused; },
     addEventListener(name, callback) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(callback); },
     removeEventListener(name, callback) { listeners.get(name)?.delete(callback); },
     async exitFullscreen() { throw new Error("DOM fullscreen must not be used by the mirror"); },
@@ -68,7 +70,11 @@ function harness({ delayedStart = false, delayedStop = false, delayedAudioClose 
     MirrorAudio: class { async resume() {} play() {} close() { return audioClose; } },
     setInterval: callback => { timers.add(callback); return callback; },
     clearInterval: callback => timers.delete(callback),
-    window: { VideoDecoder: true },
+    window: {
+      VideoDecoder: true,
+      addEventListener(name, callback) { if (!windowListeners.has(name)) windowListeners.set(name, new Set()); windowListeners.get(name).add(callback); },
+      removeEventListener(name, callback) { windowListeners.get(name)?.delete(callback); },
+    },
     useState: initial => {
       const i = si++; if (!(i in states)) states[i] = initial;
       return [states[i], value => { states[i] = typeof value === "function" ? value(states[i]) : value; }];
@@ -99,6 +105,10 @@ function harness({ delayedStart = false, delayedStop = false, delayedAudioClose 
     },
     requestAnimationFrame: () => 1, cancelAnimationFrame() {},
   };
+  if (controlledTimeouts) {
+    bindings.setTimeout = (callback, delay) => { const id = {}; timeouts.set(id, { callback, at: now + delay }); return id; };
+    bindings.clearTimeout = id => timeouts.delete(id);
+  }
   bindings.useGlobalPreference = (_key, normalize) => bindings.useState(normalize(undefined));
   for (const name of ["ArrowLeft", "House", "Square", "Power", "RefreshCw", "Smartphone", "Maximize", "Minimize", "FolderOpen", "AndroidFileManager"]) bindings[name] = name;
   const Component = new Function(...Object.keys(bindings), `${compile("../src/components/editor/AndroidMirrorPanel.tsx")}\nreturn AndroidMirrorPanel;`)(...Object.values(bindings));
@@ -117,10 +127,126 @@ function harness({ delayedStart = false, delayedStop = false, delayedAudioClose 
     new Uint8Array(buffer).set(bytes, 12);
     currentChannel.onmessage(buffer);
   };
-  return { render, calls, decoders, canvas, drawnFrames, releaseStart, releaseStop, releaseAudioClose, releaseScreenOff, releaseKey, packet, document, host, fullscreenCalls, visibility: hidden => { document.hidden = hidden; listeners.get("visibilitychange")?.forEach(callback => callback()); }, advance: ms => { now += ms; }, poll: () => timers.forEach(callback => callback()), unmount: () => effects.forEach(effect => effect.cleanup?.()) };
+  return { render, calls, decoders, canvas, drawnFrames, releaseStart, releaseStop, releaseAudioClose, releaseScreenOff, releaseKey, packet, document, host, fullscreenCalls,
+    blur: () => { document.focused = false; windowListeners.get("blur")?.forEach(callback => callback()); },
+    runTimeouts: async ms => {
+      now += ms;
+      for (const [id, timer] of [...timeouts]) if (timer.at <= now) { timeouts.delete(id); timer.callback(); }
+      await tick();
+    },
+    visibility: hidden => { document.hidden = hidden; listeners.get("visibilitychange")?.forEach(callback => callback()); }, advance: ms => { now += ms; }, poll: () => timers.forEach(callback => callback()), unmount: () => effects.forEach(effect => effect.cleanup?.()) };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const connect = tree => tree.find(node => node.type === "button" && node.children.includes("连接")).props.onClick();
+
+async function swipeHarness() {
+  const h = harness({ controlledTimeouts: true });
+  h.render(); await tick(); connect(h.render()); await tick();
+  h.decoders[0].options.output({ displayWidth: 1080, displayHeight: 1920, close() {} });
+  h.render().find(node => node.props["aria-label"] === "投屏全屏").props.onClick();
+  h.render(); await tick();
+  h.touches = () => h.calls.filter(call => call.command === "mirror_control" && call.args.data[0] === 2);
+  h.press = (key, extra = {}) => {
+    const event = { key, target: h.canvas, nativeEvent: {}, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; }, ...extra };
+    h.render().find(node => node.props.onKeyDownCapture).props.onKeyDownCapture(event);
+    return event;
+  };
+  return h;
+}
+
+test("fullscreen arrows generate paced swipes in both directions and ignore repeats, overlap and cooldown", async () => {
+  const h = await swipeHarness();
+  try {
+    assert.equal(h.press("ArrowUp", { repeat: true }).prevented, true);
+    await tick(); assert.equal(h.touches().length, 0);
+    assert.equal(h.press("ArrowUp").stopped, true);
+    await tick(); assert.equal(h.touches().length, 1);
+    h.press("ArrowDown"); await tick(); assert.equal(h.touches().length, 1);
+    const pointer = h.render().find(node => node.type === "canvas");
+    pointer.props.onPointerDown({});
+    for (let i = 0; i < 10; i++) await h.runTimeouts(25);
+    const packets = h.touches().map(call => new DataView(Uint8Array.from(call.args.data).buffer));
+    assert.deepEqual(packets.map(view => view.getUint8(1)), [0, ...Array(10).fill(2), 1]);
+    assert.equal(packets[0].getUint32(14), 1440);
+    assert.equal(packets.at(-1).getUint32(14), 480);
+    for (const view of packets) {
+      assert.equal(view.getUint32(10), 540);
+      assert.equal(view.getUint16(18), 1080);
+      assert.equal(view.getUint16(20), 1920);
+    }
+    assert.equal(packets.at(-1).getUint16(22), 0);
+    assert.equal(packets.at(-1).getUint32(28), 0);
+    h.press("ArrowDown"); await tick(); assert.equal(h.touches().length, 12);
+    await h.runTimeouts(200);
+    h.press("ArrowDown"); await tick();
+    for (let i = 0; i < 10; i++) await h.runTimeouts(25);
+    const down = h.touches().slice(12).map(call => new DataView(Uint8Array.from(call.args.data).buffer));
+    assert.equal(down[0].getUint32(14), 480);
+    assert.equal(down.at(-1).getUint32(14), 1440);
+    assert.equal(h.calls.some(call => call.command === "mirror_control" && call.args.data[0] === 0), false);
+    await h.runTimeouts(3000);
+    assert.equal(h.render().some(node => node.children.includes("↑ 上划 · ↓ 下滑 · Esc 退出")), false);
+  } finally { h.unmount(); await tick(); }
+});
+
+test("fullscreen swipes work from the empty IME input but preserve composing, editable and modified keys", async () => {
+  const h = await swipeHarness();
+  try {
+    const canvas = h.render().find(node => node.type === "canvas");
+    const target = { width: 1080, height: 1920, focus() {}, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 1080, height: 1920 }) };
+    const pointer = { pointerId: 1, button: 0, clientX: 540, clientY: 960, currentTarget: target, preventDefault() {} };
+    canvas.props.onPointerDown(pointer);
+    h.press("ArrowUp"); await tick(); assert.equal(h.touches().length, 1);
+    canvas.props.onPointerUp(pointer); await h.runTimeouts(0);
+    const inputNode = h.render().find(node => node.type === "input");
+    const input = { value: "", closest: () => ({}) };
+    inputNode.props.ref.current = input;
+    for (const extra of [{ nativeEvent: { isComposing: true } }, { nativeEvent: { keyCode: 229 } }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }, { metaKey: true }]) {
+      assert.equal(h.press("ArrowUp", extra).prevented, undefined);
+    }
+    assert.equal(h.press("ArrowUp", { target: { closest: () => ({}) } }).prevented, undefined);
+    inputNode.props.onCompositionStart({ currentTarget: input });
+    assert.equal(h.press("ArrowUp", { target: input }).prevented, undefined);
+    inputNode.props.onCompositionEnd({ currentTarget: input, data: "" });
+    input.value = "pending";
+    assert.equal(h.press("ArrowUp", { target: input }).prevented, undefined);
+    input.value = "";
+    await tick(); assert.equal(h.touches().length, 2);
+    assert.equal(h.press("ArrowUp", { target: input }).prevented, true);
+    await tick(); assert.equal(h.touches().length, 3);
+  } finally { h.unmount(); await tick(); }
+});
+
+test("swipe cancellation releases the touch and prevents remaining moves across fullscreen, focus, visibility and rotation changes", async () => {
+  for (const reason of ["escape", "blur", "hidden", "inactive", "rotation", "disconnect", "unmount"]) {
+    const h = await swipeHarness();
+    h.press("ArrowUp"); await tick(); await h.runTimeouts(25);
+    if (reason === "escape") h.press("Escape");
+    if (reason === "blur") h.blur();
+    if (reason === "hidden") h.visibility(true);
+    if (reason === "inactive") h.render(false);
+    if (reason === "rotation") {
+      h.decoders[0].options.output({ displayWidth: 1920, displayHeight: 1080, close() {} });
+      h.render();
+    }
+    if (reason === "disconnect") h.render().find(node => node.children.includes("断开")).props.onClick();
+    if (reason === "unmount") h.unmount();
+    await tick();
+    const count = h.touches().length;
+    await h.runTimeouts(1000);
+    assert.equal(h.touches().length, count, reason);
+    if (reason !== "disconnect" && reason !== "unmount") assert.equal(h.touches().at(-1).args.data[1], 1, reason);
+    if (reason === "escape") assert.equal(h.press("ArrowDown").prevented, undefined);
+    if (reason === "blur") assert.equal(h.press("ArrowDown").prevented, undefined);
+    if (reason === "disconnect") {
+      connect(h.render()); await tick();
+      await h.runTimeouts(1000);
+      assert.equal(h.touches().length, count);
+    }
+    if (reason !== "unmount") h.unmount();
+    await tick();
+  }
+});
 
 test("audio close waits for context shutdown and repeated cleanup stops sources only once", async () => {
   let releaseClose, closeCalls = 0, stopCalls = 0, disconnectCalls = 0;

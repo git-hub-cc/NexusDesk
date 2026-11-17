@@ -8,6 +8,19 @@ import { AndroidFileManager } from "./AndroidFileManager";
 
 type Device = { serial: string; status: string; model: string };
 type Connection = { id: string; serial: string; startup?: Promise<unknown>; decoder?: VideoDecoder; worker?: Worker; audio?: MirrorAudio; config: Uint8Array; waiting: boolean; ended: boolean; queue: Promise<unknown>; statsTimer: ReturnType<typeof setInterval> | 0; stats: { packets: number; bytes: number; config: number; key: number; delta: number; waitingDrop: number; queueReset: number; submitted: number; output: number } };
+type Swipe = { connection: Connection; width: number; height: number; x: number; y: number; timer?: ReturnType<typeof setTimeout> };
+
+function touchMessage(x: number, y: number, width: number, height: number, action: number): Uint8Array {
+  const bytes = new Uint8Array(32); bytes[0] = 2; bytes[1] = action;
+  const view = new DataView(bytes.buffer);
+  view.setBigUint64(2, 0xffffffffffffffffn);
+  view.setUint32(10, Math.max(0, Math.min(width - 1, Math.round(x))));
+  view.setUint32(14, Math.max(0, Math.min(height - 1, Math.round(y))));
+  view.setUint16(18, width); view.setUint16(20, height);
+  view.setUint16(22, action === 1 ? 0 : 65535);
+  view.setUint32(24, action === 2 ? 0 : 1); view.setUint32(28, action === 1 ? 0 : 1);
+  return bytes;
+}
 function codecFromConfig(data: Uint8Array): string | undefined {
   for (let i = 0; i + 7 < data.length; i++) {
     const prefix = data[i] === 0 && data[i + 1] === 0
@@ -36,6 +49,9 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
   const [wifiBusy, setWifiBusy] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreenHint, setFullscreenHint] = useState(false);
+  const swipe = useRef<Swipe | null>(null);
+  const swipeCooldown = useRef(0);
   const [filesOpen, setFilesOpen] = useState(false);
   const [fps, setFps] = useState(0);
   const frameRate = useRef({ frames: 0, started: 0 });
@@ -127,6 +143,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
   };
 
   const disconnect = (disposeWorker = false) => {
+    cancelSwipe();
     const current = connection.current;
     connection.current = null;
     pointer.current = null;
@@ -222,6 +239,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
   const setMirrorFullscreen = (entered: boolean) => {
     if (fullscreenRequested.current === entered) return;
     fullscreenRequested.current = entered;
+    if (!entered) cancelSwipe();
     if (mounted.current) {
       setFullscreen(entered);
       onFullscreenChange?.(entered);
@@ -250,6 +268,18 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
   };
   useEffect(() => () => setMirrorFullscreen(false), []);
   const toggleFullscreen = () => setMirrorFullscreen(!fullscreenRequested.current);
+  useEffect(() => {
+    setFullscreenHint(fullscreen);
+    if (!fullscreen) return;
+    const timer = setTimeout(() => setFullscreenHint(false), 3000);
+    return () => clearTimeout(timer);
+  }, [fullscreen]);
+  useEffect(() => {
+    const cancel = () => cancelSwipe();
+    window.addEventListener("blur", cancel);
+    return () => window.removeEventListener("blur", cancel);
+  }, []);
+  useEffect(() => { cancelSwipe(); }, [dimensions.width, dimensions.height]);
   useEffect(() => {
     const current = connection.current;
     if (!current || status !== "connected") return;
@@ -289,6 +319,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
         void invoke("mirror_visible", { id: current.id, visible: visible.current }).catch(() => {});
       }
       if (!visible.current && pointer.current !== null) releasePointer();
+      if (!visible.current) cancelSwipe();
     };
     update();
     document.addEventListener("visibilitychange", update);
@@ -503,14 +534,8 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
   const touch = (event: PointerEvent<HTMLCanvasElement>, action: number) => {
     const target = event.currentTarget;
     const rect = target.getBoundingClientRect();
-    const bytes = new Uint8Array(32); bytes[0] = 2; bytes[1] = action;
-    const view = new DataView(bytes.buffer);
-    view.setBigUint64(2, 0xffffffffffffffffn); // scrcpy mouse pointer
-    view.setUint32(10, Math.max(0, Math.min(target.width - 1, Math.round((event.clientX - rect.left) * target.width / rect.width))));
-    view.setUint32(14, Math.max(0, Math.min(target.height - 1, Math.round((event.clientY - rect.top) * target.height / rect.height))));
-    view.setUint16(18, target.width); view.setUint16(20, target.height);
-    view.setUint16(22, action === 1 ? 0 : 65535);
-    view.setUint32(24, action === 2 ? 0 : 1); view.setUint32(28, action === 1 ? 0 : 1);
+    const bytes = touchMessage((event.clientX - rect.left) * target.width / rect.width,
+      (event.clientY - rect.top) * target.height / rect.height, target.width, target.height, action);
     lastTouch.current = bytes;
     return bytes;
   };
@@ -526,6 +551,43 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
     pointer.current = null;
   };
   const connected = status === "connected";
+  const cancelSwipe = () => {
+    const current = swipe.current;
+    if (!current) return;
+    swipe.current = null;
+    if (current.timer !== undefined) clearTimeout(current.timer);
+    swipeCooldown.current = performance.now() + 200;
+    if (connection.current === current.connection && !current.connection.ended) {
+      void send(touchMessage(current.x, current.y, current.width, current.height, 1));
+    }
+  };
+  const startSwipe = (up: boolean) => {
+    const session = connection.current;
+    const target = canvas.current;
+    if (!session || session.ended || !target || !dimensions.width || !dimensions.height
+      || swipe.current || pointer.current !== null || performance.now() < swipeCooldown.current) return;
+    const { width, height } = target;
+    const startY = height * (up ? 0.75 : 0.25);
+    const endY = height * (up ? 0.25 : 0.75);
+    const current: Swipe = { connection: session, width, height, x: width * 0.5, y: startY };
+    swipe.current = current;
+    let step = 0;
+    // 等待每个控制包写入后再发送下一步，避免慢连接积压手势。
+    const move = async () => {
+      if (swipe.current !== current) return;
+      if (connection.current !== session || session.ended || !fullscreenRequested.current
+        || !visible.current || target.width !== width || target.height !== height) {
+        cancelSwipe();
+        return;
+      }
+      current.y = startY + (endY - startY) * step / 10;
+      await send(touchMessage(current.x, current.y, width, height, step === 0 ? 0 : 2));
+      if (swipe.current !== current) return;
+      if (step++ === 10) cancelSwipe();
+      else current.timer = setTimeout(() => void move(), 25);
+    };
+    void move();
+  };
   const clearImeInput = (input: HTMLInputElement) => {
     input.value = "";
     imeTextRef.current = "";
@@ -549,7 +611,17 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
     onKeyDownCapture={e => {
       if (e.key === "Escape" && fullscreenRequested.current) {
         e.preventDefault(); e.stopPropagation(); setMirrorFullscreen(false);
+        return;
       }
+      if (!fullscreenRequested.current || !active || !connected || document.hidden || !document.hasFocus()
+        || (e.key !== "ArrowUp" && e.key !== "ArrowDown") || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey
+        || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229 || imeComposingRef.current
+        || imeTextRef.current || imeText || imeInput.current?.value) return;
+      const target = e.target as HTMLElement;
+      if (target !== canvas.current && target !== imeInput.current
+        && target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"]')) return;
+      e.preventDefault(); e.stopPropagation();
+      if (!e.repeat) startSwipe(e.key === "ArrowUp");
     }}>
     <div className="markdown-toolbar shrink-0 flex-wrap gap-1" style={{ justifyContent: "flex-start", alignItems: "center", display: fullscreen ? "none" : undefined }} role="toolbar" aria-label="安卓投屏控制">
       <Smartphone size={15} />
@@ -585,10 +657,11 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
           }
         }).catch(reason => { if (mounted.current) setError(String(reason)); });
       }}><Power size={14} /></button>
-      <button aria-label="投屏全屏" title="投屏全屏（Esc 退出）" disabled={!connected} onClick={toggleFullscreen}><Maximize size={14} /></button>
+      <button aria-label="投屏全屏" title="投屏全屏（↑ 上划，↓ 下滑，Esc 退出）" disabled={!connected} onClick={toggleFullscreen}><Maximize size={14} /></button>
       <button aria-label="文件管理" title="文件管理" aria-pressed={filesOpen} disabled={!serial} onClick={() => setFilesOpen(!filesOpen)}><FolderOpen size={14} /><span>文件管理</span></button>
     </div>
     {fullscreen && <button aria-label="退出投屏全屏" title="退出全屏（Esc）" className="absolute right-4 top-4 z-10 rounded bg-black/60 p-2 text-white opacity-40 hover:opacity-100 focus:opacity-100" onClick={toggleFullscreen}><Minimize size={20} /></button>}
+    {fullscreen && fullscreenHint && <div role="status" className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded bg-black/60 px-3 py-2 text-xs text-white">↑ 上划 · ↓ 下滑 · Esc 退出</div>}
     {error && <div role="alert" className="shrink-0 break-words border-b border-ide-panel-border p-2 text-xs text-red-400">{error}</div>}
     <div className="flex min-h-0 min-w-0 flex-1">
     <div ref={mirrorStage} className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden" style={{ containerType: "size" }}>
@@ -606,7 +679,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
         }}
         onContextMenu={e => e.preventDefault()}
         onPointerDown={e => {
-          if (!connected || pointer.current !== null) return;
+          if (!connected || pointer.current !== null || swipe.current) return;
           e.preventDefault(); e.currentTarget.focus();
           if (e.button === 2) { sendAndroidBack(); return; }
           if (e.button !== 0) return;
