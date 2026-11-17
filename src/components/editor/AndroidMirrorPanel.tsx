@@ -25,7 +25,7 @@ async function wakeMirrorScreen(serial: string, sendControl: () => Promise<unkno
     .catch(onRefreshError);
 }
 
-export function AndroidMirrorPanel({ active }: { active: boolean }) {
+export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boolean; onFullscreenChange?: (fullscreen: boolean) => void }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [serial, setSerial] = useState("");
   const [maxSize, setMaxSize] = useGlobalPreference<number>("nexusdesk.android.maxSize", value => value === 720 || value === 1440 ? value : 1080);
@@ -222,7 +222,10 @@ export function AndroidMirrorPanel({ active }: { active: boolean }) {
   const setMirrorFullscreen = (entered: boolean) => {
     if (fullscreenRequested.current === entered) return;
     fullscreenRequested.current = entered;
-    if (mounted.current) setFullscreen(entered);
+    if (mounted.current) {
+      setFullscreen(entered);
+      onFullscreenChange?.(entered);
+    }
     // Keep WebView2 out of DOM fullscreen: it has its own native fullscreen
     // lifecycle, which conflicts with Tauri's window state on Windows.
     fullscreenQueue.current = fullscreenQueue.current.then(async () => {

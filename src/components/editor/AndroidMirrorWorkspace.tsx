@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { MIRROR_HOME, useWorkspaceStore } from "@/store/workspaceStore";
 import { AndroidMirrorPanel } from "./AndroidMirrorPanel";
@@ -7,6 +7,7 @@ import { AndroidMirrorPanel } from "./AndroidMirrorPanel";
 // does not unmount its decoder or disconnect the phone.
 function MirrorPosition({ pane, active }: { pane: "left" | "right"; active: boolean }) {
   const element = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
   useLayoutEffect(() => {
     const host = document.querySelector<HTMLElement>(`[data-editor-mirror-host="${pane}"]`);
     const target = element.current;
@@ -27,9 +28,10 @@ function MirrorPosition({ pane, active }: { pane: "left" | "right"; active: bool
     window.addEventListener("resize", scheduleLayout);
     return () => { observer.disconnect(); window.removeEventListener("resize", scheduleLayout); if (frame !== null) cancelAnimationFrame(frame); };
   }, [pane, active]);
-  return <div ref={element} className={`fixed ${active ? "" : "hidden"}`} aria-hidden={!active} inert={!active}
+  // 全屏层级设在外层，避免内部投屏被底部面板的层叠上下文遮挡。
+  return <div ref={element} className={`fixed ${fullscreen && active ? "z-[10000]" : ""} ${active ? "" : "hidden"}`} aria-hidden={!active} inert={!active}
     onPointerDown={() => useWorkspaceStore.getState().setFocusedPane(pane)}>
-    <AndroidMirrorPanel active={active} />
+    <AndroidMirrorPanel active={active} onFullscreenChange={setFullscreen} />
   </div>;
 }
 
