@@ -185,7 +185,7 @@ test("fullscreen arrows generate paced swipes in both directions and ignore repe
     assert.equal(down.at(-1).getUint32(14), 1440);
     assert.equal(h.calls.some(call => call.command === "mirror_control" && call.args.data[0] === 0), false);
     await h.runTimeouts(3000);
-    assert.equal(h.render().some(node => node.children.includes("↑ 上划 · ↓ 下滑 · Esc 退出")), false);
+    assert.equal(h.render().some(node => node.children.includes("↑ 上划 · ↓ 下滑 · 空格双击暂停/播放 · Esc 退出")), false);
   } finally { h.unmount(); await tick(); }
 });
 
@@ -218,9 +218,10 @@ test("fullscreen swipes work from the empty IME input but preserve composing, ed
 });
 
 test("swipe cancellation releases the touch and prevents remaining moves across fullscreen, focus, visibility and rotation changes", async () => {
-  for (const reason of ["escape", "blur", "hidden", "inactive", "rotation", "disconnect", "unmount"]) {
+  const reasons = ["escape", "blur", "hidden", "inactive", "rotation", "disconnect", "unmount"];
+  for (const [key, reason] of ["ArrowUp", " "].flatMap(key => reasons.map(reason => [key, reason]))) {
     const h = await swipeHarness();
-    h.press("ArrowUp"); await tick(); await h.runTimeouts(25);
+    h.press(key); await tick(); await h.runTimeouts(25);
     if (reason === "escape") h.press("Escape");
     if (reason === "blur") h.blur();
     if (reason === "hidden") h.visibility(true);
@@ -246,6 +247,57 @@ test("swipe cancellation releases the touch and prevents remaining moves across 
     if (reason !== "unmount") h.unmount();
     await tick();
   }
+});
+
+test("fullscreen space double taps the screen center, ignores held keys and shares the swipe lock", async () => {
+  const h = await swipeHarness();
+  try {
+    h.press(" ", { repeat: true }); await tick(); assert.equal(h.touches().length, 0);
+    const input = { value: "", focus() {}, closest: () => ({}) };
+    const canvas = h.render().find(node => node.type === "canvas");
+    const target = { width: 1080, height: 1920, focus() {}, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 1080, height: 1920 }) };
+    const pointer = { pointerId: 1, button: 0, clientX: 540, clientY: 960, currentTarget: target, preventDefault() {} };
+    canvas.props.onPointerDown(pointer); canvas.props.onPointerUp(pointer); await tick();
+    h.calls.length = 0;
+    h.render().find(node => node.type === "input").props.ref.current = input;
+    assert.equal(h.press(" ", { target: input }).prevented, true);
+    await tick();
+    h.press("ArrowUp"); h.press(" "); await tick();
+    assert.equal(h.touches().length, 1);
+    await h.runTimeouts(40);
+    assert.deepEqual(h.touches().map(call => call.args.data[1]), [0, 1]);
+    h.press("ArrowDown"); await tick(); assert.equal(h.touches().length, 2);
+    await h.runTimeouts(90);
+    assert.deepEqual(h.touches().map(call => call.args.data[1]), [0, 1, 0]);
+    await h.runTimeouts(40);
+    assert.deepEqual(h.touches().map(call => call.args.data[1]), [0, 1, 0, 1]);
+    for (const call of h.touches()) {
+      const view = new DataView(Uint8Array.from(call.args.data).buffer);
+      assert.equal(view.getUint32(10), 540);
+      assert.equal(view.getUint32(14), 960);
+      assert.equal(view.getUint16(22), call.args.data[1] === 1 ? 0 : 65535);
+    }
+    assert.equal(h.calls.some(call => call.command === "mirror_control" && [0, 1, 9].includes(call.args.data[0])), false);
+    h.press(" "); await tick(); assert.equal(h.touches().length, 4);
+    await h.runTimeouts(200);
+    h.press("ArrowUp"); await tick(); assert.equal(h.touches().length, 5);
+    h.press(" "); await tick(); assert.equal(h.touches().length, 5);
+  } finally { h.unmount(); await tick(); }
+});
+
+test("space preserves text input and non-fullscreen behavior, and cancellation between taps sends no extra touch", async () => {
+  const h = await swipeHarness();
+  try {
+    for (const extra of [{ nativeEvent: { isComposing: true } }, { ctrlKey: true }, { shiftKey: true }, { target: { closest: () => ({}) } }]) {
+      assert.equal(h.press(" ", extra).prevented, undefined);
+    }
+    h.press(" "); await tick(); await h.runTimeouts(40);
+    h.blur(); await h.runTimeouts(1000);
+    assert.deepEqual(h.touches().map(call => call.args.data[1]), [0, 1]);
+    h.document.focused = true;
+    h.press("Escape");
+    assert.equal(h.press(" ").prevented, undefined);
+  } finally { h.unmount(); await tick(); }
 });
 
 test("audio close waits for context shutdown and repeated cleanup stops sources only once", async () => {
