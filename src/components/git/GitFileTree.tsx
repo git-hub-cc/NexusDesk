@@ -59,7 +59,7 @@ function GitTreeRow({ node, tree, style }: NodeRendererProps<GitTreeNode>) {
       context.context(event, data, targets.filter(target => !target.data.root).map(target => ({ path: target.data.path, directory: !target.isLeaf })));
     }}>
     {node.isLeaf ? context.renderFile(data.path, data.name) : <div className="flex h-full min-w-0 items-center gap-2">
-      {context.selection && <input type="checkbox" className="shrink-0 accent-blue-500 cursor-pointer disabled:cursor-wait"
+      {context.selection && <input type="checkbox" className={`shrink-0 accent-blue-500 ${!counts.eligible ? "cursor-not-allowed" : context.selection.disabled || counts.pending > 0 ? "cursor-wait" : "cursor-pointer"}`}
         aria-label={data.root ? `暂存项目 ${data.name}` : `暂存目录 ${data.path}`} aria-checked={mixed ? "mixed" : checked}
         checked={checked} ref={input => { if (input) input.indeterminate = mixed; }}
         disabled={context.selection.disabled || !counts.eligible || counts.pending > 0}

@@ -24,8 +24,8 @@ test("root and directory counts exclude conflicts and track partial selection an
   }));
   assert.deepEqual(counts.get(nodes[0].id), { total: 3, eligible: 2, checked: 1, pending: 1 });
   assert.deepEqual(counts.get("dir:docs"), { total: 2, eligible: 2, checked: 1, pending: 1 });
-  assert.deepEqual(summarizeGitTree(buildGitTree([], "empty"), () => assert.fail()).get("git-project-root"),
-    { total: 0, eligible: 0, checked: 0, pending: 0 });
+  assert.deepEqual(buildGitTree([], "empty"), []);
+  assert.equal(summarizeGitTree(buildGitTree([], "empty"), () => assert.fail()).size, 0);
 });
 
 test("large trees count each file once including files inside collapsed directories", () => {

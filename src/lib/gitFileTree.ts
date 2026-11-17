@@ -7,6 +7,7 @@ export interface GitTreeNode {
 }
 
 export function buildGitTree(paths: string[], rootName?: string): GitTreeNode[] {
+  if (!paths.length) return [];
   const root: GitTreeNode = { id: "git-project-root", name: rootName ?? "", path: "", root: true, children: [] };
   const directories = new Map<string, GitTreeNode>([["", root]]);
   for (const path of paths) {
