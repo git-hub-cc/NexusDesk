@@ -154,6 +154,70 @@ async function swipeHarness() {
   return h;
 }
 
+test("global Tab navigation leaves mirror focus intact so fullscreen shortcuts keep working", async () => {
+  const source = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+  const handler = source.slice(source.indexOf("const preventTabNavigation ="), source.indexOf('window.addEventListener("keydown", preventTabNavigation'));
+  let queries = 0, focused = 0;
+  class Element {
+    constructor(props) { this.props = props; }
+    closest(selector) {
+      return this.props["data-android-mirror-input"] === "true"
+        && selector.includes('[data-android-mirror-input="true"]') ? this : null;
+    }
+  }
+  const document = {
+    querySelectorAll() {
+      queries++;
+      return [{ offsetParent: {}, closest: () => null, focus() { focused++; } }];
+    },
+  };
+  const navigate = new Function("Element", "document", `${ts.transpileModule(handler, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText}\nreturn preventTabNavigation;`)(Element, document);
+  const h = await swipeHarness();
+  try {
+    const canvas = h.render().find(node => node.type === "canvas");
+    const target = { width: 1080, height: 1920, focus() {}, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 1080, height: 1920 }) };
+    const pointer = { pointerId: 1, button: 0, clientX: 540, clientY: 960, currentTarget: target, preventDefault() {} };
+    canvas.props.onPointerDown(pointer); canvas.props.onPointerUp(pointer); await tick();
+    const input = h.render().find(node => node.type === "input");
+    for (const node of [canvas, input]) {
+      for (const shiftKey of [false, true]) {
+        const event = { key: "Tab", shiftKey, target: new Element(node.props), nativeEvent: {}, currentTarget: { value: "" }, preventDefault() { this.prevented = true; }, stopPropagation() {} };
+        navigate(event);
+        assert.equal(event.prevented, undefined);
+        node.props.onKeyDown(event);
+        assert.equal(event.prevented, true);
+      }
+    }
+    await tick();
+    assert.equal(queries, 0);
+    assert.equal(focused, 0);
+    const tabKeys = h.calls.filter(call => call.command === "mirror_control" && call.args.data[0] === 0);
+    assert.equal(tabKeys.length, 8);
+    assert.ok(tabKeys.every(call => new DataView(Uint8Array.from(call.args.data).buffer).getUint32(2) === 61));
+    h.calls.length = 0;
+    assert.equal(h.press("ArrowUp").prevented, true);
+    await tick();
+    assert.equal(h.touches().length, 1);
+    navigate({ key: "Tab", target: new Element({}), preventDefault() {} });
+    assert.equal(focused, 1);
+  } finally { h.unmount(); await tick(); }
+});
+
+test("fullscreen shortcuts preserve button keyboard activation", async () => {
+  const h = await swipeHarness();
+  try {
+    const target = { closest: selector => selector.includes("button") ? {} : null };
+    assert.equal(h.press(" ", { target }).prevented, undefined);
+    await tick();
+    assert.equal(h.touches().length, 0);
+    assert.equal(h.press("Escape", { target }).prevented, true);
+    await tick();
+    assert.equal(h.host.fullscreen, false);
+  } finally { h.unmount(); await tick(); }
+});
+
 test("fullscreen arrows generate paced swipes in both directions and ignore repeats, overlap and cooldown", async () => {
   const h = await swipeHarness();
   try {

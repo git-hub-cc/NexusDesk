@@ -635,7 +635,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
         || imeTextRef.current || imeText || imeInput.current?.value) return;
       const target = e.target as HTMLElement;
       if (target !== canvas.current && target !== imeInput.current
-        && target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"]')) return;
+        && target.closest('input, textarea, select, button, [role="button"], [contenteditable]:not([contenteditable="false"]), [role="dialog"]')) return;
       e.preventDefault(); e.stopPropagation();
       if (!e.repeat) startGesture(e.key === " " ? "doubleTap" : e.key === "ArrowUp" ? "up" : "down");
     }}>
@@ -684,7 +684,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
       {connected && <div className="pointer-events-none absolute left-2 top-2 z-10 select-none rounded bg-black/60 px-2 py-1 font-mono text-xs tabular-nums text-white" title="每秒实际绘制的投屏帧数">
         {fps} FPS
       </div>}
-      <canvas ref={canvas} tabIndex={connected ? 0 : -1} aria-label="Android 画面，点击后可使用键盘控制"
+      <canvas ref={canvas} data-android-mirror-input="true" tabIndex={connected ? 0 : -1} aria-label="Android 画面，点击后可使用键盘控制"
         className={`${dimensions.width ? "block" : "hidden"} shrink-0 touch-none bg-black outline-none focus-visible:outline-none`}
         // Size the canvas itself to the available area so touch coordinates use
         // the same bounds as the image, including after rotation or pane resize.
@@ -751,6 +751,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
         >
         <input
           ref={imeInput}
+          data-android-mirror-input="true"
           aria-label="电脑端中文输入"
           autoComplete="off"
           className={`w-full min-w-0 bg-transparent outline-none focus:border-ide-accent ${imeText.length ? "px-1 py-1" : "p-0"}`}
