@@ -83,6 +83,7 @@ function RepositoryPanel({ root }: { root: string }) {
     const [operation, setOperation] = useState("");
     const [stage, setStage] = useState("");
     const [pending, setPending] = useState<Set<string>>(new Set());
+    const [statusUpdatedAt, setStatusUpdatedAt] = useState<Date | null>(null);
     const pendingRef = useRef(new Set<string>());
     const queue = useRef(Promise.resolve());
     const [limit, setLimit] = useState(100);
@@ -125,13 +126,16 @@ function RepositoryPanel({ root }: { root: string }) {
             useWorkspaceStore.getState().rootPath === root
                 ? useWorkspaceStore.getState().refreshTreeStatuses() : Promise.resolve(),
         ]);
-        if (mounted.current && request === statusRequest.current) setFiles(previous => {
-            const old = new Map(previous.map(f => [f.path, f]));
-            return status.map(f => {
-                const existing = old.get(f.path);
-                return existing && JSON.stringify(existing) === JSON.stringify(f) ? existing : f;
+        if (mounted.current && request === statusRequest.current) {
+            setFiles(previous => {
+                const old = new Map(previous.map(f => [f.path, f]));
+                return status.map(f => {
+                    const existing = old.get(f.path);
+                    return existing && JSON.stringify(existing) === JSON.stringify(f) ? existing : f;
+                });
             });
-        });
+            setStatusUpdatedAt(new Date());
+        }
     }, [root]);
     const refresh = useCallback(async () => {
         const exists = await gitApi.isRepository(root);
@@ -210,10 +214,10 @@ function RepositoryPanel({ root }: { root: string }) {
         const targets = candidates.filter(file => !file.conflict && !pendingRef.current.has(file.path) && file.staged !== staged);
         if (!targets.length) return;
         targets.forEach(file => pendingRef.current.add(file.path)); setPending(new Set(pendingRef.current)); setError("");
-        // Serialize index writes. Only this row shows pending state; history is untouched.
+        // 串行写入暂存区，批量操作完成后统一刷新状态。
         queue.current = queue.current.then(async () => {
             if (!mounted.current) return;
-            try { await flushPendingWrites(); for (const file of targets) await gitApi.stage(root, file.path, staged); }
+            try { await flushPendingWrites(); await gitApi.stageMany(root, targets.map(file => file.path), staged); }
             catch (e) { if (mounted.current) setError(String(e)); }
             finally {
                 try { if (mounted.current) await refreshStatus(); } catch (e) { if (mounted.current) setError(String(e)); }
@@ -393,10 +397,13 @@ function RepositoryPanel({ root }: { root: string }) {
         </div>
         {error && <p role="alert" className="text-red-400 px-2 whitespace-pre-wrap">{error}</p>}
         {notice && <p role="status" className="text-green-400 px-2">{notice}</p>}
-        {busy && <OperationProgress label={`${operation}${stage === operation ? "" : ` · ${stage}`}`} className="shrink-0 px-2 py-1" elapsedLabel="已用时" />}
-        {pending.size > 0 && <OperationProgress label={`正在更新暂存区 · 剩余 ${pending.size} 个文件`} className="shrink-0 px-2 py-1" elapsedLabel="已用时" />}
+        <div className="flex h-7 shrink-0 items-center overflow-hidden px-2 text-xs text-gray-400">
+            {busy ? <OperationProgress label={`${operation}${stage === operation ? "" : ` · ${stage}`}`} className="min-w-0 !flex-nowrap whitespace-nowrap" elapsedLabel="已用时" />
+                : pending.size > 0 ? <OperationProgress label={`正在更新暂存区 · 共 ${pending.size} 个文件`} className="min-w-0 !flex-nowrap whitespace-nowrap" elapsedLabel="已用时" />
+                    : <span role="status" className="truncate">{statusUpdatedAt ? <>暂存区状态更新于 <time dateTime={statusUpdatedAt.toISOString()} title={statusUpdatedAt.toLocaleString()} className="tabular-nums">{statusUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}</time></> : isRepository === false ? "尚未初始化 Git 仓库" : "暂存区状态尚未更新"}</span>}
+        </div>
         <div ref={columnsRef} className="flex flex-1 min-h-0 overflow-auto" style={resizing ? { cursor: "ew-resize", userSelect: "none" } : undefined}>
-            <div className="min-w-0 shrink-0 overflow-auto p-2" style={{ width: `${fileWidth}%` }}>
+            <div className="min-w-0 min-h-0 shrink-0 overflow-hidden p-2 flex flex-col" style={{ width: `${fileWidth}%` }}>
                 {revision ? loadingRevision ? <OperationProgress key={revision.id} label="正在读取提交文件" /> : <>
                     <p className="text-gray-500 mb-1">提交更改 ({revisionFiles.length}) · {revision.parents.length > 1 ? "相对第一父提交" : "相对父提交"} · 点击查看差异</p>
                     {!revisionFiles.length && <p className="text-gray-400">此提交没有文件差异</p>}
@@ -407,8 +414,8 @@ function RepositoryPanel({ root }: { root: string }) {
                         <button type="button" disabled={operationsPending} onClick={() => void initializeRepository()} className="rounded bg-ide-accent px-3 py-1.5 text-white disabled:opacity-50">{busy ? "正在初始化..." : "初始化 Git"}</button>
                     </div> : isRepository === null ? <p className="text-gray-400">正在检查 Git 状态...</p> : !error && <p className="text-gray-400">工作区干净</p>)}
                     <ContextMenu.Root open={!!contextMenuTargets} onOpenChange={open => { if (!open) setContextMenuTargets(null); }}>
-                    <ContextMenu.Trigger asChild><div>
-                    <GitFileTree files={files} onContextMenu={(_event, targets) => {
+                    <ContextMenu.Trigger asChild><div className="flex flex-1 min-h-0 flex-col">
+                    <GitFileTree rootName={root.replace(/\\/g, "/").replace(/\/$/, "").split("/").pop() || root} rootPath={root} files={files} onContextMenu={(_event, targets) => {
                         if (!operationsPending) setContextMenuTargets(targets);
                     }} selection={{ checked: file => file.staged, eligible: file => !file.conflict, pending: file => pending.has(file.path), disabled: busy, onChange: stageMany }} renderFile={(file, name) => <div className={`flex items-center gap-2 py-1 rounded cursor-pointer hover:bg-ide-tree-hover ${file.conflict ? "text-orange-400" : file.status === "新增" ? "text-green-400" : file.status === "删除" ? "text-red-400" : "text-blue-400"}`} onClick={() => void run(() => openDiff(file, !file.unstaged), false, "正在读取文件差异")}>
                         <input type="checkbox" className="shrink-0 accent-blue-500 cursor-pointer disabled:cursor-wait" onClick={event => event.stopPropagation()} aria-label={`暂存 ${file.path}`} checked={file.staged} disabled={busy || pending.has(file.path) || file.conflict} onChange={e => stageMany([file], e.currentTarget.checked)} />
@@ -430,10 +437,8 @@ function RepositoryPanel({ root }: { root: string }) {
                 <textarea ref={textareaRef} aria-label="提交说明" value={revision?.message ?? message} onChange={e => changeMessage(e.target.value)} onKeyDown={navigateMessageHistory} onPointerDown={() => setSpeechTarget({ kind: "git" })} onFocus={() => setSpeechTarget({ kind: "git" })} title="↑/↓ 切换历史提交说明（首行/末行）" disabled={busy || !!revision} placeholder={revision ? "历史预览中，返回本地后提交" : "提交说明…"} className="flex-1 min-h-12 resize-none bg-ide-bg border border-ide-panel-border p-2 focus:outline-none" />
                 <div className="flex justify-start gap-2">
                     <button className="flex w-24 shrink-0 items-center justify-center gap-1 bg-ide-accent text-white py-1 enabled:hover:brightness-110 disabled:bg-gray-700 disabled:text-gray-400 disabled:opacity-100" disabled={operationsPending || !!revision || !message.trim() || !files.some(f => f.staged) || files.some(f => f.conflict)} onClick={() => void run(async () => {
-                        // run(..., true) has flushed editor writes; update only selected index entries.
-                        for (const file of files.filter(file => file.staged && !file.conflict)) {
-                            await gitApi.stage(root, file.path, true);
-                        }
+                        // 保存编辑器内容后，仅重新暂存已勾选的文件。
+                        await gitApi.stageMany(root, files.filter(file => file.staged && !file.conflict).map(file => file.path), true);
                         const id = await gitApi.commit(root, message);
                         if (mounted.current) { changeMessage(""); setNotice(`提交成功 ${id.slice(0, 8)}`); }
                     }, true, "正在提交")}><GitCommit size={14} aria-hidden="true" />{busy && operation === "正在提交" ? "正在提交…" : "提交"}</button>

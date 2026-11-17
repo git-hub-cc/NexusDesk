@@ -233,6 +233,7 @@ export const gitApi = {
     revisionContent: (repoPath: string, commitId: string, path: string): Promise<string> => invoke("get_git_revision_content", { repoPath, commitId, path }),
     status: (repoPath: string): Promise<GitFileStatus[]> => gitStatusSnapshot(repoPath).then(snapshot => snapshot.files),
     stage: (repoPath: string, path: string, staged: boolean): Promise<void> => mutateGit("stage_git_file", { repoPath, path, staged }),
+    stageMany: (repoPath: string, paths: string[], staged: boolean): Promise<void> => mutateGit("stage_git_files", { repoPath, paths, staged }),
     commit: (repoPath: string, message: string): Promise<string> => mutateGit("commit_git", { repoPath, message }),
     log: (repoPath: string, limit = 100): Promise<GitLogEntry[]> => invoke("get_git_log", { repoPath, limit }),
     diff: (repoPath: string, path: string, staged: boolean): Promise<string> => invoke("get_git_diff", { repoPath, path, staged }),

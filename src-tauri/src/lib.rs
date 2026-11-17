@@ -403,6 +403,7 @@ pub fn run() {
             commands::git_cmds::undo_git_revert,
             commands::git_cmds::ignore_git_file,
             commands::git_cmds::stage_git_file,
+            commands::git_cmds::stage_git_files,
             commands::git_cmds::commit_git,
             commands::git_cmds::get_git_log,
             commands::git_cmds::get_git_path_history,

@@ -342,8 +342,18 @@ pub async fn get_git_status(repo_path: String) -> Result<Vec<git::FileStatus>, S
         .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-pub fn stage_git_file(repo_path: String, path: String, staged: bool) -> Result<(), String> {
-    git::stage(&repo_path, &path, staged)
+pub async fn stage_git_file(repo_path: String, path: String, staged: bool) -> Result<(), String> {
+    stage_git_files(repo_path, vec![path], staged).await
+}
+#[tauri::command]
+pub async fn stage_git_files(
+    repo_path: String,
+    paths: Vec<String>,
+    staged: bool,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || git::stage_many(&repo_path, &paths, staged))
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 pub fn commit_git(repo_path: String, message: String) -> Result<String, String> {

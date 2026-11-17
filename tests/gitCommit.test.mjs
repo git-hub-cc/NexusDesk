@@ -33,8 +33,8 @@ async function submit({ failSave = false, failStage = false } = {}) {
   const execute = new Function('gitApi', 'flushPendingWrites', 'files', 'root', 'message',
     'locked', 'pendingRef', 'mounted', 'setBusy', 'setError', 'setNotice', 'refresh', 'changeMessage', 'setOperation', 'setStage', compiled);
   await execute({
-    async stage(root, path, staged) {
-      calls.push(['stage', path, staged]);
+    async stageMany(root, paths, staged) {
+      calls.push(['stageMany', paths, staged]);
       if (failStage) throw new Error('stage failed');
       index = disk;
     },
@@ -57,7 +57,7 @@ test('commit includes flushed edits and restages only selected paths before comm
   const result = await submit();
   assert.equal(result.committed, 'latest editor content');
   assert.deepEqual(result.calls, [
-    ['save'], ['stage', 'notes/a.md', true], ['stage', 'deleted.md', true], ['commit'],
+    ['save'], ['stageMany', ['notes/a.md', 'deleted.md'], true], ['commit'],
   ]);
   assert.equal(result.error, '');
   assert.equal(result.operation, '正在提交');

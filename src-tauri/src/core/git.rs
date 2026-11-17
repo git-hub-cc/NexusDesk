@@ -275,47 +275,57 @@ pub fn tree_status(repo_path: &str) -> Result<Vec<TreeStatus>, String> {
 }
 
 pub fn stage(repo_path: &str, path: &str, staged: bool) -> Result<(), String> {
-    valid_path(path)?;
+    stage_many(repo_path, &[path.to_owned()], staged)
+}
+
+pub fn stage_many(repo_path: &str, paths: &[String], staged: bool) -> Result<(), String> {
+    let paths: std::collections::BTreeSet<&str> = paths.iter().map(String::as_str).collect();
+    for path in &paths {
+        valid_path(path)?;
+    }
+    if paths.is_empty() {
+        return Ok(());
+    }
     let repo = open(repo_path)?;
     let mut index = repo.index().map_err(|e| e.to_string())?;
-    if staged {
-        // add_path bypasses ignore rules; only allow ignored paths already in the index.
-        if index.get_path(Path::new(path), 0).is_none()
+    // 写入前校验所有路径，避免校验失败留下部分暂存结果。
+    for path in &paths {
+        let status = match repo.status_file(Path::new(path)) {
+            Ok(status) => status,
+            Err(error) if !staged && error.code() == ErrorCode::NotFound => Status::CURRENT,
+            Err(error) => return Err(error.to_string()),
+        };
+        if status.is_conflicted() {
+            return Err(format!("请先解决文件冲突：{path}"));
+        }
+        if staged
+            && index.get_path(Path::new(path), 0).is_none()
             && repo
                 .status_should_ignore(Path::new(path))
                 .map_err(|e| e.to_string())?
         {
-            return Err("此文件已被 Git 忽略，不能暂存".into());
+            return Err(format!("此文件已被 Git 忽略，不能暂存：{path}"));
         }
-        if repo
-            .status_file(Path::new(path))
-            .map_err(|e| e.to_string())?
-            .is_conflicted()
-        {
-            return Err("请先解决文件冲突".into());
-        }
-        if repo
-            .workdir()
-            .ok_or("Bare repository")?
-            .join(path)
-            .symlink_metadata()
-            .is_ok()
-        {
+    }
+    if !staged {
+        let parent = match repo.head() {
+            Ok(head) => Some(head.peel_to_commit().map_err(|e| e.to_string())?),
+            Err(e) if matches!(e.code(), ErrorCode::UnbornBranch | ErrorCode::NotFound) => None,
+            Err(e) => return Err(e.to_string()),
+        };
+        return repo
+            .reset_default(parent.as_ref().map(|c| c.as_object()), paths.iter())
+            .map_err(|e| e.to_string());
+    }
+    let workdir = repo.workdir().ok_or("Bare repository")?;
+    for path in paths {
+        if workdir.join(path).symlink_metadata().is_ok() {
             index.add_path(Path::new(path)).map_err(|e| e.to_string())?;
         } else {
             index
                 .remove_path(Path::new(path))
                 .map_err(|e| e.to_string())?;
         }
-    } else {
-        let parent = match repo.head() {
-            Ok(head) => Some(head.peel_to_commit().map_err(|e| e.to_string())?),
-            Err(e) if matches!(e.code(), ErrorCode::UnbornBranch | ErrorCode::NotFound) => None,
-            Err(e) => return Err(e.to_string()),
-        };
-        repo.reset_default(parent.as_ref().map(|c| c.as_object()), [path])
-            .map_err(|e| e.to_string())?;
-        return Ok(());
     }
     index.write().map_err(|e| e.to_string())
 }
@@ -1110,6 +1120,111 @@ mod tests {
             let _ = std::fs::remove_dir_all(&self.0);
         }
     }
+    #[test]
+    fn batch_stage_handles_unborn_head_duplicates_deletions_and_partial_edits() {
+        let f = Fixture::new();
+        f.write("first");
+        std::fs::write(f.0.join("other.md"), "other").unwrap();
+        let paths = vec![
+            "note.md".to_owned(),
+            "other.md".to_owned(),
+            "note.md".to_owned(),
+        ];
+        stage_many(f.path(), &paths, true).unwrap();
+        assert!(get_status(f.path()).unwrap().iter().all(|file| file.staged));
+        stage_many(f.path(), &paths, false).unwrap();
+        assert!(
+            get_status(f.path())
+                .unwrap()
+                .iter()
+                .all(|file| !file.staged)
+        );
+        stage_many(f.path(), &paths, true).unwrap();
+        commit(f.path(), "initial").unwrap();
+        f.write("second");
+        std::fs::remove_file(f.0.join("other.md")).unwrap();
+        stage_many(f.path(), &paths, true).unwrap();
+        f.write("third");
+        let files = get_status(f.path()).unwrap();
+        let note = files.iter().find(|file| file.path == "note.md").unwrap();
+        assert!(note.staged && note.unstaged);
+        assert!(
+            files
+                .iter()
+                .find(|file| file.path == "other.md")
+                .unwrap()
+                .staged
+        );
+        stage_many(f.path(), &paths, false).unwrap();
+        assert!(
+            get_status(f.path())
+                .unwrap()
+                .iter()
+                .all(|file| !file.staged)
+        );
+        assert_eq!(
+            std::fs::read_to_string(f.0.join("note.md")).unwrap(),
+            "third"
+        );
+        assert!(!f.0.join("other.md").exists());
+    }
+
+    #[test]
+    fn batch_stage_validates_before_writing_and_preserves_other_staged_files() {
+        let f = Fixture::new();
+        f.write("note");
+        std::fs::write(f.0.join("keep.md"), "keep").unwrap();
+        std::fs::write(f.0.join(".gitignore"), "*.tmp\n").unwrap();
+        std::fs::write(f.0.join("ignored.tmp"), "ignored").unwrap();
+        stage(f.path(), "keep.md", true).unwrap();
+        for invalid in ["ignored.tmp", "../outside", ".git/config"] {
+            assert!(stage_many(f.path(), &["note.md".into(), invalid.into()], true).is_err());
+            let repo = open(f.path()).unwrap();
+            let index = repo.index().unwrap();
+            assert!(index.get_path(Path::new("note.md"), 0).is_none());
+            assert!(index.get_path(Path::new("keep.md"), 0).is_some());
+        }
+        stage_many(f.path(), &["note.md".into()], true).unwrap();
+        stage_many(f.path(), &["note.md".into()], false).unwrap();
+        let repo = open(f.path()).unwrap();
+        assert!(
+            repo.index()
+                .unwrap()
+                .get_path(Path::new("keep.md"), 0)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn batch_stage_rejects_conflicts_without_staging_other_paths() {
+        let f = Fixture::new();
+        f.write("base");
+        stage(f.path(), "note.md", true).unwrap();
+        commit(f.path(), "initial").unwrap();
+        let repo = open(f.path()).unwrap();
+        let mut index = repo.index().unwrap();
+        let entries: Vec<_> = (1..=3)
+            .map(|stage| {
+                let mut entry = index.get_path(Path::new("note.md"), 0).unwrap();
+                entry.flags = (entry.flags & !0x3000) | (stage << 12);
+                entry
+            })
+            .collect();
+        index.remove_path(Path::new("note.md")).unwrap();
+        for entry in entries {
+            index.add(&entry).unwrap();
+        }
+        index.write().unwrap();
+        assert!(index.has_conflicts());
+        std::fs::write(f.0.join("a.md"), "new").unwrap();
+        for staged in [true, false] {
+            assert!(stage_many(f.path(), &["a.md".into(), "note.md".into()], staged).is_err());
+        }
+        let index = repo.index().unwrap();
+        assert!(index.has_conflicts());
+        assert!(index.get_path(Path::new("a.md"), 0).is_none());
+    }
+
     #[test]
     fn path_history_filters_before_limiting_and_respects_directory_boundaries() {
         let f = Fixture::new();
