@@ -6,7 +6,7 @@ import { FileIcon } from "@/components/explorer/FileIcon";
 import { CreateNameDialog, validateEntryName } from "@/components/explorer/CreateNameDialog";
 import { activateTreeFile, selectTreeNode } from "@/components/explorer/treeInteraction";
 import { useDeleteConfirmation } from "@/components/explorer/useDeleteConfirmation";
-import { isImage } from "@/utils/assets";
+import { isImage, isVideo } from "@/utils/assets";
 import { useElementSize } from "@/hooks/useElementSize";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { flushPendingWrites } from "@/stores/workspaceStore";
@@ -190,6 +190,10 @@ export function AndroidFileManager({ serial, onClose }: { serial: string; onClos
     });
   };
   const preview = (entry: Entry) => run(async () => {
+    if (isVideo(entry.path)) {
+      setError("不支持视频加载");
+      return;
+    }
     const content = await invoke<string>(isImage(entry.path) && !/\.svg$/i.test(entry.path) ? "mirror_read_image" : "mirror_read_file", { serial, path: entry.path });
     if (!alive.current) return;
     useWorkspaceStore.getState().openTab({ id: `android:${serial}:${entry.path}`, path: `android://${serial}${entry.path}`, title: entry.name, content, readOnly: true, isExternal: true });
