@@ -4,10 +4,15 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ArrowLeft, House, Square, Power, RefreshCw, Smartphone, Maximize, Minimize, FolderOpen } from "lucide-react";
 import { MirrorAudio } from "./mirrorAudio";
+import { MirrorVideoMetrics, TimingSamples, readMirrorVideoPacket } from "./mirrorVideoMetrics";
 import { AndroidFileManager } from "./AndroidFileManager";
 
 type Device = { serial: string; status: string; model: string };
-type Connection = { id: string; serial: string; startup?: Promise<unknown>; decoder?: VideoDecoder; worker?: Worker; audio?: MirrorAudio; config: Uint8Array; waiting: boolean; ended: boolean; queue: Promise<unknown>; statsTimer: ReturnType<typeof setInterval> | 0; stats: { packets: number; bytes: number; config: number; key: number; delta: number; waitingDrop: number; queueReset: number; submitted: number; output: number } };
+type Connection = { id: string; serial: string; startup?: Promise<unknown>; decoder?: VideoDecoder; worker?: Worker; audio?: MirrorAudio; config: Uint8Array; waiting: boolean; ended: boolean; queue: Promise<unknown>; statsTimer: ReturnType<typeof setInterval> | 0 };
+
+function emptyReceiveStats() {
+  return { packets: 0, bytes: 0, config: 0, key: 0, delta: 0, waitingDrop: 0, forwarded: 0, audioPackets: 0 };
+}
 type Gesture = { connection: Connection; width: number; height: number; x: number; y: number; pressed: boolean; timer?: ReturnType<typeof setTimeout> };
 
 function touchMessage(x: number, y: number, width: number, height: number, action: number): Uint8Array {
@@ -42,6 +47,9 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
   const [devices, setDevices] = useState<Device[]>([]);
   const [serial, setSerial] = useState("");
   const [maxSize, setMaxSize] = useGlobalPreference<number>("nexusdesk.android.maxSize", value => value === 720 || value === 1440 ? value : 1080);
+  const [videoTransport, setVideoTransport] = useGlobalPreference<"auto" | "ipc">(
+    "nexusdesk.android.videoTransport", value => value === "ipc" ? "ipc" : "auto",
+  );
   const [status, setStatus] = useState<"idle" | "connecting" | "connected" | "stopping">("idle");
   const [error, setError] = useState("");
   const [audioStatus, setAudioStatus] = useState("");
@@ -159,7 +167,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
       current.ended = true;
       clearInterval(current.statsTimer);
       if (current.decoder && current.decoder.state !== "closed") current.decoder.close();
-      current.worker?.postMessage({ type: "stop" });
+      current.worker?.postMessage({ type: "stop", id: current.id });
       const audioClosed = current.audio?.close();
       console.info("[android-mirror] disconnect requested", { id: current.id, disposeWorker });
       // 先取消正在启动的会话，再等待启动返回并兜底停止，防止停止命令早于会话注册。
@@ -225,7 +233,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
   }, [active, status]);
 
   useEffect(() => {
-    if (!active || status !== "connected") return;
+    if (!active || status !== "connected" || connection.current?.worker) return;
     frameRate.current = { frames: 0, started: performance.now() };
     const timer = setInterval(() => {
       const now = performance.now();
@@ -316,6 +324,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
       const current = connection.current;
       if (current) {
         current.waiting = true;
+        current.worker?.postMessage({ type: "visible", id: current.id, visible: visible.current });
         void invoke("mirror_visible", { id: current.id, visible: visible.current }).catch(() => {});
       }
       if (!visible.current && pointer.current !== null) releasePointer();
@@ -331,7 +340,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
       console.info("[android-mirror] connect ignored", { serialSelected: Boolean(serial), connectionActive: Boolean(connection.current), stopping: Boolean(stopping.current) });
       return;
     }
-    console.info("[android-mirror] connect requested", { serial, maxSize });
+    console.info("[android-mirror] connect requested", { serial, maxSize, videoTransport });
     if (!("VideoDecoder" in window)) {
       const reason = "当前 WebView 不支持 WebCodecs，请更新 WebView2 Runtime。";
       console.error("[android-mirror] connect unavailable", reason);
@@ -348,6 +357,12 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
     };
     let decoder: VideoDecoder | undefined;
     let worker: Worker | undefined;
+    const decoderMetrics = new MirrorVideoMetrics();
+    const ipcMs = new TimingSamples();
+    const videoHandlerMs = new TimingSamples();
+    const audioHandlerMs = new TimingSamples();
+    let receiveStats = emptyReceiveStats();
+    let congestedAt: number | undefined;
     try {
       const targetCanvas = canvas.current;
       const canUseWorker = Boolean(mirrorWorker.current || (targetCanvas && typeof Worker !== "undefined" && typeof OffscreenCanvas !== "undefined" && "transferControlToOffscreen" in targetCanvas));
@@ -361,9 +376,18 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
           mirrorWorker.current = worker;
         }
         worker.onmessage = event => {
-          if (connection.current?.id !== id) return;
+          if (connection.current?.id !== id || (event.data.id && event.data.id !== id)) return;
           if (event.data.type === "dimensions") setDimensions({ width: event.data.width, height: event.data.height });
-          else if (event.data.type === "frame") { frameRate.current.frames++; current.stats.output++; }
+          else if (event.data.type === "stats" && event.data.id === id) {
+            const { type: _type, endedAt, ...stats } = event.data;
+            if (visible.current && stats.visible && stats.windowMs > 0) {
+              setFps(Math.round(stats.drawn * 1000 / stats.windowMs));
+            }
+            console.info("[android-mirror] video worker", {
+              ...stats, endedAtMs: Math.round(endedAt),
+              statsDeliveryMs: Math.max(0, Math.round(performance.timeOrigin + performance.now() - endedAt)),
+            });
+          }
           else if (event.data.type === "error") fail(event.data.message);
         };
       } else decoder = new VideoDecoder({
@@ -371,6 +395,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
           try {
             const target = canvas.current;
             if (!target || !visible.current || connection.current?.id !== id) return;
+            decoderMetrics.output(frame.timestamp, performance.now());
             if (target.width !== frame.displayWidth || target.height !== frame.displayHeight) {
               target.width = frame.displayWidth; target.height = frame.displayHeight;
             }
@@ -381,9 +406,10 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
               ? previous : { width, height });
             const context = target.getContext("2d");
             if (context) {
+              const drawStarted = performance.now();
               context.drawImage(frame, 0, 0);
+              decoderMetrics.drew(drawStarted, performance.now());
               frameRate.current.frames++;
-              current.stats.output++;
             }
           } finally { frame.close(); }
         },
@@ -395,13 +421,22 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
       setError(String(reason));
       return;
     }
-    const current: Connection = { id, serial, decoder, worker, config: new Uint8Array(), waiting: true, ended: false, queue: Promise.resolve(), statsTimer: 0, stats: { packets: 0, bytes: 0, config: 0, key: 0, delta: 0, waitingDrop: 0, queueReset: 0, submitted: 0, output: 0 } };
+    const current: Connection = { id, serial, decoder, worker, config: new Uint8Array(), waiting: true, ended: false, queue: Promise.resolve(), statsTimer: 0 };
     connection.current = current;
+    worker?.postMessage({ type: "start", id, visible: visible.current });
+    let statsStarted = performance.now();
     current.statsTimer = setInterval(() => {
       if (current.ended || connection.current !== current) return;
-      const s = current.stats;
-      console.info("[android-mirror] video", { packets: s.packets, bytes: s.bytes, config: s.config, key: s.key, delta: s.delta, waitingDrop: s.waitingDrop, queueReset: s.queueReset, submitted: s.submitted, output: s.output, decoderQueue: decoder?.decodeQueueSize ?? 0, visible: visible.current });
-      current.stats = { packets: 0, bytes: 0, config: 0, key: 0, delta: 0, waitingDrop: 0, queueReset: 0, submitted: 0, output: 0 };
+      const now = performance.now();
+      const windowMs = Math.round(now - statsStarted);
+      statsStarted = now;
+      console.info("[android-mirror] video page", {
+        id, endedAtMs: Date.now(), windowMs, timerLagMs: Math.max(0, windowMs - 1000),
+        path: worker ? "worker" : "main", visible: visible.current, ...receiveStats,
+        rustToPageMs: ipcMs.take(), videoHandlerMs: videoHandlerMs.take(), audioHandlerMs: audioHandlerMs.take(),
+        ...(decoder && { decoderQueue: decoder.decodeQueueSize, decode: decoderMetrics.take() }),
+      });
+      receiveStats = emptyReceiveStats();
     }, 1000);
     const audioFailed = (reason: string) => {
       if (current.ended || connection.current !== current) return;
@@ -431,64 +466,91 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
         return;
       }
       if (!current.audio) return;
+      const started = performance.now();
+      receiveStats.audioPackets++;
       try {
         current.audio.play(buffer);
         setAudioStatus("声音由电脑播放");
       } catch (reason) { audioFailed(String(reason)); }
+      finally { audioHandlerMs.add(performance.now() - started); }
     };
+    const videoEndpoint = worker && videoTransport === "auto" ? new Channel<string>() : undefined;
+    if (videoEndpoint) {
+      videoEndpoint.onmessage = url => {
+        if (!current.ended && connection.current === current) worker?.postMessage({ type: "socket", id, url });
+      };
+    }
     const channel = new Channel<ArrayBuffer>();
     channel.onmessage = buffer => {
       if (current.ended || connection.current !== current) return;
-      const packet = new Uint8Array(buffer);
-      current.stats.packets++;
-      current.stats.bytes += packet.byteLength;
-      if (!packet.length) { fail("设备连接已断开，请检查 USB 连接后重试。"); return; }
-      if (packet.length < 12) { fail("无效的 scrcpy 视频数据"); return; }
-      const config = (packet[0] & 0x80) !== 0;
-      const key = (packet[0] & 0x40) !== 0;
-      const data = packet.subarray(12);
+      const receivedAt = performance.now();
+      const receivedAtMs = Date.now();
       try {
+        if (!buffer.byteLength) { fail("设备连接已断开，请检查 USB 连接后重试。"); return; }
+        const { config, key, data, timestamp, sentAtMs, packetSize } = readMirrorVideoPacket(buffer);
+        if (sentAtMs > 0) ipcMs.add(receivedAtMs - sentAtMs);
+        receiveStats.packets++;
+        receiveStats.bytes += packetSize;
+        if (worker) {
+          if (config) receiveStats.config++;
+          else if (key) receiveStats.key++;
+          else receiveStats.delta++;
+          const forwardedAt = performance.timeOrigin + performance.now();
+          worker.postMessage({ type: "packet", id, forwardedAt, data: buffer }, [buffer]);
+          receiveStats.forwarded++;
+          return;
+        }
         if (config) {
-          current.stats.config++;
+          receiveStats.config++;
           current.config = data.slice();
           const codec = codecFromConfig(data);
           if (!codec) throw new Error("无法读取 H.264 编码参数");
-          if (current.worker) {
-            const configData = current.config.slice();
-            current.worker.postMessage({ type: "config", data: configData.buffer }, [configData.buffer]);
-          }
-          else decoder?.configure({ codec, optimizeForLatency: true });
+          decoderMetrics.clearPending();
+          decoder?.configure({ codec, optimizeForLatency: true });
+          congestedAt = undefined;
           current.waiting = true;
           return;
         }
-        if (!visible.current || (!current.worker && decoder?.state !== "configured")) { current.waiting = true; return; }
-        if (!current.worker && decoder && decoder.decodeQueueSize > 3) {
-          current.stats.queueReset++;
+        if (!visible.current || decoder?.state !== "configured") { current.waiting = true; return; }
+        const queued = decoder.decodeQueueSize;
+        decoderMetrics.queue(queued);
+        congestedAt = queued > 3 ? congestedAt ?? receivedAt : undefined;
+        const stale = sentAtMs > 0 && receivedAtMs - sentAtMs > 120;
+        if (!current.waiting && (stale || queued >= 8 || (congestedAt !== undefined && receivedAt - congestedAt >= 80))) {
+          decoderMetrics.resetForOverload(receivedAt);
           decoder.reset();
           const codec = codecFromConfig(current.config);
           if (codec) decoder.configure({ codec, optimizeForLatency: true });
           current.waiting = true;
+          congestedAt = undefined;
         }
-        if (current.waiting && !key) { current.stats.waitingDrop++; return; }
-        if (key) current.stats.key++; else current.stats.delta++;
+        if (stale) {
+          receiveStats.waitingDrop++;
+          decoderMetrics.waitingDrop();
+          return;
+        }
+        if (current.waiting && !key) {
+          receiveStats.waitingDrop++;
+          decoderMetrics.waitingDrop();
+          return;
+        }
+        if (key) receiveStats.key++; else receiveStats.delta++;
         const payload = key ? new Uint8Array(current.config.length + data.length) : data;
         if (key) { payload.set(current.config); payload.set(data, current.config.length); }
-        const view = new DataView(buffer);
-        const timestamp = (view.getUint32(0) & 0x3fffffff) * 4294967296 + view.getUint32(4);
-        if (current.worker) {
-          const packetData = data.slice();
-          current.worker.postMessage({ type: "packet", key, timestamp, data: packetData.buffer }, [packetData.buffer]);
-        } else decoder?.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp, data: payload }));
-        current.stats.submitted++;
+        const chunk = new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp, data: payload });
+        decoderMetrics.submit(timestamp, performance.now());
+        decoder.decode(chunk);
+        decoderMetrics.queue(decoder.decodeQueueSize);
         current.waiting = false;
       } catch (reason) { fail(reason); }
+      finally { videoHandlerMs.add(performance.now() - receivedAt); }
     };
     try {
       console.info("[android-mirror] waiting for audio initialization", { id, serial });
       await audioReady;
       if (current.ended || connection.current !== current) return;
       console.info("[android-mirror] invoking mirror_start", { id, serial, maxSize });
-      current.startup = invoke("mirror_start", { id, serial, maxSize, channel, audioChannel });
+      current.startup = invoke("mirror_start", { id, serial, maxSize, channel, audioChannel, videoEndpoint });
       await current.startup;
       // A tab can close or disconnect while adb is still starting.
       if (current.ended || connection.current !== current) return;
@@ -656,6 +718,10 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
       {serial && !serial.includes(":") && <button type="button" disabled={status !== "idle" || wifiBusy || devices.find(device => device.serial === serial)?.status !== "device"} onClick={() => void connectWifi()}>{wifiBusy ? "正在切换…" : "切换到 Wi-Fi"}</button>}
       <select aria-label="投屏最长边像素" title="最长边像素，断开后可调整" className="rounded bg-ide-bg p-1 text-xs" value={maxSize} disabled={status !== "idle"} onChange={e => setMaxSize(Number(e.target.value))}>
         {[720, 1080, 1440].map(size => <option key={size} value={size}>{size}px</option>)}
+      </select>
+      <select aria-label="投屏视频传输" title="视频传输方式，断开后可调整" className="rounded bg-ide-bg p-1 text-xs" value={videoTransport} disabled={status !== "idle"} onChange={e => setVideoTransport(e.target.value === "ipc" ? "ipc" : "auto")}>
+        <option value="auto">自动直连</option>
+        <option value="ipc">兼容模式</option>
       </select>
       <button disabled={status === "stopping" || (status === "idle" && !serial)} onClick={() => status === "idle" ? void connect() : disconnect()}>
         {status === "stopping" ? "正在断开…" : status === "connecting" ? "取消连接" : connected ? "断开" : "连接"}

@@ -39,6 +39,8 @@ rusqlite = { version = "0.31.0", features = ["bundled"] }
 git2 = "0.18.3"
 notify = "6.1.1"
 tokio = { version = "1.37.0", features = ["full"] }
+tokio-tungstenite = "0.29"
+uuid = { version = "1", features = ["v4"] }
 dirs = "5.0.1"
 serde_yaml = "0.9"
 gray_matter = "0.2.6"

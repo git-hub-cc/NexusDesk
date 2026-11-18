@@ -1,5 +1,7 @@
 //! scrcpy 5.0.0+ 协议，统一转换为前端数据包格式。
 use super::mirror_display_power::DisplayWakeLock;
+#[path = "mirror_video_socket.rs"]
+mod video_socket;
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read, Write},
@@ -11,9 +13,10 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::ipc::{Channel, Response};
+use tauri::ipc::{Channel, JavaScriptChannelId, Response};
+use video_socket::VideoSocket;
 
 fn validate_version(version: &str) -> Result<(), String> {
     let mut parts = version.split('.');
@@ -981,6 +984,7 @@ fn start(
     max_size: u32,
     channel: Channel<Response>,
     audio_channel: Channel<Response>,
+    mut direct: Option<VideoSocket>,
 ) -> Result<(), String> {
     let (server, version) = server_tools()?;
     let adb_path = resolve_adb();
@@ -1169,35 +1173,107 @@ fn start(
             let mut bytes = 0u64;
             let mut sent = 0u64;
             let mut hidden = 0u64;
-            let mut read_ms = 0u64;
+            let mut read_time = Duration::ZERO;
+            let mut max_read_time = Duration::ZERO;
+            let mut max_send_time = Duration::ZERO;
+            let mut last_pts = None;
+            let mut pts_samples = 0u64;
+            let mut pts_total_us = 0u64;
+            let mut pts_min_us = u64::MAX;
+            let mut pts_max_us = 0u64;
+            let mut direct_dropped = 0;
             let result = (|| -> Result<(), String> {
                 loop {
                     let read_started = Instant::now();
-                    let packet = read_packet(&mut video)?;
-                    read_ms += read_started.elapsed().as_millis() as u64;
+                    let mut packet = read_packet_with_spare(&mut video, 8)?;
+                    let elapsed = read_started.elapsed();
+                    read_time += elapsed;
+                    max_read_time = max_read_time.max(elapsed);
                     packets += 1;
                     bytes += packet.len() as u64;
-                    if packet[0] & 0x80 != 0 {
+                    let is_config = packet[0] & 0x80 != 0;
+                    if is_config {
                         config = packet.clone();
+                        last_pts = None;
+                    } else {
+                        let pts = u64::from_be_bytes(packet[..8].try_into().unwrap()) & ((1 << 62) - 1);
+                        if let Some(previous) = last_pts.filter(|&previous| previous < pts) {
+                            let gap = pts - previous;
+                            pts_samples += 1;
+                            pts_total_us += gap;
+                            pts_min_us = pts_min_us.min(gap);
+                            pts_max_us = pts_max_us.max(gap);
+                        }
+                        last_pts = Some(pts);
                     }
                     let visible = session.visible.load(Ordering::Acquire);
                     if visible {
-                        if !was_visible && !config.is_empty() {
-                            channel
-                                .send(Response::new(config.clone()))
-                                .map_err(|e| e.to_string())?;
+                        let mut ipc_packet = Some(packet);
+                        if let Some(socket) = &direct {
+                            packet = ipc_packet.take().unwrap();
+                            if is_config {
+                                socket.discard();
+                            } else {
+                                let started = Instant::now();
+                                stamp_video_packet(&mut packet);
+                                match socket.push(packet, &config) {
+                                    Ok(queued) => sent += u64::from(queued),
+                                    Err(mut returned) => {
+                                        returned.truncate(returned.len() - 8);
+                                        ipc_packet = Some(returned);
+                                        was_visible = false;
+                                        direct_dropped = socket.dropped();
+                                        direct = None;
+                                    }
+                                }
+                                max_send_time = max_send_time.max(started.elapsed());
+                            }
                         }
-                        channel
-                            .send(Response::new(packet))
-                            .map_err(|e| e.to_string())?;
-                        sent += 1;
+                        if let Some(packet) = ipc_packet {
+                            if !was_visible && !is_config && !config.is_empty() {
+                                max_send_time =
+                                    max_send_time.max(send_video_packet(&channel, config.clone())?);
+                                sent += 1;
+                            }
+                            max_send_time = max_send_time.max(send_video_packet(&channel, packet)?);
+                            sent += 1;
+                        }
                     } else {
                         hidden += 1;
+                        if was_visible {
+                            if let Some(socket) = &direct {
+                                socket.discard();
+                            }
+                        }
                     }
                     if stats_started.elapsed() >= Duration::from_secs(1) {
-                        log::info!(target: "android_mirror", "video serial={} packets={} sent={} hidden={} bytes={} avg_read_ms={:.1} visible={}", session.serial, packets, sent, hidden, bytes, read_ms as f64 / packets.max(1) as f64, visible);
+                        let transport = if let Some(socket) = &direct {
+                            direct_dropped = socket.dropped();
+                            "socket"
+                        } else {
+                            "ipc"
+                        };
+                        log::info!(target: "android_mirror",
+                            "video upstream id={} window_ms={} transport={transport} packets={packets} sent={sent} hidden={hidden} bytes={bytes} avg_read_ms={:.2} max_read_ms={:.2} max_send_ms={:.2} socket_dropped_total={direct_dropped} pts_samples={pts_samples} pts_avg_ms={:.2} pts_min_ms={:.2} pts_max_ms={:.2} visible={visible}",
+                            session.id, stats_started.elapsed().as_millis(),
+                            read_time.as_secs_f64() * 1000.0 / packets as f64,
+                            max_read_time.as_secs_f64() * 1000.0,
+                            max_send_time.as_secs_f64() * 1000.0,
+                            pts_total_us as f64 / pts_samples.max(1) as f64 / 1000.0,
+                            if pts_samples == 0 { 0.0 } else { pts_min_us as f64 / 1000.0 },
+                            pts_max_us as f64 / 1000.0);
                         stats_started = Instant::now();
-                        packets = 0; bytes = 0; sent = 0; hidden = 0; read_ms = 0;
+                        packets = 0;
+                        bytes = 0;
+                        sent = 0;
+                        hidden = 0;
+                        read_time = Duration::ZERO;
+                        max_read_time = Duration::ZERO;
+                        max_send_time = Duration::ZERO;
+                        pts_samples = 0;
+                        pts_total_us = 0;
+                        pts_min_us = u64::MAX;
+                        pts_max_us = 0;
                     }
                     was_visible = visible;
                 }
@@ -1215,6 +1291,23 @@ fn start(
     remove.args(["-s", &session.serial, "shell", "rm", "-f", &remote]);
     let _ = output(remove);
     result
+}
+
+fn send_video_packet(channel: &Channel<Response>, mut packet: Vec<u8>) -> Result<Duration, String> {
+    let started = Instant::now();
+    stamp_video_packet(&mut packet);
+    channel
+        .send(Response::new(packet))
+        .map_err(|e| e.to_string())?;
+    Ok(started.elapsed())
+}
+
+fn stamp_video_packet(packet: &mut Vec<u8>) {
+    // 在 scrcpy 负载之后附加发送时间，用于测量本机 IPC 延迟。
+    let sent_at_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as u64);
+    packet.extend_from_slice(&sent_at_ms.to_be_bytes());
 }
 
 fn read_audio_header(reader: &mut impl Read) -> Result<(), String> {
@@ -1238,6 +1331,10 @@ fn read_audio_packet(reader: &mut impl Read) -> Result<Vec<u8>, String> {
 }
 
 fn read_packet(reader: &mut impl Read) -> Result<Vec<u8>, String> {
+    read_packet_with_spare(reader, 0)
+}
+
+fn read_packet_with_spare(reader: &mut impl Read, spare: usize) -> Result<Vec<u8>, String> {
     let mut header = [0; 12];
     loop {
         reader.read_exact(&mut header).map_err(|e| e.to_string())?;
@@ -1257,7 +1354,7 @@ fn read_packet(reader: &mut impl Read) -> Result<Vec<u8>, String> {
     if size > 16 * 1024 * 1024 {
         return Err("scrcpy 视频包过大".into());
     }
-    let mut packet = Vec::with_capacity(12 + size);
+    let mut packet = Vec::with_capacity(12 + size + spare);
     packet.extend_from_slice(&header);
     packet.resize(12 + size, 0);
     reader
@@ -1269,12 +1366,14 @@ fn read_packet(reader: &mut impl Read) -> Result<Vec<u8>, String> {
 #[tauri::command]
 pub async fn mirror_start(
     window: tauri::Window,
+    webview: tauri::Webview,
     state: tauri::State<'_, MirrorState>,
     id: String,
     serial: String,
     max_size: u32,
     channel: Channel<Response>,
     audio_channel: Channel<Response>,
+    video_endpoint: Option<JavaScriptChannelId>,
 ) -> Result<(), String> {
     log::info!(target: "android_mirror", "connect request id={id} window={} serial={} max_size={max_size}", window.label(), serial);
     if serial.is_empty()
@@ -1286,9 +1385,24 @@ pub async fn mirror_start(
     }
     let sessions = state.0.clone();
     let (session, previous) = state.reserve(window.label(), &id, serial)?;
+    let direct = if let (Some(endpoint), Ok(url)) = (video_endpoint, webview.url()) {
+        match VideoSocket::bind(id.clone(), url.origin().ascii_serialization()).await {
+            Ok((socket, address)) => endpoint
+                .channel_on(webview)
+                .send(address)
+                .ok()
+                .map(|()| socket),
+            Err(error) => {
+                log::warn!(target: "android_mirror", "video socket unavailable id={id}: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
     tauri::async_runtime::spawn_blocking(move || {
         let started = Instant::now();
-        let result = session.initialize(&previous, || start(&session, max_size, channel, audio_channel));
+        let result = session.initialize(&previous, || start(&session, max_size, channel, audio_channel, direct));
         match &result {
             Ok(()) => log::info!(target: "android_mirror", "connect worker initialized id={id} serial={} elapsed_ms={}", session.serial, started.elapsed().as_millis()),
             Err(error) => log::error!(target: "android_mirror", "connect worker failed id={id} serial={} error={error}", session.serial),
@@ -1770,7 +1884,7 @@ mod tests {
             }
             Ok(())
         });
-        let started = start(&session, 720, channel, audio_channel);
+        let started = start(&session, 720, channel, audio_channel, None);
         let frame = if started.is_ok() {
             receiver.recv_timeout(Duration::from_secs(10)).ok()
         } else {

@@ -8,6 +8,7 @@ const compile = path => ts.transpileModule(readFileSync(new URL(path, import.met
   compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React },
 }).outputText;
 const React = { createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }) };
+const metrics = new Function(`${compile("../src/components/editor/mirrorVideoMetrics.ts")}\nreturn { MirrorVideoMetrics, TimingSamples, readMirrorVideoPacket };`)();
 const flatten = node => Array.isArray(node) ? node.flatMap(flatten)
   : node && typeof node === "object" ? [node, ...flatten(node.children)] : [];
 
@@ -66,6 +67,7 @@ function harness({ delayedStart = false, delayedStop = false, delayedAudioClose 
   const screenOff = delayedScreenOff ? new Promise(resolve => { releaseScreenOff = resolve; }) : Promise.resolve();
   const key = delayedKey ? new Promise(resolve => { releaseKey = resolve; }) : Promise.resolve();
   const bindings = {
+    ...metrics,
     React, TextEncoder, crypto, document, performance: { now: () => now }, getCurrentWindow: () => host,
     MirrorAudio: class { async resume() {} play() {} close() { return audioClose; } },
     setInterval: callback => { timers.add(callback); return callback; },
@@ -120,11 +122,12 @@ function harness({ delayedStart = false, delayedStop = false, delayedAudioClose 
     for (const effect of effects) if (effect.pending) { effect.cleanup?.(); effect.pending = false; effect.cleanup = effect.callback(); }
     return flatten(tree);
   };
-  const packet = (flags, bytes) => {
-    const buffer = new ArrayBuffer(12 + bytes.length);
+  const packet = (flags, bytes, sentAtMs) => {
+    const buffer = new ArrayBuffer(12 + bytes.length + (sentAtMs === undefined ? 0 : 8));
     new DataView(buffer).setBigUint64(0, BigInt(flags) << 56n | 123n);
     new DataView(buffer).setUint32(8, bytes.length);
     new Uint8Array(buffer).set(bytes, 12);
+    if (sentAtMs !== undefined) new DataView(buffer).setBigUint64(12 + bytes.length, BigInt(sentAtMs));
     currentChannel.onmessage(buffer);
   };
   return { render, calls, decoders, canvas, drawnFrames, releaseStart, releaseStop, releaseAudioClose, releaseScreenOff, releaseKey, packet, document, host, fullscreenCalls,
@@ -744,11 +747,14 @@ test("closing a tab during startup still stops the late session without updating
 
 test("H.264 config, keyframe recovery, background skipping and pointer coordinates follow the scrcpy protocol", async () => {
   const h = harness(); h.render(); await tick(); connect(h.render()); await tick();
-  h.packet(0x80, [0, 0, 0, 1, 0x67, 0x42, 0, 0x1e, 0, 0, 1, 0x68, 1]);
+  const config = [0, 0, 0, 1, 0x67, 0x42, 0, 0x1e, 0, 0, 1, 0x68, 1];
+  const key = [0, 0, 1, 0x65];
+  h.packet(0x80, config, Date.now());
   assert.equal(h.decoders[0].config.codec, "avc1.42001e");
   h.packet(0, [0, 0, 1, 0x61]); assert.equal(h.decoders[0].chunks.length, 0);
-  h.packet(0x40, [0, 0, 1, 0x65]); assert.equal(h.decoders[0].chunks.length, 1);
+  h.packet(0x40, key, Date.now()); assert.equal(h.decoders[0].chunks.length, 1);
   assert.equal(h.decoders[0].chunks[0].timestamp, 123);
+  assert.deepEqual([...h.decoders[0].chunks[0].data], [...config, ...key]);
   h.render(false); h.packet(0x40, [0, 0, 1, 0x65]); assert.equal(h.decoders[0].chunks.length, 1);
   const canvas = h.render().find(node => node.type === "canvas");
   const target = { width: 1080, height: 1920, focus() {}, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 10, top: 20, width: 270, height: 480 }) };
@@ -766,4 +772,87 @@ test("H.264 config, keyframe recovery, background skipping and pointer coordinat
   assert.deepEqual(h.calls.filter(call => call.command === "mirror_control" && call.args.data[0] === 0)
     .map(call => [call.args.data[1], new DataView(Uint8Array.from(call.args.data).buffer).getUint32(2)]), [[0, 4], [1, 4]]);
   h.unmount();
+});
+
+test("the worker reports packet delay and time from an overload reset to the first new drawing", () => {
+  const messages = [];
+  const decoders = [];
+  let now = 0, report;
+  const bindings = {
+    ...metrics,
+    self: { postMessage: message => messages.push(message) },
+    WebSocket: class {
+      constructor(url) { this.url = url; bindings.socket = this; }
+      send(value) { this.sent = value; }
+      close() { this.closed = true; }
+    },
+    performance: { timeOrigin: 1000, now: () => now },
+    setInterval: callback => { report = callback; },
+    clearInterval: () => { report = undefined; },
+    EncodedVideoChunk: class { constructor(chunk) { Object.assign(this, chunk); } },
+    VideoDecoder: class {
+      decodeQueueSize = 0;
+      constructor(callbacks) { this.callbacks = callbacks; decoders.push(this); }
+      configure() { this.state = "configured"; }
+      close() { this.state = "closed"; }
+      decode(chunk) { this.chunk = chunk; }
+    },
+  };
+  const workerSource = readFileSync(new URL("../src/workers/androidMirror.worker.js", import.meta.url), "utf8");
+  new Function(...Object.keys(bindings), workerSource.replace(/^import .*;\r?$/gm, ""))(...Object.values(bindings));
+  const send = data => bindings.self.onmessage({ data });
+  send({ type: "init", canvas: { width: 720, height: 1280, getContext: () => ({ drawImage: () => { now += 2; } }) } });
+  const makePacket = (flag, bytes) => {
+    const data = new ArrayBuffer(12 + bytes.length);
+    const view = new DataView(data);
+    view.setBigUint64(0, BigInt(flag) << 56n | 123n);
+    view.setUint32(8, bytes.length);
+    new Uint8Array(data).set(bytes, 12);
+    return data;
+  };
+  const packet = (flag, bytes, forwardedAt) =>
+    send({ type: "packet", id: "mirror", data: makePacket(flag, bytes), forwardedAt });
+  send({ type: "start", id: "mirror", visible: true });
+  packet(0x80, [0, 0, 0, 1, 0x67, 0x42, 0, 0x1e], 1000);
+  packet(0x40, [0, 0, 1, 0x65], 1000);
+  decoders[0].decodeQueueSize = 4;
+  now = 10;
+  packet(0, [0, 0, 1, 0x61], 1010);
+  assert.equal(decoders.length, 1);
+  decoders[0].decodeQueueSize = 8;
+  now = 20;
+  packet(0, [0, 0, 1, 0x61], 1005);
+  now = 30;
+  packet(0x40, [0, 0, 1, 0x65], 1025);
+  now = 40;
+  decoders[1].callbacks.output({ timestamp: 123, displayWidth: 720, displayHeight: 1280, close() {} });
+  now = 1000;
+  report();
+  const stats = messages.find(message => message.type === "stats");
+  assert.equal(stats.id, "mirror");
+  assert.equal(stats.queueResets, 1);
+  assert.equal(stats.waitingDrops, 1);
+  assert.equal(stats.pageToWorkerMs.max, 15);
+  assert.equal(stats.decodeToOutputMs.max, 10);
+  assert.equal(stats.drawCallMs.max, 2);
+  assert.equal(stats.resetToDrawMs.max, 22);
+  send({ type: "stop", id: "mirror" });
+  assert.equal(report, undefined);
+
+  send({ type: "start", id: "mirror", visible: true });
+  send({ type: "socket", id: "old-session", url: "ws://127.0.0.1:12345/old" });
+  assert.equal(bindings.socket, undefined);
+  send({ type: "socket", id: "mirror", url: "ws://127.0.0.1:12345/token" });
+  const socket = bindings.socket;
+  socket.onopen();
+  socket.onmessage({ data: makePacket(0x80, [0, 0, 0, 1, 0x67, 0x42, 0, 0x1e]) });
+  socket.onmessage({ data: makePacket(0x40, [0, 0, 1, 0x65]) });
+  assert.equal(socket.sent, "ack");
+  report();
+  assert.equal(messages.at(-1).transport, "socket");
+  packet(0x80, [0, 0, 0, 1, 0x67, 0x42, 0, 0x1e], 2000);
+  assert.equal(socket.closed, true);
+  report();
+  assert.equal(messages.at(-1).transport, "ipc");
+  send({ type: "stop", id: "mirror" });
 });
