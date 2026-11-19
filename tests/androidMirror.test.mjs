@@ -142,11 +142,11 @@ function harness({ delayedStart = false, delayedStop = false, delayedAudioClose 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const connect = tree => tree.find(node => node.type === "button" && node.children.includes("连接")).props.onClick();
 
-async function swipeHarness() {
+async function swipeHarness(fullscreen = true) {
   const h = harness({ controlledTimeouts: true });
   h.render(); await tick(); connect(h.render()); await tick();
   h.decoders[0].options.output({ displayWidth: 1080, displayHeight: 1920, close() {} });
-  h.render().find(node => node.props["aria-label"] === "投屏全屏").props.onClick();
+  if (fullscreen) h.render().find(node => node.props["aria-label"] === "投屏全屏").props.onClick();
   h.render(); await tick();
   h.touches = () => h.calls.filter(call => call.command === "mirror_control" && call.args.data[0] === 2);
   h.press = (key, extra = {}) => {
@@ -208,21 +208,21 @@ test("global Tab navigation leaves mirror focus intact so fullscreen shortcuts k
   } finally { h.unmount(); await tick(); }
 });
 
-test("fullscreen shortcuts preserve button keyboard activation", async () => {
-  const h = await swipeHarness();
+for (const fullscreen of [false, true]) test(`${fullscreen ? "fullscreen" : "windowed"} shortcuts preserve button keyboard activation`, async () => {
+  const h = await swipeHarness(fullscreen);
   try {
     const target = { closest: selector => selector.includes("button") ? {} : null };
     assert.equal(h.press(" ", { target }).prevented, undefined);
     await tick();
     assert.equal(h.touches().length, 0);
-    assert.equal(h.press("Escape", { target }).prevented, true);
+    assert.equal(h.press("Escape", { target }).prevented, fullscreen ? true : undefined);
     await tick();
     assert.equal(h.host.fullscreen, false);
   } finally { h.unmount(); await tick(); }
 });
 
-test("fullscreen arrows generate paced swipes in both directions and ignore repeats, overlap and cooldown", async () => {
-  const h = await swipeHarness();
+for (const fullscreen of [false, true]) test(`${fullscreen ? "fullscreen" : "windowed"} arrows generate paced swipes in both directions and ignore repeats, overlap and cooldown`, async () => {
+  const h = await swipeHarness(fullscreen);
   try {
     assert.equal(h.press("ArrowUp", { repeat: true }).prevented, true);
     await tick(); assert.equal(h.touches().length, 0);
@@ -266,12 +266,12 @@ test("fullscreen arrows generate paced swipes in both directions and ignore repe
     assert.equal(down.at(-1).getUint32(14), 1440);
     assert.equal(h.calls.some(call => call.command === "mirror_control" && call.args.data[0] === 0), false);
     await h.runTimeouts(3000);
-    assert.equal(h.render().some(node => node.children.includes("方向键滑动 · 空格双击暂停/播放 · Esc 退出")), false);
+    assert.equal(h.render().some(node => node.children.includes("方向键滑动 · 空格单击，连按两次双击 · Esc 退出")), false);
   } finally { h.unmount(); await tick(); }
 });
 
-test("fullscreen swipes work from the empty IME input but preserve composing, editable and modified keys", async () => {
-  const h = await swipeHarness();
+for (const fullscreen of [false, true]) test(`${fullscreen ? "fullscreen" : "windowed"} swipes work from the empty IME input but preserve composing, editable and modified keys`, async () => {
+  const h = await swipeHarness(fullscreen);
   try {
     const canvas = h.render().find(node => node.type === "canvas");
     const target = { width: 1080, height: 1920, focus() {}, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 1080, height: 1920 }) };
@@ -298,11 +298,12 @@ test("fullscreen swipes work from the empty IME input but preserve composing, ed
   } finally { h.unmount(); await tick(); }
 });
 
-test("swipe cancellation releases the touch and prevents remaining moves across fullscreen, focus, visibility and rotation changes", async () => {
-  const reasons = ["escape", "blur", "hidden", "inactive", "rotation", "disconnect", "unmount"];
+for (const fullscreen of [false, true]) test(`${fullscreen ? "fullscreen" : "windowed"} swipe cancellation releases the touch and prevents remaining moves across focus, visibility and rotation changes`, async () => {
+  const reasons = [...(fullscreen ? ["escape"] : []), "blur", "hidden", "inactive", "rotation", "disconnect", "unmount"];
   for (const [key, reason] of ["ArrowUp", " "].flatMap(key => reasons.map(reason => [key, reason]))) {
-    const h = await swipeHarness();
+    const h = await swipeHarness(fullscreen);
     h.press(key); await tick(); await h.runTimeouts(25);
+    if (key === " ") h.press(" ");
     if (reason === "escape") h.press("Escape");
     if (reason === "blur") h.blur();
     if (reason === "hidden") h.visibility(true);
@@ -318,7 +319,7 @@ test("swipe cancellation releases the touch and prevents remaining moves across 
     await h.runTimeouts(1000);
     assert.equal(h.touches().length, count, reason);
     if (reason !== "disconnect" && reason !== "unmount") assert.equal(h.touches().at(-1).args.data[1], 1, reason);
-    if (reason === "escape") assert.equal(h.press("ArrowDown").prevented, undefined);
+    if (reason === "escape") assert.equal(h.press("ArrowDown").prevented, true);
     if (reason === "blur") assert.equal(h.press("ArrowDown").prevented, undefined);
     if (reason === "disconnect") {
       connect(h.render()); await tick();
@@ -330,8 +331,8 @@ test("swipe cancellation releases the touch and prevents remaining moves across 
   }
 });
 
-test("fullscreen space double taps the screen center, ignores held keys and shares the swipe lock", async () => {
-  const h = await swipeHarness();
+for (const fullscreen of [false, true]) test(`${fullscreen ? "fullscreen" : "windowed"} each space taps the screen center once, queues rapid presses and ignores held keys`, async () => {
+  const h = await swipeHarness(fullscreen);
   try {
     h.press(" ", { repeat: true }); await tick(); assert.equal(h.touches().length, 0);
     const input = { value: "", focus() {}, closest: () => ({}) };
@@ -343,15 +344,23 @@ test("fullscreen space double taps the screen center, ignores held keys and shar
     h.render().find(node => node.type === "input").props.ref.current = input;
     assert.equal(h.press(" ", { target: input }).prevented, true);
     await tick();
-    h.press("ArrowUp"); h.press(" "); await tick();
+    h.press("ArrowUp"); h.press(" ", { repeat: true }); await tick();
     assert.equal(h.touches().length, 1);
     await h.runTimeouts(40);
     assert.deepEqual(h.touches().map(call => call.args.data[1]), [0, 1]);
-    h.press("ArrowDown"); await tick(); assert.equal(h.touches().length, 2);
-    await h.runTimeouts(90);
+    await h.runTimeouts(1000);
+    assert.deepEqual(h.touches().map(call => call.args.data[1]), [0, 1]);
+    h.calls.length = 0;
+    h.press(" "); h.press(" "); await tick();
+    assert.deepEqual(h.touches().map(call => call.args.data[1]), [0]);
+    await h.runTimeouts(40);
+    assert.deepEqual(h.touches().map(call => call.args.data[1]), [0, 1]);
+    await h.runTimeouts(40);
     assert.deepEqual(h.touches().map(call => call.args.data[1]), [0, 1, 0]);
     await h.runTimeouts(40);
     assert.deepEqual(h.touches().map(call => call.args.data[1]), [0, 1, 0, 1]);
+    await h.runTimeouts(1000);
+    assert.equal(h.touches().length, 4);
     for (const call of h.touches()) {
       const view = new DataView(Uint8Array.from(call.args.data).buffer);
       assert.equal(view.getUint32(10), 540);
@@ -359,25 +368,28 @@ test("fullscreen space double taps the screen center, ignores held keys and shar
       assert.equal(view.getUint16(22), call.args.data[1] === 1 ? 0 : 65535);
     }
     assert.equal(h.calls.some(call => call.command === "mirror_control" && [0, 1, 9].includes(call.args.data[0])), false);
-    h.press(" "); await tick(); assert.equal(h.touches().length, 4);
-    await h.runTimeouts(200);
-    h.press("ArrowUp"); await tick(); assert.equal(h.touches().length, 5);
     h.press(" "); await tick(); assert.equal(h.touches().length, 5);
+    await h.runTimeouts(40);
+    assert.equal(h.touches().length, 6);
+    h.press("ArrowUp"); await tick(); assert.equal(h.touches().length, 7);
+    h.press(" "); await tick(); assert.equal(h.touches().length, 7);
   } finally { h.unmount(); await tick(); }
 });
 
-test("space preserves text input and non-fullscreen behavior, and cancellation between taps sends no extra touch", async () => {
+test("space preserves text input, works after exiting fullscreen, and cancellation between queued taps sends no extra touch", async () => {
   const h = await swipeHarness();
   try {
     for (const extra of [{ nativeEvent: { isComposing: true } }, { ctrlKey: true }, { shiftKey: true }, { target: { closest: () => ({}) } }]) {
       assert.equal(h.press(" ", extra).prevented, undefined);
     }
-    h.press(" "); await tick(); await h.runTimeouts(40);
+    h.press(" "); h.press(" "); await tick(); await h.runTimeouts(40);
     h.blur(); await h.runTimeouts(1000);
     assert.deepEqual(h.touches().map(call => call.args.data[1]), [0, 1]);
     h.document.focused = true;
     h.press("Escape");
-    assert.equal(h.press(" ").prevented, undefined);
+    assert.equal(h.press(" ").prevented, true);
+    await tick();
+    assert.deepEqual(h.touches().map(call => call.args.data[1]), [0, 1, 0]);
   } finally { h.unmount(); await tick(); }
 });
 

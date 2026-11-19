@@ -13,7 +13,7 @@ type Connection = { id: string; serial: string; startup?: Promise<unknown>; deco
 function emptyReceiveStats() {
   return { packets: 0, bytes: 0, config: 0, key: 0, delta: 0, waitingDrop: 0, forwarded: 0, audioPackets: 0 };
 }
-type Gesture = { connection: Connection; width: number; height: number; x: number; y: number; pressed: boolean; timer?: ReturnType<typeof setTimeout> };
+type Gesture = { connection: Connection; width: number; height: number; x: number; y: number; pressed: boolean; pendingTaps?: number; timer?: ReturnType<typeof setTimeout> };
 
 function touchMessage(x: number, y: number, width: number, height: number, action: number): Uint8Array {
   const bytes = new Uint8Array(32); bytes[0] = 2; bytes[1] = action;
@@ -613,31 +613,34 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
     pointer.current = null;
   };
   const connected = status === "connected";
-  const cancelGesture = () => {
+  const cancelGesture = (cooldown = 200) => {
     const current = gesture.current;
     if (!current) return;
     gesture.current = null;
     if (current.timer !== undefined) clearTimeout(current.timer);
-    gestureCooldown.current = performance.now() + 200;
+    gestureCooldown.current = performance.now() + cooldown;
     if (current.pressed && connection.current === current.connection && !current.connection.ended) {
       void send(touchMessage(current.x, current.y, current.width, current.height, 1));
     }
   };
-  const startGesture = (action: "up" | "down" | "left" | "right" | "doubleTap") => {
+  const startGesture = (action: "up" | "down" | "left" | "right" | "tap") => {
     const session = connection.current;
     const target = canvas.current;
     if (!session || session.ended || !target || !dimensions.width || !dimensions.height
-      || gesture.current || pointer.current !== null || performance.now() < gestureCooldown.current) return;
+      || pointer.current !== null || performance.now() < gestureCooldown.current) return;
+    if (gesture.current) {
+      // 快速连按空格时排队点击，避免前一次点击尚未抬起就吞掉后一次按键。
+      if (action === "tap" && gesture.current.pendingTaps !== undefined) gesture.current.pendingTaps++;
+      return;
+    }
     const { width, height } = target;
     const horizontal = action === "left" || action === "right";
     const startX = width * (action === "left" ? 0.75 : 0.25);
     const endX = width * (action === "left" ? 0.25 : 0.75);
     const startY = height * (action === "up" ? 0.75 : 0.25);
     const endY = height * (action === "up" ? 0.25 : 0.75);
-    const steps = action === "doubleTap"
+    const steps = action === "tap"
       ? [
-        { x: width * 0.5, y: height * 0.5, action: 0, delay: 40 },
-        { x: width * 0.5, y: height * 0.5, action: 1, delay: 90 },
         { x: width * 0.5, y: height * 0.5, action: 0, delay: 40 },
         { x: width * 0.5, y: height * 0.5, action: 1, delay: 0 },
       ]
@@ -649,13 +652,13 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
         })),
         { x: horizontal ? endX : width * 0.5, y: horizontal ? height * 0.5 : endY, action: 1, delay: 0 },
       ];
-    const current: Gesture = { connection: session, width, height, x: steps[0].x, y: steps[0].y, pressed: false };
+    const current: Gesture = { connection: session, width, height, x: steps[0].x, y: steps[0].y, pressed: false, pendingTaps: action === "tap" ? 0 : undefined };
     gesture.current = current;
     let step = 0;
     // 等待每个控制包写入后再发送下一步，避免慢连接积压手势。
     const move = async () => {
       if (gesture.current !== current) return;
-      if (connection.current !== session || session.ended || !fullscreenRequested.current
+      if (connection.current !== session || session.ended
         || !visible.current || target.width !== width || target.height !== height) {
         cancelGesture();
         return;
@@ -665,7 +668,11 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
       current.pressed = next.action !== 1;
       await send(touchMessage(current.x, current.y, width, height, next.action));
       if (gesture.current !== current) return;
-      if (step === steps.length) cancelGesture();
+      if (step === steps.length && current.pendingTaps) {
+        current.pendingTaps--;
+        step = 0;
+        current.timer = setTimeout(() => void move(), 40);
+      } else if (step === steps.length) cancelGesture(action === "tap" ? 0 : 200);
       else if (next.delay === 0) void move();
       else current.timer = setTimeout(() => void move(), next.delay);
     };
@@ -696,7 +703,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
         e.preventDefault(); e.stopPropagation(); setMirrorFullscreen(false);
         return;
       }
-      if (!fullscreenRequested.current || !active || !connected || document.hidden || !document.hasFocus()
+      if (!active || !connected || document.hidden || !document.hasFocus()
         || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key) || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey
         || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229 || imeComposingRef.current
         || imeTextRef.current || imeText || imeInput.current?.value) return;
@@ -704,7 +711,7 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
       if (target !== canvas.current && target !== imeInput.current
         && target.closest('input, textarea, select, button, [role="button"], [contenteditable]:not([contenteditable="false"]), [role="dialog"]')) return;
       e.preventDefault(); e.stopPropagation();
-      if (!e.repeat) startGesture(e.key === " " ? "doubleTap" : e.key === "ArrowUp" ? "up" : e.key === "ArrowDown" ? "down" : e.key === "ArrowLeft" ? "left" : "right");
+      if (!e.repeat) startGesture(e.key === " " ? "tap" : e.key === "ArrowUp" ? "up" : e.key === "ArrowDown" ? "down" : e.key === "ArrowLeft" ? "left" : "right");
     }}>
     <div className="markdown-toolbar shrink-0 flex-wrap gap-1" style={{ justifyContent: "flex-start", alignItems: "center", display: fullscreen ? "none" : undefined }} role="toolbar" aria-label="安卓投屏控制">
       <Smartphone size={15} />
@@ -744,18 +751,18 @@ export function AndroidMirrorPanel({ active, onFullscreenChange }: { active: boo
           }
         }).catch(reason => { if (mounted.current) setError(String(reason)); });
       }}><Power size={14} /></button>
-      <button aria-label="投屏全屏" title="投屏全屏（方向键滑动，空格双击暂停/播放，Esc 退出）" disabled={!connected} onClick={toggleFullscreen}><Maximize size={14} /></button>
+      <button aria-label="投屏全屏" title="投屏全屏（Esc 退出）" disabled={!connected} onClick={toggleFullscreen}><Maximize size={14} /></button>
       <button aria-label="文件管理" title="文件管理" aria-pressed={filesOpen} disabled={!serial} onClick={() => setFilesOpen(!filesOpen)}><FolderOpen size={14} /><span>文件管理</span></button>
     </div>
     {fullscreen && <button aria-label="退出投屏全屏" title="退出全屏（Esc）" className="absolute right-4 top-4 z-10 rounded bg-black/60 p-2 text-white opacity-40 hover:opacity-100 focus:opacity-100" onClick={toggleFullscreen}><Minimize size={20} /></button>}
-    {fullscreen && fullscreenHint && <div role="status" className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded bg-black/60 px-3 py-2 text-xs text-white">方向键滑动 · 空格双击暂停/播放 · Esc 退出</div>}
+    {fullscreen && fullscreenHint && <div role="status" className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded bg-black/60 px-3 py-2 text-xs text-white">方向键滑动 · 空格单击，连按两次双击 · Esc 退出</div>}
     {error && <div role="alert" className="shrink-0 break-words border-b border-ide-panel-border p-2 text-xs text-red-400">{error}</div>}
     <div className="flex min-h-0 min-w-0 flex-1">
     <div ref={mirrorStage} className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden" style={{ containerType: "size" }}>
       {connected && <div className="pointer-events-none absolute left-2 top-2 z-10 select-none rounded bg-black/60 px-2 py-1 font-mono text-xs tabular-nums text-white" title="每秒实际绘制的投屏帧数">
         {fps} FPS
       </div>}
-      <canvas ref={canvas} data-android-mirror-input="true" tabIndex={connected ? 0 : -1} aria-label="Android 画面，点击后可使用键盘控制"
+      <canvas ref={canvas} data-android-mirror-input="true" tabIndex={connected ? 0 : -1} aria-label="Android 画面，点击后可使用键盘控制" title="方向键滑动，空格单击，连按两次双击（无需全屏）"
         className={`${dimensions.width ? "block" : "hidden"} shrink-0 touch-none bg-black outline-none focus-visible:outline-none`}
         // Size the canvas itself to the available area so touch coordinates use
         // the same bounds as the image, including after rotation or pane resize.
