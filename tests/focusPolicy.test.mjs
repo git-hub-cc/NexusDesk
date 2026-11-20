@@ -11,10 +11,14 @@ function setup() {
     closest(selector) {
       if (selector.includes("aria-hidden")) return this.hidden ? this : null;
       if (selector.startsWith(".cm-editor")) return this.editor ? this : null;
+      if (selector.includes('[role="tree"]')) return this.treeContainer ?? (this.tree ? this : null);
       return this;
     }
     matches(selector) {
-      return selector === ":disabled" ? !!this.disabled : !!this.android;
+      if (selector === ":disabled") return !!this.disabled;
+      if (selector.includes("data-android-mirror-input")) return !!this.android;
+      if (selector.includes('[role="tree"]')) return !!this.tree;
+      return !!(this.tree || this.treeContainer);
     }
     getClientRects() { return this.hidden ? [] : [{}]; }
     focus() { document.activeElement = this; }
@@ -89,4 +93,28 @@ test("Tab cycles through visible enabled text fields and preserves editor Tab ha
   assert.equal(dispatch("keydown", new Element({ editor: true }), { key: "Tab" }).defaultPrevented, undefined);
   document.fields = [];
   assert.equal(dispatch("keydown", new Element(), { key: "Tab" }).defaultPrevented, true);
+});
+
+test("file tree rows can receive focus and the tree is a single Tab stop", () => {
+  const { Element, HTMLInputElement, document, dispatch } = setup();
+  const before = new HTMLInputElement({ type: "text" });
+  const after = new HTMLInputElement({ type: "text" });
+  const tree = new Element({ tree: true });
+  const row = new Element({ treeContainer: tree });
+  document.fields = [before, tree, row, after];
+
+  before.focus();
+  dispatch("keydown", before, { key: "Tab" });
+  assert.equal(document.activeElement, tree);
+  for (const element of [tree, row]) {
+    assert.equal(dispatch("mousedown", element).defaultPrevented, undefined);
+    element.focus();
+    dispatch("focus", element);
+    assert.equal(document.activeElement, element);
+  }
+  dispatch("keydown", row, { key: "Tab" });
+  assert.equal(document.activeElement, after);
+  row.focus();
+  dispatch("keydown", row, { key: "Tab", shiftKey: true });
+  assert.equal(document.activeElement, before);
 });

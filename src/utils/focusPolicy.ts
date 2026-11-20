@@ -3,11 +3,18 @@ const TEXT_INPUT_TYPES = new Set([
   "date", "datetime-local", "month", "week", "time",
 ]);
 
+const FILE_TREE_TAB_STOP = '.explorer-tree [role="tree"][tabindex="0"]';
+const FILE_TREE_FOCUS_TARGET = '.explorer-tree[tabindex], .explorer-tree div[tabindex]';
+
 function acceptsKeyboardInput(element: Element): boolean {
   if (element instanceof HTMLInputElement) return TEXT_INPUT_TYPES.has(element.type);
   if (element instanceof HTMLTextAreaElement) return true;
   return (element instanceof HTMLElement && element.isContentEditable)
     || element.matches('[data-android-mirror-input="true"]');
+}
+
+function allowsFocus(element: Element): boolean {
+  return acceptsKeyboardInput(element) || element.matches(FILE_TREE_FOCUS_TARGET);
 }
 
 export function installFocusPolicy(): void {
@@ -17,13 +24,13 @@ export function installFocusPolicy(): void {
     const target = event.target.closest(
       'input, textarea, select, button, a[href], area[href], summary, iframe, [tabindex], [contenteditable]',
     );
-    if (target && !acceptsKeyboardInput(target)) event.preventDefault();
+    if (target && !allowsFocus(target)) event.preventDefault();
   }, true);
 
   // 同时覆盖自动聚焦、脚本聚焦和浏览器隐式聚焦的滚动容器。
   document.addEventListener("focus", event => {
     const target = event.target;
-    if (!(target instanceof HTMLElement) || acceptsKeyboardInput(target)) return;
+    if (!(target instanceof HTMLElement) || allowsFocus(target)) return;
     event.stopImmediatePropagation();
     target.blur();
   }, true);
@@ -31,15 +38,19 @@ export function installFocusPolicy(): void {
   window.addEventListener("keydown", event => {
     if (event.key !== "Tab" || (event.target instanceof Element
       && event.target.closest('.cm-editor, .xterm, [data-android-mirror-input="true"]'))) return;
-    const fields = [...document.querySelectorAll<HTMLElement>("input, textarea, [contenteditable]")]
-      .filter(field => acceptsKeyboardInput(field) && !field.matches(":disabled")
-        && field.getClientRects().length > 0 && !field.closest('[aria-hidden="true"], [inert]'));
+    const tabStops = [...document.querySelectorAll<HTMLElement>(`input, textarea, [contenteditable], ${FILE_TREE_TAB_STOP}`)]
+      .filter(element => (acceptsKeyboardInput(element) || element.matches(FILE_TREE_TAB_STOP))
+        && !element.matches(":disabled") && element.getClientRects().length > 0
+        && !element.closest('[aria-hidden="true"], [inert]'));
     event.preventDefault();
-    if (!fields.length) return;
-    const index = fields.indexOf(document.activeElement as HTMLElement);
+    if (!tabStops.length) return;
+    const active = document.activeElement as HTMLElement | null;
+    // 文件树的行可以获得焦点，但 Tab 将整棵树视为一个停靠点。
+    const current = active && (acceptsKeyboardInput(active) ? active : active.closest<HTMLElement>(FILE_TREE_TAB_STOP));
+    const index = current ? tabStops.indexOf(current) : -1;
     const nextIndex = index < 0
-      ? (event.shiftKey ? fields.length - 1 : 0)
-      : (index + (event.shiftKey ? -1 : 1) + fields.length) % fields.length;
-    fields[nextIndex].focus();
+      ? (event.shiftKey ? tabStops.length - 1 : 0)
+      : (index + (event.shiftKey ? -1 : 1) + tabStops.length) % tabStops.length;
+    tabStops[nextIndex].focus();
   }, true);
 }

@@ -636,7 +636,8 @@ export const PhysicalTree: React.FC = React.memo(() => {
     );
 
     return <>{confirmationDialog}{gitHistoryPath && <GitHistoryDialog key={gitHistoryPath} path={gitHistoryPath} onClose={() => setGitHistoryPath(null)} />}{historyPath && <LocalHistoryDialog key={historyPath} path={historyPath} onClose={() => setHistoryPath(null)} />}{withContextMenu(rootPath, true,
-        <div tabIndex={0} className="explorer-tree flex flex-col h-full" onClick={event => {
+        <div tabIndex={0} className="explorer-tree flex flex-col h-full"
+            onKeyDownCapture={speedSearch.onKeyDownCapture} onClick={event => {
             // Clicking the tree's root/background clears a child selection and
             // makes the project root the explicit destination for paste.
             if ((event.target as HTMLElement).closest('[role="treeitem"]')) return;
@@ -756,7 +757,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
             {convertingPath && <div className="flex items-center gap-2 p-2 text-xs text-gray-400" role="status"><span className="flex-1 truncate">正在转换：{convertingPath.split(/[\\/]/).pop()}</span><button type="button" className="rounded p-1 text-gray-300 hover:bg-white/10" title="取消转码" aria-label="取消转码" onClick={() => void cancelConvertMkvToMp4()}><Square size={13} fill="currentColor" /></button></div>}
             {ocrProgress && <div className="flex items-center gap-2 p-2 text-xs text-gray-400" role="status"><span className="flex-1 truncate">{ocrProgress}</span><button type="button" className="rounded p-1 text-gray-300 hover:bg-white/10" title="取消识别" aria-label="取消识别" onClick={() => { ocrController.current?.abort(); setOcrProgress("正在取消识别..."); }}><Square size={13} fill="currentColor" /></button></div>}
             {error && <div role="alert" className="p-2 text-xs text-red-400 break-words">{error}</div>}
-            <div ref={containerRef} onKeyDownCapture={speedSearch.onKeyDownCapture} className="relative flex-1 w-full p-1 overflow-hidden">
+            <div ref={containerRef} className="relative flex-1 w-full p-1 overflow-hidden">
                 {speedSearch.searchBox}
                 {fileTreeData && fileTreeData.length > 0 ? (
                     height > 0 && (

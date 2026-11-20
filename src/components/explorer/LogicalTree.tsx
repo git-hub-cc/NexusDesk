@@ -253,7 +253,8 @@ export const LogicalTree: React.FC = React.memo(() => {
   );
 
   return menu(null, (
-    <div tabIndex={0} onKeyDown={openContextMenuFromKeyboard} className="explorer-tree flex flex-col h-full">
+    <div tabIndex={0} onKeyDown={openContextMenuFromKeyboard} onKeyDownCapture={speedSearch.onKeyDownCapture}
+      className="explorer-tree flex flex-col h-full">
       {confirmationDialog}
       {error && <p role="alert" className="px-2 py-1 text-xs text-red-400">{error}</p>}
       {rename !== null && rootPath && <CreateNameDialog
@@ -313,7 +314,7 @@ export const LogicalTree: React.FC = React.memo(() => {
           const paths = (treeRef.current?.selectedNodes ?? []).filter((node: any) => !node.data.missing && !node.data.id.startsWith("logical_") && !isRemotePath(node.data.id)).map((node: any) => node.data.id);
           if (paths.length) { event.preventDefault(); event.stopPropagation(); void run(async () => { await flushPendingWrites(); await fsApi.writeFileClipboard(paths, false); }); }
         }
-      }} onKeyDownCapture={speedSearch.onKeyDownCapture} className="relative flex-1 w-full p-1 overflow-hidden">
+      }} className="relative flex-1 w-full p-1 overflow-hidden">
         {speedSearch.searchBox}
         {height > 0 && logicalTreeData && logicalTreeData.length > 0 ? (
           <LogicalNodeContext.Provider value={({ node, style }) => {
