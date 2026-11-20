@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 非文本输入控件统一取消焦点外框，包括第三方控件的焦点阴影。 */
+:focus:not(input, textarea, [contenteditable]),
+:focus-visible:not(input, textarea, [contenteditable]),
+input:is([type="button"], [type="submit"], [type="reset"], [type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="image"]):focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 /* 按钮和表单的语义颜色集中维护，页面样式只负责布局。 */
 .ide-button {
   color: var(--button-fg);

@@ -5,6 +5,9 @@ import { flushGlobalSettings, initializeGlobalSettings } from "./utils/globalSet
 import { flushSettingsAutosaves } from "./utils/useSettingsAutosave";
 import { flushUIState } from "./utils/uiPersistence";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { installFocusPolicy } from "./utils/focusPolicy";
+
+installFocusPolicy();
 
 // Cancel the native menu after application context-menu handlers have run.
 document.addEventListener("contextmenu", event => event.preventDefault());
