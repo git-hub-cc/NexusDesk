@@ -40,7 +40,7 @@ function App() {
   useEffect(() => {
     const preventTabNavigation = (event: KeyboardEvent) => {
       if (event.key !== "Tab" || (event.target instanceof Element
-        && event.target.closest('.cm-editor, [data-android-mirror-input="true"]'))) return;
+        && event.target.closest('.cm-editor, .xterm, [data-android-mirror-input="true"]'))) return;
       const fields = [...document.querySelectorAll<HTMLElement>(
         'input:not([type="hidden"]):not(:disabled), textarea:not(:disabled), select:not(:disabled), [contenteditable="true"]',
       )].filter(field => field.offsetParent !== null && !field.closest('[aria-hidden="true"], [inert]'));
