@@ -19,6 +19,9 @@ export function useDeleteConfirmation(project: string | null) {
     if (!request) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Enter" || event.isComposing) return;
+      const target = event.target instanceof Element ? event.target : null;
+      // 让输入框和按钮保留自己的 Enter 行为，避免误确认删除。
+      if (target?.closest("input, textarea, select, button, a, [role=button], [contenteditable]")) return;
       event.preventDefault();
       event.stopPropagation();
       finish(true);

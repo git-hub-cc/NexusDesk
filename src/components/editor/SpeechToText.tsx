@@ -303,7 +303,7 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
           setPaused(true);
           setStartupFailed(true);
           console.error("[speech] startup-failed", error);
-          setStatus(speechStartupError(error));
+          setStatus(speechStartupError(error, config.current.inputDeviceId));
         }
       } finally {
         if (alive) { preparingRef.current = false; setPreparing(false); }
@@ -390,7 +390,7 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
       {Array.from({ length: 25 }, (_, i) => { const shape = Math.abs(Math.sin(i * .67) * Math.cos(i * .19)); return <span key={i} style={{ height: 4 + shape * (5 + level * 24), opacity: .35 + shape * .65 }} />; })}
     </div>
     <label className="flex min-w-0 items-center gap-2 text-xs text-gray-400">麦克风
-      <select className="min-w-0 flex-1 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" aria-label="输入麦克风" value={inputDeviceId} disabled={preparing || busy || finishing || isStopping} title={microphoneLabel} onChange={event => {
+      <select className="min-w-0 flex-1 rounded border border-ide-panel-border bg-ide-bg px-2 py-1 outline-none focus:border-ide-accent" aria-label="输入麦克风" data-allow-native-focus value={inputDeviceId} disabled={preparing || busy || finishing || isStopping} title={microphoneLabel} onChange={event => {
         const deviceId = event.target.value;
         setInputDeviceId(deviceId);
         const preferences = { ...readSpeechPreferences(), inputDeviceId: deviceId };
@@ -400,7 +400,7 @@ export function SpeechToText({ onInsert, onClose, finishOnClose = false }: Props
         setStartAttempt(attempt => attempt + 1);
       }}>
         <option value="">系统默认输入设备</option>
-        {inputDeviceId && !microphones.some(device => device.deviceId === inputDeviceId) && <option value={inputDeviceId}>已保存的麦克风（不可用）</option>}
+        {inputDeviceId && !microphones.some(device => device.deviceId === inputDeviceId) && <option value={inputDeviceId} disabled>已保存的麦克风（不可用）</option>}
         {microphones.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `麦克风 ${index + 1}`}</option>)}
       </select>
       <span className="shrink-0" aria-hidden="true">{Math.round(level * 100)}%</span>

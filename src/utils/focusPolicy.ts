@@ -5,11 +5,13 @@ const TEXT_INPUT_TYPES = new Set([
 
 const FILE_TREE_TAB_STOP = '.explorer-tree [role="tree"][tabindex="0"]';
 const FILE_TREE_FOCUS_TARGET = '.explorer-tree[tabindex], .explorer-tree div[tabindex]';
+const NATIVE_SELECT_TAB_STOP = 'select[data-allow-native-focus]';
 
 function acceptsKeyboardInput(element: Element): boolean {
   if (element instanceof HTMLInputElement) return TEXT_INPUT_TYPES.has(element.type);
   if (element instanceof HTMLTextAreaElement) return true;
   return (element instanceof HTMLElement && element.isContentEditable)
+    || element.matches(NATIVE_SELECT_TAB_STOP)
     || element.matches('[data-android-mirror-input="true"]');
 }
 
@@ -38,7 +40,7 @@ export function installFocusPolicy(): void {
   window.addEventListener("keydown", event => {
     if (event.key !== "Tab" || (event.target instanceof Element
       && event.target.closest('.cm-editor, .xterm, [data-android-mirror-input="true"]'))) return;
-    const tabStops = [...document.querySelectorAll<HTMLElement>(`input, textarea, [contenteditable], ${FILE_TREE_TAB_STOP}`)]
+    const tabStops = [...document.querySelectorAll<HTMLElement>(`input, textarea, [contenteditable], ${NATIVE_SELECT_TAB_STOP}, ${FILE_TREE_TAB_STOP}`)]
       .filter(element => (acceptsKeyboardInput(element) || element.matches(FILE_TREE_TAB_STOP))
         && !element.matches(":disabled") && element.getClientRects().length > 0
         && !element.closest('[aria-hidden="true"], [inert]'));

@@ -16,6 +16,7 @@ function setup() {
     }
     matches(selector) {
       if (selector === ":disabled") return !!this.disabled;
+      if (selector === "select[data-allow-native-focus]") return !!this.nativeSelect;
       if (selector.includes("data-android-mirror-input")) return !!this.android;
       if (selector.includes('[role="tree"]')) return !!this.tree;
       return !!(this.tree || this.treeContainer);
@@ -93,6 +94,25 @@ test("Tab cycles through visible enabled text fields and preserves editor Tab ha
   assert.equal(dispatch("keydown", new Element({ editor: true }), { key: "Tab" }).defaultPrevented, undefined);
   document.fields = [];
   assert.equal(dispatch("keydown", new Element(), { key: "Tab" }).defaultPrevented, true);
+});
+
+test("the microphone menu opens with the mouse and can be reached with Tab", () => {
+  const { Element, HTMLInputElement, document, dispatch } = setup();
+  const input = new HTMLInputElement({ type: "text" });
+  const microphone = new Element({ nativeSelect: true });
+  document.fields = [input, microphone];
+
+  input.focus();
+  assert.equal(dispatch("mousedown", microphone).defaultPrevented, undefined);
+  dispatch("keydown", input, { key: "Tab" });
+  assert.equal(document.activeElement, microphone);
+  assert.equal(dispatch("focus", microphone).stopped, undefined);
+  dispatch("keydown", microphone, { key: "Tab", shiftKey: true });
+  assert.equal(document.activeElement, input);
+
+  microphone.disabled = true;
+  dispatch("keydown", input, { key: "Tab" });
+  assert.equal(document.activeElement, input);
 });
 
 test("file tree rows can receive focus and the tree is a single Tab stop", () => {

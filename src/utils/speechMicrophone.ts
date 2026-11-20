@@ -45,8 +45,13 @@ export async function openSpeechMicrophone(inputDeviceId = ""): Promise<MediaStr
   }
 }
 
-export function speechStartupError(error: unknown): string {
+export function speechStartupError(error: unknown, inputDeviceId = ""): string {
   if (error instanceof Error) {
+    const constraint = "constraint" in error ? error.constraint : undefined;
+    if (inputDeviceId && (error.name === "NotFoundError"
+      || (error.name === "OverconstrainedError" && (!constraint || constraint === "deviceId")))) {
+      return "已选的麦克风不可用，请在下方重新选择麦克风或切换到系统默认输入设备。";
+    }
     switch (error.name) {
       case "NotReadableError":
       case "AbortError":
