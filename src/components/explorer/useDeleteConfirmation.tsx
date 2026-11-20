@@ -9,11 +9,23 @@ type Request = { title: string; description: string; paths: string[]; permanent?
 export function useDeleteConfirmation(project: string | null) {
   const [request, setRequest] = useState<Request | null>(null);
   const resolve = useRef<((confirmed: boolean) => void) | null>(null);
-  const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setRequest(null);
     return () => { resolve.current?.(false); resolve.current = null; };
   }, [project]);
+
+  // 删除确认不依赖弹窗容器焦点，避免全局焦点策略移除焦点后回车失效。
+  useEffect(() => {
+    if (!request) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.isComposing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      finish(true);
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [request]);
 
   const finish = (confirmed: boolean) => {
     resolve.current?.(confirmed);
@@ -31,18 +43,11 @@ export function useDeleteConfirmation(project: string | null) {
 
   const confirmationDialog = request && (
     <Dialog.Root open onOpenChange={open => { if (!open) finish(false); }}>
-      <DialogShell ref={dialog} tabIndex={-1} style={{ outline: "none" }} purpose="confirmation" className="outline-none"
+      <DialogShell purpose="confirmation" className="outline-none"
         onKeyDown={event => {
-          if (event.key === "Tab") {
-            event.preventDefault();
-            return;
-          }
-          if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-            event.preventDefault();
-            finish(true);
-          }
+          if (event.key === "Tab") event.preventDefault();
         }}
-        onOpenAutoFocus={event => { event.preventDefault(); dialog.current?.focus(); }}
+        onOpenAutoFocus={event => event.preventDefault()}
         onCloseAutoFocus={event => event.preventDefault()}>
         <header className="flex items-center gap-3 px-5 pt-5">
           <span className="delete-confirm-icon">{request.notice ? <AlertTriangle size={20} className="text-amber-400" /> : <Trash2 size={20} />}</span>
