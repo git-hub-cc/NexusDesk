@@ -57,6 +57,55 @@ test("store deduplicates Windows aliases and resolves split titles by file ident
   store.setState({ rootPath: null, leftTabs: [{ id: "a", path: "a.md", title: "a", content: "initial" }], rightTabs: [{ id: "a", path: "a.md", title: "a", content: "initial" }] });
 });
 
+test("editor history activates the actual matching tab across split panes and path aliases", async () => {
+  const previous = store.getState();
+  const left = { id: "notes", path: "C:/project/notes.md", title: "notes.md", content: "notes" };
+  const right = { id: "draft", path: "C:/project/draft.md", title: "draft.md", content: "unsaved draft", isDirty: true };
+  const other = { id: "other", path: "C:/project/other.md", title: "other.md", content: "other" };
+  try {
+    store.setState({
+      leftTabs: [left], rightTabs: [right, other], activeLeftTabId: left.id, activeRightTabId: other.id,
+      focusedPane: "left", isSplitMode: true, editorJump: null,
+      navHistory: [{ path: "c:\\PROJECT\\DRAFT.md", pos: 4 }, { path: left.path, pos: 2 }], navIndex: 1,
+    });
+    await store.getState().navigateHistory("back");
+    assert.equal(store.getState().activeLeftTabId, left.id);
+    assert.equal(store.getState().activeRightTabId, right.id);
+    assert.equal(store.getState().focusedPane, "right");
+    assert.equal(store.getState().rightTabs.find(tab => tab.id === right.id).content, "unsaved draft");
+    assert.deepEqual(store.getState().editorJump, { path: right.path, pane: "right", line: 1, from: 4, to: 4 });
+    await store.getState().navigateHistory("forward");
+    assert.equal(store.getState().focusedPane, "left");
+    assert.equal(store.getState().activeLeftTabId, left.id);
+    assert.equal(store.getState().editorJump.from, 2);
+  } finally {
+    store.setState(previous, true);
+  }
+});
+
+test("failed history reads and unknown tab IDs leave the active editor intact", async () => {
+  const previous = store.getState();
+  const api = globalThis.__saveTest.fsApi;
+  const previousRead = api.readFile;
+  const tab = { id: "current", path: "current.md", title: "current.md", content: "current" };
+  try {
+    api.readFile = async () => { throw new Error("missing file"); };
+    store.setState({
+      leftTabs: [tab], rightTabs: [], activeLeftTabId: tab.id, activeRightTabId: null,
+      focusedPane: "left", isSplitMode: false, editorJump: null,
+      navHistory: [{ path: "missing.md", pos: 1 }, { path: tab.path, pos: 2 }], navIndex: 1,
+    });
+    await store.getState().navigateHistory("back");
+    store.getState().setActiveTab("missing.md", "left");
+    assert.equal(store.getState().activeLeftTabId, tab.id);
+    assert.deepEqual(store.getState().leftTabs, [tab]);
+    assert.equal(store.getState().editorJump, null);
+  } finally {
+    api.readFile = previousRead;
+    store.setState(previous, true);
+  }
+});
+
 test("closing a project flushes edits, preserves its session and clears the workspace", async () => {
   store.setState({ rootPath: "close-project", pinnedTabsRestored: true, recentProjects: ["close-project"],
     leftTabs: [{ id: "close", path: "close.md", title: "close", content: "initial", isPinned: true }],

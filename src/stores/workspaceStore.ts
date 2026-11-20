@@ -381,7 +381,7 @@ interface WorkspaceState {
   navHistory: Array<{ path: string; pos: number }>;
   navIndex: number;
   pushNavLocation: (path: string, pos: number) => void;
-  navigateHistory: (direction: "back" | "forward") => void;
+  navigateHistory: (direction: "back" | "forward") => Promise<void>;
 
   loadDirectory: (path: string, logical?: boolean, refresh?: boolean) => Promise<void>;
   setProject: (path: string) => Promise<boolean>;
@@ -462,6 +462,7 @@ const resolveSplitMode = (
 export const useWorkspaceStore = create<WorkspaceState>()(
   persist(
     (set, get) => {
+      let historyRequest = 0;
       const setTabs = (update: (state: WorkspaceState) => Partial<WorkspaceState>) => {
         flushEditorContent();
         set(update);
@@ -610,33 +611,42 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       navigateHistory: async (direction) => {
         const state = get();
-        let newIndex = state.navIndex;
-
-        if (direction === "back" && newIndex > 0) newIndex--;
-        else if (direction === "forward" && newIndex < state.navHistory.length - 1) newIndex++;
-        else return;
-
+        const newIndex = state.navIndex + (direction === "back" ? -1 : 1);
         const target = state.navHistory[newIndex];
+        if (!target) return;
+        const request = ++historyRequest;
+        const version = projectVersion;
+        const findTab = (current: WorkspaceState) => {
+          const match = (tabs: Tab[]) => tabs.find(tab => samePath(tab.path, target.path)
+            && !tab.browser && !tab.revision && !tab.reverseTree && tab.diff === undefined);
+          const left = match(current.leftTabs);
+          const right = current.isSplitMode ? match(current.rightTabs) : undefined;
+          if (right && (current.focusedPane === "right" || !left)) return { tab: right, pane: "right" as const };
+          if (left) return { tab: left, pane: "left" as const };
+        };
         set({ navIndex: newIndex });
 
-        const isOpened = [...state.leftTabs, ...state.rightTabs].some(t => samePath(t.path, target.path));
-        if (!isOpened) {
-           const snapshot = await fsApi.readFileSnapshot(target.path).catch(() => null);
-           if (snapshot) {
-             get().openTab({
-               id: target.path, path: target.path, title: target.path.split(/[/\\]/).pop() || target.path,
-               content: snapshot.content, diskVersion: snapshot.version, isDirty: false
-             });
-           }
-        } else {
-           get().setActiveTab(target.path, state.focusedPane);
+        let destination = findTab(get());
+        if (!destination) {
+          const snapshot = await fsApi.readFileSnapshot(target.path).catch(() => null);
+          const current = get();
+          if (request !== historyRequest || version !== projectVersion || current.navHistory !== state.navHistory) return;
+          destination = findTab(current);
+          if (!destination) {
+            if (!snapshot) return;
+            const pane = current.isSplitMode ? current.focusedPane : "left";
+            current.openTab({
+              id: target.path, path: target.path, title: pathName(target.path),
+              content: snapshot.content, diskVersion: snapshot.version, isDirty: false,
+            }, { pane });
+            destination = findTab(get());
+            if (!destination) return;
+          }
         }
 
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent("editor-jump", {
-            detail: { path: target.path, pos: target.pos }
-          }));
-        }, 50);
+        const { tab, pane } = destination;
+        get().setActiveTab(tab.id, pane);
+        set({ editorJump: { path: tab.path, pane, line: 1, from: target.pos, to: target.pos } });
       },
 
       loadDirectory: async (path, logical = false, refresh = false) => {
@@ -1099,7 +1109,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       setActiveTab: (id, pane) =>
         setTabs((state) => {
           const tab = (pane === "left" ? state.leftTabs : state.rightTabs).find(t => t.id === id);
-          if (tab && tab.diff === undefined && !tab.revision && !tab.browser) void fsApi.touchFile(tab.path).catch(console.error);
+          if (!tab) return state;
+          if (tab.diff === undefined && !tab.revision && !tab.browser) void fsApi.touchFile(tab.path).catch(console.error);
           return pane === "left"
             ? { activeLeftTabId: id, focusedPane: "left" }
             : { activeRightTabId: id, focusedPane: "right" };
