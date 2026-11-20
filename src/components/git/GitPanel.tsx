@@ -434,7 +434,7 @@ function RepositoryPanel({ root }: { root: string }) {
             </div>
             {renderSeparator(0, "调整文件预览与提交说明宽度")}
             <div className="box-border min-w-[13rem] shrink-0 p-2 flex flex-col gap-2" style={{ width: `${messageWidth}%` }}>
-                <textarea ref={textareaRef} aria-label="提交说明" value={revision?.message ?? message} onChange={e => changeMessage(e.target.value)} onKeyDown={navigateMessageHistory} onPointerDown={() => setSpeechTarget({ kind: "git" })} onFocus={() => setSpeechTarget({ kind: "git" })} title="↑/↓ 切换历史提交说明（首行/末行）" disabled={busy || !!revision} placeholder={revision ? "历史预览中，返回本地后提交" : "提交说明…"} className="flex-1 min-h-12 resize-none bg-ide-bg border border-ide-panel-border p-2 focus:outline-none" />
+                <textarea ref={textareaRef} aria-label="提交说明" value={revision?.message ?? message} onChange={e => changeMessage(e.target.value)} onKeyDown={navigateMessageHistory} onPointerDown={() => setSpeechTarget({ kind: "git" })} onFocus={() => setSpeechTarget({ kind: "git" })} title="↑/↓ 切换历史提交说明（首行/末行）" disabled={busy || !!revision} placeholder={revision ? "历史预览中，返回本地后提交" : "提交说明…"} className="flex-1 min-h-12 resize-none bg-ide-bg border border-ide-panel-border p-2 focus:outline-none focus:border-ide-accent" />
                 <div className="flex justify-start gap-2">
                     <button className="flex w-24 shrink-0 items-center justify-center gap-1 bg-ide-accent text-white py-1 enabled:hover:brightness-110 disabled:bg-gray-700 disabled:text-gray-400 disabled:opacity-100" disabled={operationsPending || !!revision || !message.trim() || !files.some(f => f.staged) || files.some(f => f.conflict)} onClick={() => void run(async () => {
                         // 保存编辑器内容后，仅重新暂存已勾选的文件。

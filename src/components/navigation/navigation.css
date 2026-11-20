@@ -21,6 +21,7 @@
 .nav-search-tab:hover { color: var(--nav-fg); background: color-mix(in srgb, var(--nav-fg) 6%, transparent); }
 .nav-search-tab.active { color: white; background: #3574f0; }
 .nav-search-form { border-color: #43454a; background: var(--nav-sidebar); }
+.nav-search-form:focus-within { border-color: var(--ide-control-focus); }
 .nav-section > header { border-color: var(--nav-border); }
 .nav-section { content-visibility: auto; contain-intrinsic-size: auto 420px; }
 .nav-add-button { color: var(--nav-muted); }
