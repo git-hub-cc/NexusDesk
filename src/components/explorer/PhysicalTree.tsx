@@ -14,11 +14,12 @@ import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Tree, type NodeRendererProps } from "react-arborist";
-import { ChevronRight, ChevronDown, AlertTriangle, X, Square } from "lucide-react";
+import { ChevronRight, ChevronDown, AlertTriangle, Copy, X, Square } from "lucide-react";
 import { useWorkspaceStore, flushPendingWrites } from "@/stores/workspaceStore";
 import { useTerminalStore } from "@/stores/terminalStore";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { fsApi, videoApi } from "@/utils/api";
+import { fsApi, gitApi, videoApi } from "@/utils/api";
+import { findGitTreeLocation } from "@/utils/gitTreeLocation";
 import { documentExtension, isConvertibleDocument } from "@/utils/documentConverter";
 import { isOcrDocument } from "@/utils/documentOcr";
 import { useElementSize } from "@/hooks/useElementSize";
@@ -56,6 +57,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
   const loadDirectory = useWorkspaceStore(state => state.loadDirectory);
   const locateSignal = useWorkspaceStore(state => state.locateSignal);
   const locatePath = useWorkspaceStore(state => state.locatePath);
+  const locateGitFile = useWorkspaceStore(state => state.locateGitFile);
   const activeLeftTabId = useWorkspaceStore(state => state.activeLeftTabId);
   const activeRightTabId = useWorkspaceStore(state => state.activeRightTabId);
   const focusedPane = useWorkspaceStore(state => state.focusedPane);
@@ -78,6 +80,7 @@ export const PhysicalTree: React.FC = React.memo(() => {
     const [historyPath, setHistoryPath] = useState<string | null>(null);
     const [gitHistoryPath, setGitHistoryPath] = useState<string | null>(null);
     const [error, setError] = useState("");
+    const [locateNotice, setLocateNotice] = useState<{ message: string; path: string } | null>(null);
     const [dragOverPath, setDragOverPath] = useState<string | null>(null);
     const [codexInstalled, setCodexInstalled] = useState(false);
     const creatingFromMenu = useRef(false);
@@ -146,7 +149,63 @@ export const PhysicalTree: React.FC = React.memo(() => {
     }, [rootPath, setSearchScopePath]);
 
     useEffect(() => {
+        setLocateNotice(null);
         if (locateSignal === 0 || !rootPath) return;
+        let cancelled = false;
+        let timer: number | undefined;
+        const isCurrent = () => !cancelled && useWorkspaceStore.getState().rootPath === rootPath
+            && useWorkspaceStore.getState().locateSignal === locateSignal;
+        const select = (path: string, directory: string, revealFolder = false, done?: (selected: boolean) => void) => {
+            const attempt = (remaining: number) => {
+                if (!isCurrent()) return;
+                const tree = treeRef.current;
+                tree?.openParents(path);
+                if (tree?.get(path)) {
+                    if (revealFolder) tree.open(path);
+                    tree.select(path, { focus: !locateGitFile });
+                    setSelectedPath(path);
+                    setSelectedDir(directory);
+                    done?.(true);
+                } else if (remaining > 0) {
+                    timer = window.setTimeout(() => attempt(remaining - 1), 50);
+                } else {
+                    done?.(false);
+                }
+            };
+            attempt(10);
+        };
+        const cleanup = () => { cancelled = true; window.clearTimeout(timer); };
+        if (locateGitFile) {
+            speedSearch.reset();
+            const report = (message: string) => {
+                if (isCurrent()) setLocateNotice({ message, path: locateGitFile.path });
+            };
+            void (async () => {
+                try {
+                    const path = await gitApi.worktreeFilePath(locateGitFile.root, locateGitFile.path);
+                    if (!isCurrent()) return;
+                    const result = await findGitTreeLocation(rootPath, path, dir => loadDirectory(dir, false, true), isCurrent);
+                    if (result.kind === "file") {
+                        select(result.entry.id, result.parent, false, selected => {
+                            if (!selected) report("文件树未能显示此文件。");
+                        });
+                    } else if (result.kind === "missing" && result.directory) {
+                        const directory = result.directory.id;
+                        const label = normalizePath(directory).slice(normalizePath(rootPath).replace(/\/$/, "").length + 1);
+                        select(directory, directory, true, selected => report(selected
+                            ? `当前工作区中没有此文件，已定位到 ${label}/。`
+                            : "当前工作区中没有此文件，文件树未能显示上级目录。"));
+                    } else if (result.kind === "missing") {
+                        report("当前工作区中没有此文件，也没有可定位的上级目录。");
+                    } else if (result.kind === "outside") {
+                        report("文件路径不在当前打开的项目范围内。");
+                    } else if (result.kind === "unavailable") {
+                        report("无法读取工作区目录。");
+                    }
+                } catch (error) { report(`无法定位文件：${String(error)}`); }
+            })();
+            return cleanup;
+        }
         const activeTabId = focusedPane === "left" ? activeLeftTabId : activeRightTabId;
         const tabs = focusedPane === "left" ? leftTabs : rightTabs;
         const activeTab = tabs.find(t => t.id === activeTabId);
@@ -171,28 +230,15 @@ export const PhysicalTree: React.FC = React.memo(() => {
 
             for (const dir of ancestors) {
                 await loadDirectory(dir);
+                if (!isCurrent()) return;
                 treeRef.current?.open(dir);
             }
-
-            const trySelect = (retries = 10) => {
-                if (retries <= 0) return;
-                setTimeout(() => {
-                    const node = treeRef.current?.get(targetPath);
-                    if (node) {
-                        treeRef.current?.select(targetPath);
-                        treeRef.current?.scrollTo(targetPath);
-                        setSelectedPath(targetPath);
-                        setSelectedDir(targetDir);
-                    } else {
-                        trySelect(retries - 1);
-                    }
-                }, 50);
-            };
-            trySelect();
+            select(targetPath, targetDir);
         };
 
         void expandParents();
-    }, [locateSignal]);
+        return cleanup;
+    }, [locateSignal, rootPath]);
 
     const beginCreate = (kind: "file" | "folder", directory = selectedDir ?? rootPath) => {
         creatingFromMenu.current = true;
@@ -757,6 +803,19 @@ export const PhysicalTree: React.FC = React.memo(() => {
             {convertingPath && <div className="flex items-center gap-2 p-2 text-xs text-gray-400" role="status"><span className="flex-1 truncate">正在转换：{convertingPath.split(/[\\/]/).pop()}</span><button type="button" className="rounded p-1 text-gray-300 hover:bg-white/10" title="取消转码" aria-label="取消转码" onClick={() => void cancelConvertMkvToMp4()}><Square size={13} fill="currentColor" /></button></div>}
             {ocrProgress && <div className="flex items-center gap-2 p-2 text-xs text-gray-400" role="status"><span className="flex-1 truncate">{ocrProgress}</span><button type="button" className="rounded p-1 text-gray-300 hover:bg-white/10" title="取消识别" aria-label="取消识别" onClick={() => { ocrController.current?.abort(); setOcrProgress("正在取消识别..."); }}><Square size={13} fill="currentColor" /></button></div>}
             {error && <div role="alert" className="p-2 text-xs text-red-400 break-words">{error}</div>}
+            {locateNotice && <div className="flex items-start gap-2 border-b border-ide-panel-border p-2 text-xs text-gray-300">
+                <div className="min-w-0 flex-1">
+                    <div role="status" className="break-words">{locateNotice.message}</div>
+                    <button type="button" className="mt-1 inline-flex items-center gap-1 text-sky-300 hover:text-white"
+                        title={locateNotice.path} onClick={() => {
+                            void invoke("write_text_clipboard", { text: locateNotice.path })
+                                .then(() => setLocateNotice(current => current === locateNotice ? { ...current, message: "已复制路径。" } : current))
+                                .catch(error => setError(String(error)));
+                        }}><Copy size={12} />复制路径</button>
+                </div>
+                <button type="button" aria-label="关闭定位提示" className="hover:text-white"
+                    onClick={() => setLocateNotice(null)}><X size={14} /></button>
+            </div>}
             <div ref={containerRef} className="relative flex-1 w-full p-1 overflow-hidden">
                 {speedSearch.searchBox}
                 {fileTreeData && fileTreeData.length > 0 ? (

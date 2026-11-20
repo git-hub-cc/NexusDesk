@@ -10,6 +10,7 @@ import { buildTreeStatuses } from "@/utils/fileTreeAppearance";
 import { gitApi, type TreeFileStatus } from "@/utils/api";
 import { fsApi } from "@/utils/api";
 import type { ReverseTreeNode } from "@/utils/treeGraph";
+import type { TreeLocationEntry } from "@/utils/gitTreeLocation";
 import { invokePathCommand as invoke, isRemotePath, remotePath } from "@/utils/remote";
 import { invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
 import { useTerminalStore } from "./terminalStore";
@@ -312,7 +313,7 @@ let projectVersion = 0;
 let treeStatusRequest = 0;
 let logicalTreeRequest = 0;
 const logicalTreeRefreshes = new Map<number, { pending: boolean; request: Promise<void> }>();
-const directoryRequests = new Map<string, Promise<void>>();
+const directoryRequests = new Map<string, Promise<TreeLocationEntry[] | undefined>>();
 const loadedDirectories = new Set<string>();
 
 const preserveLoadedChildren = (previous: any[], incoming: any[]): any[] => {
@@ -373,17 +374,18 @@ interface WorkspaceState {
 
   locateSignal: number;
   locatePath: string | null;
+  locateGitFile: { root: string; path: string } | null;
   editorJump: { path: string; line: number; pane: PaneType; from?: number; to?: number } | null;
   graphLocation: { path: string; line: number; pane: PaneType } | null;
   locateGraph: (path: string, line: number, pane: PaneType) => void;
-  triggerLocate: (path?: string) => void;
+  triggerLocate: (path?: string, gitFile?: { root: string; path: string }) => void;
 
   navHistory: Array<{ path: string; pos: number }>;
   navIndex: number;
   pushNavLocation: (path: string, pos: number) => void;
   navigateHistory: (direction: "back" | "forward") => Promise<void>;
 
-  loadDirectory: (path: string, logical?: boolean, refresh?: boolean) => Promise<void>;
+  loadDirectory: (path: string, logical?: boolean, refresh?: boolean) => Promise<TreeLocationEntry[] | undefined>;
   setProject: (path: string) => Promise<boolean>;
   closeProject: () => Promise<void>;
   setSidebarMode: (mode: SidebarMode) => void;
@@ -591,10 +593,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       locateSignal: 0,
       locatePath: null,
+      locateGitFile: null,
       editorJump: null,
       graphLocation: null,
-      locateGraph: (path, line, pane) => set(state => ({ graphLocation: { path, line, pane }, editorJump: { path, line, pane }, focusedPane: pane, locatePath: null, locateSignal: state.locateSignal + 1 })),
-      triggerLocate: (path) => set(state => ({ locatePath: path ?? null, locateSignal: state.locateSignal + 1 })),
+      locateGraph: (path, line, pane) => set(state => ({ graphLocation: { path, line, pane }, editorJump: { path, line, pane }, focusedPane: pane, locatePath: null, locateGitFile: null, locateSignal: state.locateSignal + 1 })),
+      triggerLocate: (path, gitFile) => set(state => ({ locatePath: path ?? null, locateGitFile: gitFile ?? null, locateSignal: state.locateSignal + 1 })),
 
       navHistory: [],
       navIndex: -1,
@@ -670,6 +673,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               : { fileTreeData: samePath(path, state.rootPath ?? "")
                   ? preserveLoadedChildren(state.fileTreeData, children) : replaceChildren(state.fileTreeData, path, children) });
             loadedDirectories.add(key);
+            return children;
           } catch (error) {
             console.error("Failed to load directory:", path, error);
           } finally {
@@ -696,6 +700,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           leftTabs: [], rightTabs: [], activeLeftTabId: null, activeRightTabId: null,
           focusedPane: "left", isSplitMode: false, navHistory: [], navIndex: -1,
           editorJump: null, graphLocation: null,
+          locateSignal: 0, locatePath: null, locateGitFile: null,
         });
         useLayoutStore.setState({ leftSidebarVisible: false, rightSidebarVisible: false, bottomPanelVisible: false });
         if (isTauri()) await tauriInvoke("close_project_instance");
@@ -744,7 +749,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             } else {
               tabs = resolveTabTitles(state.leftTabs, state.rightTabs, path);
             }
-            return { ...tabs, projectPinnedTabs, projectSessions, pinnedTabsRestored: switching ? false : state.pinnedTabsRestored, rootPath: path, searchScopePath: null, partitionSearchPaths: null, remoteLabel: isRemotePath(path) ? (settingsStorage.getItem(`sftp-label:${remotePath(path).id}`) || remotePath(path).id) : null, sidebarMode: "physical", fileTreeData: treeData, treeStatuses: {}, logicalTreeData: [], recentProjects: newRecent };
+            return { ...tabs, projectPinnedTabs, projectSessions, pinnedTabsRestored: switching ? false : state.pinnedTabsRestored, rootPath: path, searchScopePath: null, partitionSearchPaths: null, remoteLabel: isRemotePath(path) ? (settingsStorage.getItem(`sftp-label:${remotePath(path).id}`) || remotePath(path).id) : null, sidebarMode: "physical", fileTreeData: treeData, treeStatuses: {}, logicalTreeData: [], recentProjects: newRecent,
+              ...(switching && { locateSignal: 0, locatePath: null, locateGitFile: null }) };
           });
 
           const savedLayout = restoreProjectLayout(path);

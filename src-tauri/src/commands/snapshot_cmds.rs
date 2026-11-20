@@ -38,6 +38,7 @@ pub fn allowed_command(command: &str) -> bool {
             | "get_git_revision_content"
             | "get_git_revision_changes"
             | "get_git_revision_diff"
+            | "get_git_worktree_file_path"
             | "native_menu_open"
             | "native_menu_close"
             | "write_file_clipboard"
@@ -91,13 +92,19 @@ pub async fn open_git_snapshot(
     app: tauri::AppHandle,
     repo_path: String,
     commit_id: String,
+    focus_path: Option<String>,
 ) -> Result<(), String> {
+    let file = focus_path.clone();
     let (root, path, oid, label) = tauri::async_runtime::spawn_blocking(move || {
         // Only accept full object IDs; never let a revision be interpreted as a Git option.
         if commit_id.len() != 40 || !commit_id.bytes().all(|c| c.is_ascii_hexdigit()) {
             return Err("Invalid commit ID".to_string());
         }
         let root = PathBuf::from(repo_path);
+        let commit_id = match file {
+            Some(file) => crate::core::git::snapshot_file_revision(&root, &commit_id, &file)?,
+            None => commit_id,
+        };
         let oid = git(
             &root,
             &["rev-parse", "--verify", &format!("{commit_id}^{{commit}}")],
@@ -126,6 +133,9 @@ pub async fn open_git_snapshot(
     url.query_pairs_mut()
         .append_pair("project", &path.to_string_lossy())
         .append_pair("snapshot", &oid);
+    if let Some(file) = focus_path {
+        url.query_pairs_mut().append_pair("focusFile", &file);
+    }
     let window = tauri::WebviewWindowBuilder::new(
         &app,
         &label,

@@ -289,6 +289,14 @@ pub fn is_git_repository(repo_path: String) -> Result<bool, String> {
 pub fn get_git_directory(repo_path: String) -> Result<String, String> {
     git::repository_git_dir(&repo_path)
 }
+
+#[tauri::command]
+pub async fn get_git_worktree_file_path(repo_path: String, path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || git::worktree_file_path(&repo_path, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn push_git_repository(repo_path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || git::push(&repo_path))

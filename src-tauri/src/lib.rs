@@ -342,6 +342,7 @@ pub fn run() {
             commands::git_cmds::init_git_repository,
             commands::git_cmds::is_git_repository,
             commands::git_cmds::get_git_directory,
+            commands::git_cmds::get_git_worktree_file_path,
             commands::preview_cmds::start_html_preview,
             commands::preview_cmds::stop_html_preview,
             commands::terminal_cmds::start_terminal,

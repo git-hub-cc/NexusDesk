@@ -40,11 +40,15 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     if (!startup.current) {
-      const projectPath = new URLSearchParams(window.location.search).get("project");
+      const params = new URLSearchParams(window.location.search);
+      const projectPath = params.get("project");
       // Reuse initialization across StrictMode's effect replay.
       startup.current = (async () => {
         const path = projectPath ?? (isTauri() ? await invoke<string | null>("startup_project") : null);
-        if (path) await setProject(path);
+        if (path && await setProject(path) && isSnapshot) {
+          const file = params.get("focusFile");
+          if (file) useWorkspaceStore.getState().triggerLocate(undefined, { root: path, path: file });
+        }
       })()
         .catch(console.error);
     }

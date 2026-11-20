@@ -209,7 +209,8 @@ async function mutateGit<T>(command: string, args: Record<string, unknown>): Pro
 export const gitApi = {
     invalidateStatus: invalidateGitStatus,
     pathHistory: (path: string, limit = 100): Promise<{ root: string; entries: { commit: GitLogEntry; changes: GitRevisionChange[] }[] }> => invoke("get_git_path_history", { path, limit }),
-    openSnapshot: (repoPath: string, commitId: string): Promise<void> => invoke("open_git_snapshot", { repoPath, commitId }),
+    openSnapshot: (repoPath: string, commitId: string, focusPath?: string): Promise<void> => invoke("open_git_snapshot", { repoPath, commitId, focusPath }),
+    worktreeFilePath: (repoPath: string, path: string): Promise<string> => invoke("get_git_worktree_file_path", { repoPath, path }),
     isInstalled: (): Promise<boolean> => invoke("is_git_installed"),
     settings: (repoPath: string): Promise<GitSettings> => invoke("get_git_settings", { repoPath }),
     saveSettings: (repoPath: string, settings: GitSettings): Promise<void> => invoke("save_git_settings", { repoPath, settings }),

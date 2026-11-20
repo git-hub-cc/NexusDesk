@@ -73,6 +73,10 @@ input:is([type="button"], [type="submit"], [type="reset"], [type="checkbox"], [t
 .window-control-close:hover { background: #ef4444; color: white; }
 .window-title-bar [data-tab-id] { -webkit-app-region: no-drag; }
 .sidebar-toolbar button { -webkit-app-region: no-drag; }
+.sidebar-panel { container: sidebar / inline-size; }
+@container sidebar (max-width: 235px) {
+  .sidebar-mode-label { display: none; }
+}
 
 .music-page { user-select: none; }
 .media-virtual-list { position: relative; overflow-anchor: none; }

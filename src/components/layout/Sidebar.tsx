@@ -1,15 +1,35 @@
 import { PanelMinimizeButton } from "./PanelMinimizeButton";
 import React from "react";
-import { FolderGit2, Tags, LocateFixed, Network } from "lucide-react";
+import { FolderGit2, Tags, LocateFixed, Network, History } from "lucide-react";
 import { GraphView } from "@/components/relations/GraphView";
 import { PhysicalTree } from "@/components/explorer/PhysicalTree";
 import { LogicalTree } from "@/components/explorer/LogicalTree";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { isRemotePath } from "@/utils/remote";
+import { gitApi } from "@/utils/api";
+import { isSnapshot } from "@/utils/snapshot";
+
+const toolClass = "pointer-events-none opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 flex h-6 w-6 items-center justify-center shrink-0 rounded text-gray-400 hover:bg-white/10 hover:text-white active:bg-white/15 disabled:opacity-50";
 
 export const Sidebar: React.FC = () => {
     const { sidebarMode, setSidebarMode, rootPath } = useWorkspaceStore();
     const remote = isRemotePath(rootPath);
+    const tab = useWorkspaceStore(state => state.focusedPane === "left"
+        ? state.leftTabs.find(tab => tab.id === state.activeLeftTabId)
+        : state.rightTabs.find(tab => tab.id === state.activeRightTabId));
+    const [openingSnapshot, setOpeningSnapshot] = React.useState(false);
+    const [snapshotError, setSnapshotError] = React.useState("");
+    const snapshotLabel = "在历史快照中查看";
+    const locateLabel = tab?.diffContext ? "在当前工作区定位" : "定位当前文件";
+
+    const openSnapshot = async () => {
+        if (!tab?.diffContext || !tab.revision) return;
+        setOpeningSnapshot(true);
+        setSnapshotError("");
+        try { await gitApi.openSnapshot(tab.diffContext.root, tab.revision, tab.diffContext.path); }
+        catch (error) { setSnapshotError(`无法打开历史快照：${String(error)}`); }
+        finally { setOpeningSnapshot(false); }
+    };
 
     const handleDragEnterLogical = (e: React.DragEvent) => {
         if (remote) return;
@@ -30,7 +50,13 @@ export const Sidebar: React.FC = () => {
         const state = useWorkspaceStore.getState();
         const activeTabId = state.focusedPane === "left" ? state.activeLeftTabId : state.activeRightTabId;
         const tabs = state.focusedPane === "left" ? state.leftTabs : state.rightTabs;
-        const path = tabs.find(tab => tab.id === activeTabId)?.path;
+        const currentTab = tabs.find(tab => tab.id === activeTabId);
+        if (currentTab?.diffContext) {
+            state.setSidebarMode("physical");
+            state.triggerLocate(undefined, currentTab.diffContext);
+            return;
+        }
+        const path = currentTab?.path;
         if (path && state.sidebarMode === "logical" && state.logicalTreeData.some(category => category.children?.some((entry: any) => entry.id === path || entry.children?.some((child: any) => child.id === path)))) {
             state.triggerLocate();
             return;
@@ -47,27 +73,30 @@ export const Sidebar: React.FC = () => {
     };
 
     return (
-        <div className="group/panel flex flex-col h-full">
+        <div className="sidebar-panel group/panel flex flex-col h-full">
             <div data-tauri-drag-region className="sidebar-toolbar drag-region flex items-center px-1.5 h-8 border-b border-ide-panel-border bg-ide-panel-bg text-xs overflow-hidden">
                 <button
+                    title="物理" aria-label="物理"
                     className={`flex items-center gap-1 px-1.5 py-1 rounded-sm shrink-0 transition-colors ${sidebarMode === "physical" ? "bg-ide-selection text-white" : "text-gray-400 hover:text-white hover:bg-ide-tab-hover"}`}
                     onClick={() => setSidebarMode("physical")}
                     onDragEnter={handleDragEnterPhysical}
                     onDragOver={(e) => e.preventDefault()}
                 >
                     <FolderGit2 size={14} />
-                    物理
+                    <span className="sidebar-mode-label">物理</span>
                 </button>
                 <button
+                    title="逻辑" aria-label="逻辑"
                     className={`flex items-center gap-1 px-1.5 py-1 rounded-sm ml-0.5 shrink-0 transition-colors disabled:opacity-50 ${sidebarMode === "logical" ? "bg-ide-selection text-white" : "text-gray-400 hover:text-white hover:bg-ide-tab-hover"}`}
                     onClick={() => setSidebarMode("logical")}
                     onDragEnter={handleDragEnterLogical}
                     onDragOver={(e) => e.preventDefault()}
                 >
                     <Tags size={14} />
-                    逻辑
+                    <span className="sidebar-mode-label">逻辑</span>
                 </button>
                 <button
+                    title="图谱" aria-label="图谱"
                     disabled={remote}
                     className={`flex items-center gap-1 px-1.5 py-1 rounded-sm ml-0.5 shrink-0 transition-colors disabled:opacity-50 ${sidebarMode === "graph" ? "bg-ide-selection text-white" : "text-gray-400 hover:text-white hover:bg-ide-tab-hover"}`}
                     onClick={() => setSidebarMode("graph")}
@@ -81,20 +110,29 @@ export const Sidebar: React.FC = () => {
                     onDragOver={event => event.preventDefault()}
                 >
                     <Network size={14} />
-                    图谱
+                    <span className="sidebar-mode-label">图谱</span>
                 </button>
                 <button
                     type="button"
-                    title="定位当前文件"
-                    aria-label="定位当前文件"
+                    title={locateLabel}
+                    aria-label={locateLabel}
                     onClick={locateCurrentFile}
-                    className="pointer-events-none opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 ml-auto flex h-6 w-6 items-center justify-center shrink-0 rounded text-gray-400 hover:bg-white/10 hover:text-white active:bg-white/15"
+                    className={`ml-auto ${toolClass}`}
                 >
                     <LocateFixed size={14} />
                 </button>
+                {!isSnapshot && tab?.revision && tab.diffContext && <button type="button"
+                    title={snapshotLabel} aria-label={snapshotLabel} disabled={openingSnapshot}
+                    onClick={() => void openSnapshot()} className={toolClass}>
+                    <History size={14} />
+                </button>}
                 <PanelMinimizeButton panel="left" className="!ml-0 shrink-0" />
             </div>
 
+            {snapshotError && <div className="flex gap-2 p-2 text-xs text-red-400">
+                <span role="alert" className="min-w-0 flex-1 break-words">{snapshotError}</span>
+                <button type="button" aria-label="关闭提示" onClick={() => setSnapshotError("")}>×</button>
+            </div>}
             <div className="flex-1 relative overflow-hidden">
                 <div className={`absolute inset-0 ${sidebarMode === "physical" ? "block" : "hidden"}`}>
                     <PhysicalTree />

@@ -46,6 +46,13 @@ pub fn repository_git_dir(path: &str) -> Result<String, String> {
     let repo = open(path)?;
     Ok(repo.path().to_string_lossy().into_owned())
 }
+
+pub fn worktree_file_path(repo_path: &str, path: &str) -> Result<String, String> {
+    valid_path(path)?;
+    let repo = open(repo_path)?;
+    let workdir = repo.workdir().ok_or("Bare repository")?;
+    Ok(workdir.join(path).to_string_lossy().into_owned())
+}
 pub fn init_repository(path: &str) -> Result<(), String> {
     if Repository::discover(path).is_ok() {
         return Err("该目录已经是 Git 仓库".into());
@@ -1644,6 +1651,25 @@ mod tests {
             stage(f.path(), path, true).unwrap();
         }
         let second = commit(f.path(), "changes").unwrap();
+        let subdirectory = f.0.join("docs");
+        std::fs::create_dir(&subdirectory).unwrap();
+        assert_eq!(
+            Path::new(&worktree_file_path(subdirectory.to_str().unwrap(), "removed.md").unwrap()),
+            open(f.path())
+                .unwrap()
+                .workdir()
+                .unwrap()
+                .join("removed.md")
+        );
+        assert_eq!(
+            snapshot_file_revision(&subdirectory, &second, "removed.md").unwrap(),
+            first
+        );
+        assert_eq!(
+            snapshot_file_revision(&subdirectory, &second, "added.md").unwrap(),
+            second
+        );
+        assert!(snapshot_file_revision(&subdirectory, &second, "missing.md").is_err());
         let changes = revision_changes(f.path(), &second).unwrap();
         assert_eq!(changes.len(), 3);
         assert!(!changes.iter().any(|c| c.path == "unchanged.md"));
@@ -1985,6 +2011,32 @@ fn parent_tree<'repo>(commit: &git2::Commit<'repo>) -> Result<Option<git2::Tree<
             .map(Some)
             .map_err(|e| e.to_string())
     }
+}
+
+pub fn snapshot_file_revision(repo_path: &Path, id: &str, path: &str) -> Result<String, String> {
+    valid_path(path)?;
+    let repo = Repository::discover(repo_path).map_err(|e| e.to_string())?;
+    let id = git2::Oid::from_str(id).map_err(|e| e.to_string())?;
+    let commit = repo.find_commit(id).map_err(|e| e.to_string())?;
+    let has_file = |tree: git2::Tree<'_>| -> Result<bool, String> {
+        match tree.get_path(Path::new(path)) {
+            Ok(entry) => Ok(entry.kind() != Some(git2::ObjectType::Tree)),
+            Err(error) if error.code() == ErrorCode::NotFound => Ok(false),
+            Err(error) => Err(error.to_string()),
+        }
+    };
+    if has_file(commit.tree().map_err(|e| e.to_string())?)? {
+        return Ok(id.to_string());
+    }
+    if let Some(tree) = parent_tree(&commit)?
+        && has_file(tree)?
+    {
+        return commit
+            .parent_id(0)
+            .map(|parent| parent.to_string())
+            .map_err(|e| e.to_string());
+    }
+    Err("对比的两个版本均没有此文件".into())
 }
 
 // Merge commits are compared with their first parent, like the default Git log diff.
