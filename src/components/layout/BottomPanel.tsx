@@ -1,7 +1,7 @@
 // src/components/layout/BottomPanel.tsx
 import { PanelMinimizeButton } from "./PanelMinimizeButton";
 import { isSnapshot } from "@/utils/snapshot";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { gitApi } from "@/utils/api";
 import { ClipboardCheck, GitBranch, Terminal, X, CircleDot, ChevronDown, Pin } from "lucide-react";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
@@ -74,6 +74,13 @@ export function BottomPanel({ onOpenTerminalSettings }: { onOpenTerminalSettings
     if (!over || active.id === over.id) return;
     if (sessions.find(session => session.id === active.id)?.isPinned || sessions.find(session => session.id === over.id)?.isPinned) return;
     reorderSessions(sessions.findIndex(session => session.id === active.id), sessions.findIndex(session => session.id === over.id));
+  };
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.nativeEvent.isComposing) return;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    event.stopPropagation();
   };
 
   const closeSessions = (ids: string[]) => {
@@ -161,7 +168,7 @@ export function BottomPanel({ onOpenTerminalSettings }: { onOpenTerminalSettings
 
   return <div className="group/panel flex flex-col h-full">
     <div className="flex items-center justify-between pl-0 pr-2 h-8 shrink-0 border-b border-ide-panel-border bg-ide-panel-bg text-xs">
-      <div className="flex h-full min-w-0 flex-1 items-stretch">
+      <div className="bottom-panel-tabs flex h-full min-w-0 flex-1 items-stretch" onKeyDownCapture={handleTabKeyDown}>
         {gitInstalled && <button className={`${tabClass(activeTab === "git")} min-w-[120px] max-w-[200px] border-r border-ide-panel-border`} onClick={() => setBottomPanelTab("git")}><GitBranch size={14} />版本控制</button>}
         <div ref={tabsRef} className="flex h-full w-max min-w-0 flex-[0_1_auto] items-stretch overflow-hidden">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSessionDragEnd}>
