@@ -1,4 +1,4 @@
-﻿# NexusDesk
+# NexusDesk
 
 NexusDesk 是一个集成代码编辑、文件管理、浏览器、音乐、视频和本地语音识别功能的桌面工作台。项目基于 React、Vite 和 Tauri 构建。
 
