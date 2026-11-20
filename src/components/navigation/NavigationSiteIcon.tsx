@@ -1,5 +1,6 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { Globe } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import sprite01 from "@/assets/navigation/images/sprite-01.webp";
 import sprite02 from "@/assets/navigation/images/sprite-02.webp";
 import sprite03 from "@/assets/navigation/images/sprite-03.webp";
@@ -15,11 +16,54 @@ const spriteUrls: Record<string, string> = {
   "sprite-05.webp": sprite05,
 };
 
+function DefaultIcon() {
+  return <Globe size={24} aria-hidden="true" className="shrink-0 opacity-55" />;
+}
+
+function ImageIcon({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <DefaultIcon />;
+  return <img loading="lazy" decoding="async" src={src} alt=""
+    className="h-6 w-6 shrink-0 object-contain" onError={() => setFailed(true)} />;
+}
+
+const iconRequests = new Map<string, Promise<string | null>>();
+
+function fetchIcon(url: string) {
+  const cached = iconRequests.get(url);
+  if (cached) return cached;
+  const request = invoke<string | null>("navigation_fetch_icon", { url }).catch(() => null);
+  if (iconRequests.size >= 128) {
+    const oldest = iconRequests.keys().next().value;
+    if (oldest !== undefined) iconRequests.delete(oldest);
+  }
+  iconRequests.set(url, request);
+  return request;
+}
+
+function RemoteIcon({ url }: { url: string }) {
+  const placeholder = useRef<HTMLSpanElement>(null);
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!placeholder.current) return;
+    let active = true;
+    const observer = new IntersectionObserver(entries => {
+      if (!active || !entries.some(entry => entry.isIntersecting)) return;
+      observer.disconnect();
+      void fetchIcon(url).then(value => { if (active) setSrc(value); });
+    });
+    observer.observe(placeholder.current);
+    return () => { active = false; observer.disconnect(); };
+  }, [url]);
+
+  return src ? <ImageIcon src={src} /> : <span ref={placeholder} className="h-6 w-6 shrink-0"><DefaultIcon /></span>;
+}
+
 export function NavigationSiteIcon({ icon }: { icon: NavigationSite["icon"] }) {
-  const [failedIcon, setFailedIcon] = useState<string>();
-  if (typeof icon === "string" && icon && icon !== failedIcon) {
-    return <img key={icon} loading="lazy" decoding="async" src={icon} alt="" referrerPolicy="no-referrer"
-      className="h-6 w-6 shrink-0 object-contain" onError={() => setFailedIcon(icon)} />;
+  if (typeof icon === "string") {
+    const value = icon.trim();
+    if (/^data:image\//i.test(value)) return <ImageIcon key={value} src={value} />;
+    if (/^https?:\/\//i.test(value) && isTauri()) return <RemoteIcon key={value} url={value} />;
   }
   if (icon && typeof icon === "object") {
     const sprite = spriteUrls[icon.sprite.split("/").pop() || ""];
@@ -29,5 +73,5 @@ export function NavigationSiteIcon({ icon }: { icon: NavigationSite["icon"] }) {
       backgroundSize: `${icon.spriteWidth * (24 / icon.width)}px ${icon.spriteHeight * (24 / icon.height)}px`,
     }} />;
   }
-  return <Globe size={24} aria-hidden="true" className="shrink-0 opacity-55" />;
+  return <DefaultIcon />;
 }

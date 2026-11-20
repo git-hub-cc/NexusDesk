@@ -42,7 +42,7 @@ EXCLUDED_EXTENSIONS = [
 ]
 
 # 行数限制
-LINE_LIMIT = 2000
+LINE_LIMIT = 2200
 # 要排除的目录名
 EXCLUDED_DIRS = [
     # 依赖包与第三方库

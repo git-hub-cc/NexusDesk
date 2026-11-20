@@ -21,7 +21,7 @@ import { SoftwareSettings } from "./SoftwareSettings";
 import { CodexSettings } from "./CodexSettings";
 import { NavigationSyncSettings } from "@/components/navigation/NavigationSyncSettings";
 import openAiIcon from "@/assets/openai.svg";
-import { sidebarMaxSize, workspacePanelMinSize } from "@/utils/workspacePanelSizing";
+import { fileTreeMinWidth, sidebarPanelSizing, workspacePanelMinSize } from "@/utils/workspacePanelSizing";
 
 export const Workspace: React.FC = () => {
   const rightSidebarWidth = useLayoutStore(state => state.rightSidebarWidth);
@@ -117,6 +117,7 @@ export const Workspace: React.FC = () => {
     return () => { observer.disconnect(); if (tabLayoutUpdater.current === updateTabLayout) tabLayoutUpdater.current = null; };
   }, [isSplitMode, leftSidebarVisible, rightSidebarVisible]);
   const [horizontalMinSize, setHorizontalMinSize] = useState(0);
+  const [fileTreeMinSize, setFileTreeMinSize] = useState(0);
   useLayoutEffect(() => {
     const group = horizontalContainer.current?.firstElementChild;
     if (!(group instanceof HTMLElement)) return;
@@ -129,6 +130,7 @@ export const Workspace: React.FC = () => {
       if (group.clientWidth <= handleWidth || group.clientHeight <= 0) return;
       const panelCount = 1 + Number(leftSidebarVisible) + Number(rightSidebarVisible);
       setHorizontalMinSize(workspacePanelMinSize(group.clientWidth, handleWidth, panelCount));
+      setFileTreeMinSize(workspacePanelMinSize(group.clientWidth, handleWidth, panelCount, fileTreeMinWidth));
     };
     updateMinimum();
     const observer = new ResizeObserver(updateMinimum);
@@ -238,9 +240,7 @@ export const Workspace: React.FC = () => {
                       <Panel
                         id="file-tree"
                         order={1}
-                        defaultSize={leftSidebarWidth || 20}
-                        {...horizontalPanelMinimum}
-                        maxSize={sidebarMaxSize}
+                        {...sidebarPanelSizing(leftSidebarWidth || 20, fileTreeMinSize)}
                         onResize={size => updatePanelSize("leftSidebarWidth", size, setLeftSidebarWidth)}
                         className="bg-ide-panel-bg"
                       >
@@ -269,7 +269,7 @@ export const Workspace: React.FC = () => {
                   {rightSidebarVisible && (
                     <>
                       <PanelResizeHandle onDragging={onPanelDragging} className="ide-resize-handle ide-resize-handle-x" />
-                      <Panel id="relations-sidebar" order={3} defaultSize={rightSidebarWidth} onResize={size => updatePanelSize("rightSidebarWidth", size, setRightSidebarWidth)} {...horizontalPanelMinimum} maxSize={sidebarMaxSize} className="bg-ide-panel-bg"><RelationalView /></Panel>
+                      <Panel id="relations-sidebar" order={3} {...sidebarPanelSizing(rightSidebarWidth, horizontalMinSize)} onResize={size => updatePanelSize("rightSidebarWidth", size, setRightSidebarWidth)} className="bg-ide-panel-bg"><RelationalView /></Panel>
                     </>
                   )}
                 </PanelGroup>
