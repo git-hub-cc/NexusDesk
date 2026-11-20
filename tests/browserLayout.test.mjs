@@ -23,7 +23,8 @@ function harness() {
   const timers = new Map();
   let timerId = 0;
   const context = {
-    disposed: false, fullscreen: false, label: 'browser-test',
+    disposed: false, fullscreen: false, label: 'browser-test', pane: 'left',
+    layoutRevision: 0, homeTransitioning: { current: false },
     host: { current: { getBoundingClientRect() { reads++; return rect; } } },
     activeRef: { current: true }, syncLayout: {},
     document: { hidden: false, querySelectorAll: () => [] },
@@ -149,6 +150,7 @@ test('in-flight layout coalesces changes and submits latest bounds on a later fr
   h.frame();
   assert.equal(h.calls.length, 2);
   assert.equal(h.calls[1].width, 1000);
+  assert.ok(h.calls[1].revision > h.calls[0].revision);
   h.context.disposed = true;
   await h.complete();
   h.schedule();

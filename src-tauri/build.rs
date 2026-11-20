@@ -5,6 +5,13 @@ fn main() {
     println!("cargo:rerun-if-changed=icons");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         prepare_speech_runtime();
+        if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+            // 集成测试没有应用清单，Tauri 需要加载第六版公共控件。
+            println!("cargo:rustc-link-arg-tests=/MANIFEST:EMBED");
+            println!(
+                "cargo:rustc-link-arg-tests=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+            );
+        }
     }
     tauri_build::build()
 }

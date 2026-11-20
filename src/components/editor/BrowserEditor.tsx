@@ -15,6 +15,16 @@ import { NavigationHome } from "@/components/navigation/NavigationHome";
 
 export const BROWSER_HOME = "nexusdesk:nav";
 
+let layoutRevision = 0;
+
+function hideBrowser(label: string, pane: "left" | "right", reason: string) {
+  if (!label) return Promise.resolve();
+  return invoke("browser_layout", {
+    label, pane, revision: ++layoutRevision, active: false,
+    x: 0, y: 0, width: 0, height: 0, visible: false, reason,
+  });
+}
+
 export function openNavigationHome(pane: "left" | "right") {
   const state = useWorkspaceStore.getState();
   state.setFocusedPane(pane);
@@ -106,7 +116,7 @@ function NavigationEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "rig
         } catch { /* Ignore invalid extension pages. */ }
       });
       if (isDisposed) { unlisten(); return; }
-      await invoke("create_browser", { label, url: "about:blank", x: 0, y: 0, width: 1, height: 1, visible: false, suppressInitialDownloads: true });
+      await invoke("create_browser", { label, url: "about:blank", suppressInitialDownloads: true });
       created = true;
       if (isDisposed) await invoke("browser_action", { label, action: "close" });
       else setExtensionsReady(true);
@@ -268,11 +278,10 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
       });
       if (disposed) { unlistenLoad(); return; }
       logStage("listeners-ready", listenersStarted);
-      const initialRect = host.current?.getBoundingClientRect();
       const nativeStarted = performance.now();
       if (warm && !loaded) {
         await invoke("browser_action", { label, action: "navigate", url: initialUrl });
-      } else if (!warm) await invoke("create_browser", { label, url: initialUrl, x: initialRect?.x ?? 0, y: initialRect?.y ?? 0, width: initialRect?.width ?? 1, height: initialRect?.height ?? 1, visible: browserVisibility(activeRef.current, initialRect?.width ?? 0, initialRect?.height ?? 0).visible, suppressInitialDownloads: !!tab.suppressInitialDownloads });
+      } else if (!warm) await invoke("create_browser", { label, url: initialUrl, suppressInitialDownloads: !!tab.suppressInitialDownloads });
       logStage(warm ? (loaded ? "reuse-view" : "navigate-view") : "create-view", nativeStarted, `url=${browserDiagnosticUrl(tab.browser!.url)}`);
       if (disposed) {
         if (!retainedViews.current.includes(label)) await invoke("browser_action", { label, action: "close" });
@@ -304,13 +313,9 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
         const rect = host.current?.getBoundingClientRect();
         if (!rect) return;
         // Native views sit above HTML; hide them while application menus/dialogs are open.
-        const { visible, reason, documentHidden } = browserVisibility(activeRef.current, rect.width, rect.height);
-        // The native observer switches the host to fullscreen. Resize events
-        // resync these bounds once that transition reaches the monitor size.
-        const x = fullscreen ? 0 : rect.x;
-        const y = fullscreen ? 0 : rect.y;
-        const width = fullscreen ? window.innerWidth : rect.width;
-        const height = fullscreen ? window.innerHeight : rect.height;
+        const active = activeRef.current && !homeTransitioning.current;
+        const { visible, reason, documentHidden } = browserVisibility(active, rect.width, rect.height);
+        const { x, y, width, height } = rect;
         if (x === previousX && y === previousY && width === previousWidth
           && height === previousHeight && visible === previousVisible && reason === previousReason) return;
         previousX = x; previousY = y;
@@ -318,7 +323,9 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
         previousVisible = visible;
         previousReason = reason;
         pending = true;
-        void invoke("browser_layout", { label, x, y, width, height, visible, reason, documentHidden }).catch(reason => {
+        void invoke("browser_layout", {
+          label, pane, revision: ++layoutRevision, active, x, y, width, height, visible, reason, documentHidden,
+        }).catch(reason => {
           previousX = NaN;
           if (!disposed) setError(String(reason));
         }).finally(() => {
@@ -340,6 +347,7 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
         fallback = window.setTimeout(run, 100);
       };
       const restoreLayout = () => { previousX = NaN; scheduleLayout(); };
+      const onResize = () => fullscreen ? restoreLayout() : scheduleLayout();
       syncLayout.current = restoreLayout;
       const resizeObserver = new ResizeObserver(scheduleLayout);
       if (host.current) resizeObserver.observe(host.current);
@@ -350,7 +358,7 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
           || Array.from(record.removedNodes).some(containsOverlay))) scheduleLayout();
       });
       overlayObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["role", "data-dnd-dragging", "data-mirror-fullscreen", "data-panel-menu", "class", "style", "hidden", "data-state"] });
-      window.addEventListener("resize", scheduleLayout);
+      window.addEventListener("resize", onResize);
       window.addEventListener("focus", restoreLayout);
       window.addEventListener("pageshow", restoreLayout);
       document.addEventListener("visibilitychange", restoreLayout);
@@ -360,7 +368,7 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
         if (fallback !== undefined) window.clearTimeout(fallback);
         resizeObserver.disconnect();
         overlayObserver.disconnect();
-        window.removeEventListener("resize", scheduleLayout);
+        window.removeEventListener("resize", onResize);
         window.removeEventListener("focus", restoreLayout);
         window.removeEventListener("pageshow", restoreLayout);
         document.removeEventListener("visibilitychange", restoreLayout);
@@ -373,9 +381,13 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
     };
     void setup().catch(reason => {
       console.error("[browser]", `label=${label}`, "stage=setup-failed", `elapsed_ms=${Math.round(performance.now() - setupStarted)}`, reason);
-      if (disposed) return;
       void invoke("browser_action", { label, action: "close" }).catch(() => {});
-      if (!disposed) { switching.current = false; setError(String(reason)); }
+      if (!disposed) {
+        retainedViews.current = retainedViews.current.filter(view => view !== label);
+        retainedIndex.current = retainedViews.current.length - 1;
+        switching.current = false;
+        setError(String(reason));
+      }
     });
     return () => {
       disposed = true;
@@ -390,7 +402,7 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
       // Retain the previous native history when promoting a speculative view.
       // All retained views are destroyed by the component's unmount cleanup.
       if (retainedViews.current.includes(label)) {
-        void invoke("browser_layout", { label, x: 0, y: 0, width: 0, height: 0, visible: false }).catch(() => {});
+        void hideBrowser(label, pane, "effect-cleanup").catch(() => {});
       }
     };
   }, [tab.id, tab.browser!.root, viewGeneration, pane]);
@@ -408,7 +420,7 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
     if (homeTransitioning.current) return;
     homeTransitioning.current = true;
     try {
-      await invoke("browser_layout", { label: labelRef.current, x: 0, y: 0, width: 0, height: 0, visible: false });
+      await hideBrowser(labelRef.current, pane, "navigation-home");
       const url = currentUrl.current;
       const update = (tabs: Tab[]) => tabs.map(item => item.id === tab.id && item.browser && item.browser.url !== BROWSER_HOME ? {
         ...item,
@@ -418,13 +430,22 @@ function NativeBrowserEditor({ tab, pane, active }: { tab: Tab; pane: "left" | "
       useWorkspaceStore.setState(state => ({ leftTabs: update(state.leftTabs), rightTabs: update(state.rightTabs) }));
       setError("");
     } catch (reason) { setError(String(reason)); }
-    finally { homeTransitioning.current = false; }
+    finally {
+      homeTransitioning.current = false;
+      syncLayout.current();
+    }
   };
 
   const action = async (name: string, url?: string) => {
     try {
-      setError("");
       if (switching.current) return;
+      if (name === "reload" && !ready && error) {
+        setError("");
+        switching.current = true;
+        setViewGeneration(value => value + 1);
+        return;
+      }
+      setError("");
       if (name === "forward" && tab.browser?.homeHistory) {
         await showHome();
         return;

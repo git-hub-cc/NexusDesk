@@ -10,6 +10,9 @@ pub mod terminal_drop;
 pub mod browser_cmds;
 pub mod browser_downloads;
 pub mod browser_extensions;
+mod browser_layout_state;
+#[cfg(windows)]
+mod browser_native;
 pub mod browser_passwords;
 pub mod chat;
 pub mod chat_images;

@@ -1,4 +1,29 @@
+use super::browser_layout_state::{BrowserPane, BrowserWindow, LayoutChange};
 use tauri::{Emitter, Manager};
+
+thread_local! {
+    static BROWSER_WINDOWS: std::cell::RefCell<std::collections::HashMap<String, BrowserWindow>> =
+        std::cell::RefCell::default();
+}
+
+fn browser_window<T>(window: &tauri::Window, apply: impl FnOnce(&mut BrowserWindow) -> T) -> T {
+    BROWSER_WINDOWS
+        .with_borrow_mut(|windows| apply(windows.entry(window.label().into()).or_default()))
+}
+
+async fn on_window_thread<T: Send + 'static>(
+    window: tauri::Window,
+    apply: impl FnOnce(tauri::Window) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let owner = window.clone();
+    window
+        .run_on_main_thread(move || {
+            let _ = send.send(apply(owner));
+        })
+        .map_err(|error| error.to_string())?;
+    receive.await.map_err(|error| error.to_string())?
+}
 
 fn load_results() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
     static RESULTS: std::sync::OnceLock<
@@ -148,6 +173,17 @@ fn browser_args(proxy_mode: &str) -> String {
     args
 }
 
+#[cfg(windows)]
+fn browser_environment_options() -> (&'static str, &'static str) {
+    // 同一进程内固定代理选项，所有普通标签、扩展页和弹窗共用同一数据目录。
+    static OPTIONS: std::sync::OnceLock<(&'static str, String)> = std::sync::OnceLock::new();
+    let (mode, args) = OPTIONS.get_or_init(|| {
+        let mode = browser_proxy_mode();
+        (mode, browser_args(mode))
+    });
+    (mode, args)
+}
+
 fn browser_directory(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let directory = crate::profiles::data_directory(app).join("browser");
     std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
@@ -176,6 +212,7 @@ fn close_browser_children(window: &tauri::Window, parent_label: &str) {
 }
 
 pub fn close_window_popups(window: &tauri::Window) {
+    BROWSER_WINDOWS.with_borrow_mut(|windows| windows.remove(window.label()));
     close_browser_children(window, &format!("{}-browser", window.label()));
     let prefix = format!("{}-browser-", window.label());
     for (label, popup) in window.app_handle().webview_windows() {
@@ -326,6 +363,7 @@ fn validate_label(owner: &str, label: &str) -> Result<(), String> {
 }
 
 fn clear_browser_state(window: &tauri::Window, label: &str) {
+    browser_window(window, |state| state.forget(label));
     if let Ok(mut titles) = document_titles().lock() {
         titles.remove(label);
     }
@@ -345,7 +383,6 @@ fn observe_browser_fullscreen(view: &tauri::Webview, window: tauri::Window) -> R
         let result = (|| {
             let core = platform.controller().CoreWebView2()?;
             let mut token = 0;
-            let mut previous_fullscreen = None;
             core.add_ContainsFullScreenElementChanged(
                 &webview2_com::ContainsFullScreenElementChangedEventHandler::create(Box::new(
                     move |sender, _| {
@@ -353,32 +390,25 @@ fn observe_browser_fullscreen(view: &tauri::Webview, window: tauri::Window) -> R
                             let mut fullscreen = Default::default();
                             sender.ContainsFullScreenElement(&mut fullscreen)?;
                             if fullscreen.as_bool() {
-                                if previous_fullscreen.is_none() {
-                                    match trace_browser_result(
-                                        &label,
-                                        "read-host-fullscreen",
-                                        window.is_fullscreen(),
-                                    ) {
-                                        Ok(previous) => {
-                                            if trace_browser_result(
-                                                &label,
-                                                "enter-host-fullscreen",
-                                                window.set_fullscreen(true),
-                                            )
-                                            .is_ok()
-                                            {
-                                                previous_fullscreen = Some(previous);
-                                            }
-                                        }
-                                        Err(_) => {}
-                                    }
+                                let can_enter = browser_window(&window, |state| {
+                                    state.fullscreen.is_none() && state.owns_pane(&label)
+                                });
+                                if !can_enter {
+                                    return Ok(());
                                 }
-                            } else if let Some(previous) = previous_fullscreen.take() {
-                                let _ = trace_browser_result(
-                                    &label,
-                                    "restore-host-fullscreen",
-                                    window.set_fullscreen(previous),
-                                );
+                                let Ok(previous) = trace_browser_result(
+                                    &label, "read-host-fullscreen", window.is_fullscreen(),
+                                ) else {
+                                    return Ok(());
+                                };
+                                if trace_browser_result(
+                                    &label, "enter-host-fullscreen", window.set_fullscreen(true),
+                                ).is_err() {
+                                    return Ok(());
+                                }
+                                browser_window(&window, |state| state.fullscreen = Some((label.clone(), previous)));
+                            } else if let Err(error) = leave_fullscreen(&window, &label) {
+                                log::warn!(target: "browser", "label={label} restore fullscreen failed: {error}");
                             }
                             let _ = trace_browser_result(
                                 &label,
@@ -401,6 +431,29 @@ fn observe_browser_fullscreen(view: &tauri::Webview, window: tauri::Window) -> R
         }
     })
     .map_err(|error| error.to_string())
+}
+
+#[cfg(windows)]
+fn leave_fullscreen(window: &tauri::Window, label: &str) -> Result<bool, String> {
+    let previous = browser_window(window, |state| {
+        if state
+            .fullscreen
+            .as_ref()
+            .is_some_and(|(owner, _)| owner == label)
+        {
+            state.fullscreen.take().map(|(_, previous)| previous)
+        } else {
+            None
+        }
+    });
+    if let Some(previous) = previous {
+        trace_browser_result(
+            label,
+            "restore-host-fullscreen",
+            window.set_fullscreen(previous),
+        )?;
+    }
+    Ok(previous.is_some())
 }
 
 // Wry reports Finished even for failed navigations. Surface the native result
@@ -510,14 +563,10 @@ pub async fn create_browser(
     window: tauri::Window,
     label: String,
     url: String,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    visible: bool,
     suppress_initial_downloads: bool,
 ) -> Result<(), String> {
     let create_started = std::time::Instant::now();
+    let create_label = label.clone();
     if !label.starts_with(&format!("{}-browser-", window.label())) {
         return Err("无效的网页标签".into());
     }
@@ -527,11 +576,12 @@ pub async fn create_browser(
     let app_handle = window.app_handle().clone();
     let popup_directory = directory.clone();
     let popup_owner = window.clone();
+    #[cfg(target_os = "windows")]
+    let (proxy_mode, browser_args) = browser_environment_options();
+    #[cfg(not(windows))]
     let proxy_mode = browser_proxy_mode();
     #[cfg(target_os = "windows")]
-    let browser_args = browser_args(proxy_mode);
-    #[cfg(target_os = "windows")]
-    let popup_browser_args = browser_args.clone();
+    let popup_browser_args = browser_args;
     log::info!(target: "browser", "label={label} create url={} profile={} proxy_mode={proxy_mode} args={}", diagnostic_url(&browser_url(&url)?), directory.display(), if cfg!(windows) { "persistent-session/default-feature-overrides" } else { "default" });
     let navigation_label = label.clone();
     let load_label = label.clone();
@@ -540,7 +590,6 @@ pub async fn create_browser(
     let page_load_started = std::sync::Arc::new(std::sync::Mutex::new(None::<std::time::Instant>));
     let load_clock = page_load_started.clone();
     let popup_parent_label = label.clone();
-    // Start the target navigation immediately using the measured editor bounds.
     let builder = tauri::webview::WebviewBuilder::new(&label, tauri::WebviewUrl::External(initial_url))
         // 让 WebView2 将文件拖拽事件交给网页，保留原生上传行为。
         .disable_drag_drop_handler()
@@ -698,35 +747,39 @@ pub async fn create_browser(
     let builder = builder
         .additional_browser_args(&browser_args)
         .browser_extensions_enabled(true);
-    let (position, size) = (
-        tauri::LogicalPosition::new(x, y),
-        tauri::LogicalSize::new(width.max(1.), height.max(1.)),
-    );
-    let view = trace_browser_result(
-        "new-child",
-        "add-child",
-        window.add_child(builder, position, size),
-    )?;
-    #[cfg(target_os = "windows")]
-    observe_browser_fullscreen(&view, window.clone())?;
-    #[cfg(target_os = "windows")]
-    observe_browser_navigation(&view, window.clone())?;
-    #[cfg(target_os = "windows")]
-    super::browser_downloads::observe(
-        &view,
-        window.clone(),
-        view.label().into(),
-        suppress_initial_downloads,
-    )?;
-    #[cfg(target_os = "windows")]
-    if let Err(error) = install_browser_blackhole(&view) {
-        log::warn!(target: "browser", "optional resource filter failed: {error}");
-    }
-    log::info!(target: "browser", "label={} child-created elapsed_ms={} visible={visible}", view.label(), create_started.elapsed().as_millis());
-    if !visible {
-        trace_browser_result(view.label(), "initial-hide", view.hide())?;
-    }
-    Ok(())
+    // COM 创建期间可能处理窗口消息。第二次创建必须等第一次注册或回滚完成。
+    static CREATION: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _creation = CREATION.lock().await;
+    on_window_thread(window, move |window| {
+        #[cfg(windows)]
+        let view = trace_browser_result(&create_label, "add-child", super::browser_native::add_child(&window, &create_label, builder))?;
+        #[cfg(not(windows))]
+        let view = trace_browser_result(&create_label, "add-child", window.add_child(
+            builder, tauri::PhysicalPosition::new(-32, -32), tauri::PhysicalSize::new(1, 1),
+        ))?;
+        let setup = (|| {
+            #[cfg(windows)]
+            {
+                observe_browser_fullscreen(&view, window.clone())?;
+                observe_browser_navigation(&view, window.clone())?;
+                super::browser_downloads::observe(
+                    &view, window.clone(), view.label().into(), suppress_initial_downloads,
+                )?;
+                if let Err(error) = install_browser_blackhole(&view) {
+                    log::warn!(target: "browser", "optional resource filter failed: {error}");
+                }
+            }
+            #[cfg(not(windows))]
+            trace_browser_result(view.label(), "initial-hide", view.hide())?;
+            Ok::<_, String>(())
+        })();
+        if let Err(error) = setup {
+            let _ = trace_browser_result(view.label(), "close-after-setup-failure", view.close());
+            return Err(error);
+        }
+        log::info!(target: "browser", "label={} child-created elapsed_ms={} visible=false", view.label(), create_started.elapsed().as_millis());
+        Ok(())
+    }).await
 }
 
 // Narrow native filters avoid a COM roundtrip for every image/script. Do not
@@ -796,10 +849,38 @@ fn install_browser_blackhole(view: &tauri::Webview) -> Result<(), String> {
     .map_err(|error| error.to_string())
 }
 
+fn hide_browser(window: &tauri::Window, view: &tauri::Webview) -> Result<(), String> {
+    let label = view.label();
+    #[cfg(windows)]
+    {
+        let hidden = trace_browser_result(label, "hide", super::browser_native::hide(view));
+        let restored = leave_fullscreen(window, label);
+        if matches!(restored, Ok(true)) {
+            let _ = view.eval(
+                "if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})",
+            );
+            let _ = window.emit_to(
+                window.label(),
+                &format!("browser-fullscreen-{label}"),
+                false,
+            );
+        }
+        hidden.and(restored.map(|_| ()))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        trace_browser_result(label, "hide", view.hide())
+    }
+}
+
 #[tauri::command]
-pub fn browser_layout(
+pub async fn browser_layout(
     window: tauri::Window,
     label: String,
+    pane: BrowserPane,
+    revision: u64,
+    active: bool,
     x: f64,
     y: f64,
     width: f64,
@@ -809,38 +890,66 @@ pub fn browser_layout(
     document_hidden: Option<bool>,
 ) -> Result<(), String> {
     validate_label(window.label(), &label)?;
-    // A queued resize/hide can arrive after close. Treat it as an expired task.
-    let Some(view) = window.get_webview(&label) else {
-        return Ok(());
-    };
-    log::info!(target: "browser", "label={label} layout x={x} y={y} width={width} height={height} visible={visible} reason={} document-hidden={document_hidden:?}", reason.as_deref().unwrap_or("unspecified"));
-    if visible && width > 0. && height > 0. {
-        trace_browser_result(
-            &label,
-            "set-bounds",
-            view.set_bounds(tauri::Rect {
+    on_window_thread(window, move |window| {
+        let Some(view) = window.get_webview(&label) else {
+            return Ok(());
+        };
+        let visible = visible && active && width > 0. && height > 0.
+            && [x, y, width, height].into_iter().all(f64::is_finite);
+        let LayoutChange::Apply { hide_previous } = browser_window(&window, |state| {
+            state.layout(pane, &label, revision, active, visible)
+        }) else {
+            return Ok(());
+        };
+        if let Some(previous) = hide_previous
+            && let Some(old) = window.get_webview(&previous)
+        {
+            if let Err(error) = hide_browser(&window, &old) {
+                // 原生隐藏失败时销毁旧视图，避免它继续截获鼠标。
+                trace_browser_result(&previous, "close-after-hide-failure", old.close())?;
+                clear_browser_state(&window, &previous);
+                log::warn!(target: "browser", "label={previous} closed after failed hide: {error}");
+            }
+        }
+        log::debug!(target: "browser", "label={label} layout revision={revision} x={x} y={y} width={width} height={height} visible={visible} reason={} document-hidden={document_hidden:?}", reason.as_deref().unwrap_or("unspecified"));
+        if visible {
+            let bounds = tauri::Rect {
                 position: tauri::LogicalPosition::new(x, y).into(),
                 size: tauri::LogicalSize::new(width, height).into(),
-            }),
-        )?;
-        trace_browser_result(&label, "show", view.show())
-    } else {
-        if width > 1. && height > 1. {
-            trace_browser_result(
-                &label,
-                "hidden-bounds",
-                view.set_bounds(tauri::Rect {
-                    position: tauri::LogicalPosition::new(x, y).into(),
-                    size: tauri::LogicalSize::new(width, height).into(),
-                }),
-            )?;
+            };
+            #[cfg(windows)]
+            let result = (|| {
+                let fullscreen = browser_window(&window, |state| state.fullscreen.as_ref().is_some_and(|(owner, _)| owner == &label));
+                let bounds = if fullscreen {
+                    tauri::Rect {
+                        position: tauri::PhysicalPosition::new(0, 0).into(),
+                        size: window.inner_size().map_err(|error| error.to_string())?.into(),
+                    }
+                } else {
+                    bounds
+                };
+                let scale = window.scale_factor().map_err(|error| error.to_string())?;
+                trace_browser_result(&label, "show", super::browser_native::show(&view, bounds, scale, fullscreen))
+            })();
+            #[cfg(not(windows))]
+            let result = trace_browser_result(&label, "set-bounds", view.set_bounds(bounds))
+                .and_then(|()| trace_browser_result(&label, "show", view.show()));
+            if result.is_err() {
+                let _ = hide_browser(&window, &view);
+            }
+            result
+        } else if let Err(error) = hide_browser(&window, &view) {
+            trace_browser_result(&label, "close-after-hide-failure", view.close())?;
+            clear_browser_state(&window, &label);
+            Err(error)
+        } else {
+            Ok(())
         }
-        trace_browser_result(&label, "hide", view.hide())
-    }
+    }).await
 }
 
 #[tauri::command]
-pub fn browser_action(
+pub async fn browser_action(
     window: tauri::Window,
     label: String,
     action: String,
@@ -848,11 +957,17 @@ pub fn browser_action(
 ) -> Result<(), String> {
     validate_label(window.label(), &label)?;
     if action == "close" {
-        clear_browser_state(&window, &label);
-        return match window.get_webview(&label) {
-            Some(view) => trace_browser_result(&label, "close", view.close()),
-            None => Ok(()),
-        };
+        return on_window_thread(window, move |window| {
+            let result = if let Some(view) = window.get_webview(&label) {
+                let _ = hide_browser(&window, &view);
+                trace_browser_result(&label, "close", view.close())
+            } else {
+                Ok(())
+            };
+            clear_browser_state(&window, &label);
+            result
+        })
+        .await;
     }
     log::info!(target: "browser", "label={label} action={action} url={}", url.as_deref().and_then(|value| tauri::Url::parse(value).ok()).map(|url| diagnostic_url(&url)).unwrap_or_default());
     let view = trace_browser_result(&label, "action-lookup", child(&window, &label))?;
