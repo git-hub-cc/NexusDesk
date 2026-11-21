@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import { assetsUrl } from "./helpers/loadSource.mjs";
+
+const { isImage, isVideo } = await import(assetsUrl);
 
 const compile = path => ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8")
   .replace(/^import .*;\r?$/gm, "").replace(/^export /gm, ""), {
@@ -31,7 +34,7 @@ function harness({ confirmed = true, failDelete = false, failMove = false } = {}
     useDeleteConfirmation: () => ({ confirmDelete: async request => { confirmations.push(request); return confirmed; }, confirmationDialog: null }),
     useWorkspaceStore: { getState: () => ({ openTab: tab => tabs.push(tab) }) },
     CreateNameDialog: "create-name-dialog", validateEntryName: () => undefined,
-    isImage: path => /\.(png|svg)$/i.test(path),
+    isImage, isVideo,
     topLevelPaths: paths => paths.filter(path => !paths.some(parent => parent !== path && path.startsWith(parent + "/"))),
     invoke: async (command, args) => {
       calls.push({ command, args });

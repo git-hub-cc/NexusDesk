@@ -480,36 +480,11 @@
       {"name": "中国哲学书电子化计划", "url": "https://ctext.org/searchbooks.pl?searchu=%s", "proxy": false, "desc": "收录大量先秦至明清典籍，支持原文与译文检索。"}
     ],
     "cse": [
-      {
-        "name": "微信读书",
-        "url": "https://cse.google.com/cse?cx=a56f3b6c0a4a44ba9&q=%s",
-        "proxy": true,
-        "desc": "在微信读书中进行搜索。"
-      },
-      {
-        "name": "V2EX",
-        "url": "https://cse.google.com/cse?cx=804418eadda7c4c61&q=%s",
-        "proxy": true,
-        "desc": "在V2EX社区内搜索。"
-      },
-      {
-        "name": "gov.cn",
-        "url": "https://cse.google.com/cse?cx=90c97e82edc2d4d77&q=%s",
-        "proxy": true,
-        "desc": "在中国政府内搜索。"
-      },
-      {
-        "name": "electronjs",
-        "url": "https://cse.google.com/cse?cx=f5bb1a9a424824083&q=%s",
-        "proxy": true,
-        "desc": "electron框架。"
-      },
-      {
-        "name": "pikpak",
-        "url": "https://cse.google.com/cse?cx=e7dbb37893b8e4dbf&q=%s",
-        "proxy": true,
-        "desc": "pikpak。"
-      }
+      {"name": "微信读书", "url": "https://cse.google.com/cse?cx=a56f3b6c0a4a44ba9&q=%s", "proxy": true, "desc": "在微信读书中进行搜索。"},
+      {"name": "V2EX", "url": "https://cse.google.com/cse?cx=804418eadda7c4c61&q=%s", "proxy": true, "desc": "在V2EX社区内搜索。"},
+      {"name": "gov.cn", "url": "https://cse.google.com/cse?cx=90c97e82edc2d4d77&q=%s", "proxy": true, "desc": "在中国政府内搜索。"},
+      {"name": "electronjs", "url": "https://cse.google.com/cse?cx=f5bb1a9a424824083&q=%s", "proxy": true, "desc": "electron框架。"},
+      {"name": "pikpak", "url": "https://cse.google.com/cse?cx=e7dbb37893b8e4dbf&q=%s", "proxy": true, "desc": "pikpak。"}
     ]
   }
 }

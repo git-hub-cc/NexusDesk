@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import { moduleUrl } from "./helpers/loadSource.mjs";
+
+const panelSizing = await import(moduleUrl("utils/workspacePanelSizing.ts"));
 
 test("music and video pages follow the active browser tab when switching in either direction", () => {
   const source = readFileSync(new URL("../src/components/editor/BrowserEditor.tsx", import.meta.url), "utf8");
@@ -38,7 +41,7 @@ test("workspace preserves media and browser component identity when opening and 
     React: { createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }) },
     DialogShell: "DialogShell", TerminalSettings: "TerminalSettings",
     useEffect() {}, useLayoutEffect() {}, useRef: () => ({ current: null }), useState: () => [null, () => {}],
-    sidebarMaxSize: 80,
+    ...panelSizing,
     useDroppable: () => ({}), useSensor() {}, useSensors() {},
     useLayoutStore: () => ({}), useWorkspaceStore: selector => selector ? selector(state) : state,
     useShallow: selector => selector,

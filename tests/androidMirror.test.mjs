@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 import ts from "typescript";
 
 const compile = path => ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8")
@@ -158,8 +159,6 @@ async function swipeHarness(fullscreen = true) {
 }
 
 test("global Tab navigation leaves mirror focus intact so fullscreen shortcuts keep working", async () => {
-  const source = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
-  const handler = source.slice(source.indexOf("const preventTabNavigation ="), source.indexOf('window.addEventListener("keydown", preventTabNavigation'));
   let queries = 0, focused = 0;
   class Element {
     constructor(props) { this.props = props; }
@@ -168,15 +167,32 @@ test("global Tab navigation leaves mirror focus intact so fullscreen shortcuts k
         && selector.includes('[data-android-mirror-input="true"]') ? this : null;
     }
   }
+  class HTMLInputElement extends Element {
+    type = "text";
+    matches(selector) { return selector === "input"; }
+    getClientRects() { return [{}]; }
+    focus() { focused++; }
+  }
+  const field = new HTMLInputElement({});
   const document = {
+    activeElement: null,
+    addEventListener() {},
     querySelectorAll() {
       queries++;
-      return [{ offsetParent: {}, closest: () => null, focus() { focused++; } }];
+      return [field];
     },
   };
-  const navigate = new Function("Element", "document", `${ts.transpileModule(handler, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022 },
-  }).outputText}\nreturn preventTabNavigation;`)(Element, document);
+  let navigate;
+  const context = {
+    Element, HTMLElement: Element, HTMLInputElement, HTMLTextAreaElement: class extends Element {}, document,
+    window: { addEventListener(type, listener) { if (type === "keydown") navigate = listener; } },
+    exports: {},
+  };
+  const source = readFileSync(new URL("../src/utils/focusPolicy.ts", import.meta.url), "utf8");
+  vm.runInNewContext(ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText, context);
+  context.exports.installFocusPolicy();
   const h = await swipeHarness();
   try {
     const canvas = h.render().find(node => node.type === "canvas");

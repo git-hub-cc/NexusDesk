@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import React from "react";
 import vm from "node:vm";
+import { moduleUrl } from "./helpers/loadSource.mjs";
+
+const panelSizing = await import(moduleUrl("utils/workspacePanelSizing.ts"));
 
 test("settings overlay preserves the workspace tree and browser component positions", () => {
   let settingsOpen = false;
@@ -16,7 +19,7 @@ test("settings overlay preserves the workspace tree and browser component positi
     Dialog: Object.fromEntries(["Root", "Portal", "Overlay", "Content", "Title", "Close", "Description"].map(name => [name, component(`Dialog.${name}`)])),
     useState: initial => [typeof initial === "boolean" ? settingsOpen : initial, () => {}],
     useEffect: () => {}, useLayoutEffect: () => {}, useRef: () => ({ current: null }),
-    sidebarMaxSize: 80,
+    ...panelSizing,
     useSensors: () => [], useSensor: () => {}, closestCenter: () => {},
     useLayoutStore: () => ({ leftSidebarVisible: true, rightSidebarVisible: true, bottomPanelVisible: true }),
     useWorkspaceStore: selector => selector({ isSplitMode: false }),
