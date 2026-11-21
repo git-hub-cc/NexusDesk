@@ -189,10 +189,9 @@ impl TerminalState {
     }
 }
 
-fn read_history() -> Result<Vec<String>, String> {
-    let conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
+fn read_history(conn: &rusqlite::Connection) -> Result<Vec<String>, String> {
     let mut statement = conn
-        .prepare("SELECT command FROM terminal_history ORDER BY position")
+        .prepare_cached("SELECT command FROM terminal_history ORDER BY position")
         .map_err(|error| error.to_string())?;
     statement
         .query_map([], |row| row.get(0))
@@ -203,45 +202,45 @@ fn read_history() -> Result<Vec<String>, String> {
 
 #[tauri::command]
 pub fn load_terminal_history() -> Result<Vec<String>, String> {
-    read_history()
+    crate::core::db::with_global_db(|conn| read_history(conn))
 }
 
 #[tauri::command]
 pub fn delete_terminal_history(command: String) -> Result<Vec<String>, String> {
-    let conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
-    conn.execute("DELETE FROM terminal_history WHERE command=?1", [command])
-        .map_err(|error| error.to_string())?;
-    read_history()
+    crate::core::db::with_global_db(|conn| {
+        conn.execute("DELETE FROM terminal_history WHERE command=?1", [command])
+            .map_err(|error| error.to_string())?;
+        read_history(conn)
+    })
 }
 
 #[tauri::command]
 pub fn save_terminal_history(command: String) -> Result<Vec<String>, String> {
-    let mut conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
-    let tx = conn.transaction().map_err(|error| error.to_string())?;
-    let mut statement = tx
-        .prepare("SELECT command FROM terminal_history ORDER BY position")
-        .map_err(|error| error.to_string())?;
-    let mut history = statement
-        .query_map([], |row| row.get(0))
-        .map_err(|error| error.to_string())?
-        .collect::<Result<Vec<String>, _>>()
-        .map_err(|error| error.to_string())?;
-    drop(statement);
-    let command = command.trim();
+    crate::core::db::with_global_db(|conn| save_history(conn, command.trim()))
+}
+
+fn save_history(conn: &mut rusqlite::Connection, command: &str) -> Result<Vec<String>, String> {
     if command.is_empty() || command.contains(['\r', '\n', '\0']) {
-        return Ok(history);
+        return read_history(conn);
     }
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let mut history = read_history(&tx)?;
     history.retain(|entry| entry != command);
     history.insert(0, command.to_owned());
     history.truncate(2000);
     tx.execute("DELETE FROM terminal_history", [])
         .map_err(|e| e.to_string())?;
-    for (position, command) in history.iter().enumerate() {
-        tx.execute(
-            "INSERT INTO terminal_history(command,position) VALUES (?1,?2)",
-            rusqlite::params![command, position as i64],
-        )
-        .map_err(|e| e.to_string())?;
+    {
+        let mut insert = tx
+            .prepare_cached("INSERT INTO terminal_history(command,position) VALUES (?1,?2)")
+            .map_err(|error| error.to_string())?;
+        for (position, command) in history.iter().enumerate() {
+            insert
+                .execute(rusqlite::params![command, position as i64])
+                .map_err(|error| error.to_string())?;
+        }
     }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(history)

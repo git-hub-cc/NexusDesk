@@ -215,7 +215,7 @@ pub fn run() {
         .manage(commands::preview_cmds::PreviewState::default())
         .manage(commands::http_cmds::HttpState::default())
         .manage(AppState {
-            db_conn: Arc::new(Mutex::new(None)),
+            db_conn: core::db::global_db().clone(),
         })
         .invoke_handler(|invoke| {
             if invoke.message.webview().label().starts_with("window-snapshot-")
@@ -428,6 +428,9 @@ pub fn run() {
                 app.state::<commands::capture_cmds::CaptureState>().shutdown();
                 app.state::<commands::terminal_cmds::TerminalState>().shutdown();
                 app.state::<commands::remote_cmds::RemoteState>().shutdown();
+                if let Ok(mut connection) = core::db::global_db().lock() {
+                    connection.take();
+                }
             }
         });
 }

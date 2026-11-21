@@ -7,11 +7,7 @@ use tauri::State;
 fn project_db(
     state: &AppState,
 ) -> Result<std::sync::MutexGuard<'_, Option<rusqlite::Connection>>, String> {
-    let mut guard = state.db_conn.lock().map_err(|error| error.to_string())?;
-    if guard.is_none() {
-        *guard = Some(db::init_db(None).map_err(|error| error.to_string())?);
-    }
-    Ok(guard)
+    db::lock_db(&state.db_conn)
 }
 
 #[tauri::command]

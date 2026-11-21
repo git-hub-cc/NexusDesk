@@ -30,23 +30,30 @@ pub struct GraphCategory {
     color: Option<String>,
 }
 
-fn color_db() -> Result<Connection, String> {
-    let conn = crate::core::db::init_db(None).map_err(|error| error.to_string())?;
-    conn.execute_batch("CREATE TABLE IF NOT EXISTS colors (category TEXT PRIMARY KEY COLLATE NOCASE, color TEXT NOT NULL);").map_err(|e| e.to_string())?;
-    Ok(conn)
-}
-
 #[tauri::command]
 pub fn set_graph_category_color(category: String, color: Option<String>) -> Result<(), String> {
-    let conn = color_db()?;
-    if let Some(color) = color {
+    if let Some(color) = &color {
         if color.len() != 7
             || !color.starts_with('#')
             || !color[1..].bytes().all(|c| c.is_ascii_hexdigit())
         {
             return Err("Invalid color".into());
         }
-        conn.execute("INSERT INTO colors(category,color) VALUES (?1,?2) ON CONFLICT(category) DO UPDATE SET color=excluded.color", params![category, color]).map_err(|e| e.to_string())?;
+    }
+    crate::core::db::with_global_db(|conn| set_category_color(conn, &category, color.as_deref()))
+}
+
+fn set_category_color(
+    conn: &Connection,
+    category: &str,
+    color: Option<&str>,
+) -> Result<(), String> {
+    if let Some(color) = color {
+        conn.execute(
+            "INSERT INTO colors(category,color) VALUES (?1,?2) ON CONFLICT(category) DO UPDATE SET color=excluded.color",
+            params![category, color],
+        )
+        .map_err(|e| e.to_string())?;
     } else {
         conn.execute("DELETE FROM colors WHERE category=?1", [category])
             .map_err(|e| e.to_string())?;
@@ -109,27 +116,7 @@ pub fn get_graph_sync_data(
     let guard = state.db_conn.lock().map_err(|error| error.to_string())?;
     let conn = guard.as_ref().ok_or("请先打开项目")?;
     schema(conn)?;
-    let colors = color_db()?;
-    let mut categories = Vec::new();
-    let mut statement = conn
-        .prepare("SELECT name FROM graph_categories ORDER BY name")
-        .map_err(|e| e.to_string())?;
-    let names = statement
-        .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|e| e.to_string())?;
-    use rusqlite::OptionalExtension;
-    for name in names {
-        let name = name.map_err(|e| e.to_string())?;
-        let color = colors
-            .query_row(
-                "SELECT color FROM colors WHERE category=?1",
-                [&name],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| e.to_string())?;
-        categories.push(GraphSyncCategory { name, color });
-    }
+    let categories = read_categories(conn)?;
     let mut files = Vec::new();
     let mut statement = conn
         .prepare("SELECT category, path FROM graph_files ORDER BY category, path")
@@ -155,6 +142,26 @@ pub fn get_graph_sync_data(
         categories,
         files,
     })
+}
+
+fn read_categories(conn: &Connection) -> Result<Vec<GraphSyncCategory>, String> {
+    let mut statement = conn
+        .prepare_cached(
+            "SELECT graph_categories.name, colors.color FROM graph_categories
+             LEFT JOIN colors ON colors.category = graph_categories.name
+             ORDER BY graph_categories.name",
+        )
+        .map_err(|error| error.to_string())?;
+    statement
+        .query_map([], |row| {
+            Ok(GraphSyncCategory {
+                name: row.get(0)?,
+                color: row.get(1)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -189,17 +196,11 @@ pub fn apply_graph_sync_data(
         )
         .map_err(|e| e.to_string())?;
     }
-    tx.commit().map_err(|e| e.to_string())?;
-    let colors = color_db()?;
     for category in &data.categories {
-        if let Some(color) = &category.color {
-            colors.execute("INSERT INTO colors(category,color) VALUES (?1,?2) ON CONFLICT(category) DO UPDATE SET color=excluded.color", params![category.name, color]).map_err(|e| e.to_string())?;
-        } else {
-            colors
-                .execute("DELETE FROM colors WHERE category=?1", [&category.name])
-                .map_err(|e| e.to_string())?;
-        }
+        set_category_color(&tx, &category.name, category.color.as_deref())?;
     }
+    tx.commit().map_err(|e| e.to_string())?;
+    drop(guard);
     use tauri::Emitter;
     let _ = app.emit("nexusdesk-graph-data-changed", ());
     let _ = app.emit("nexusdesk:graph-colors", ());
@@ -213,16 +214,8 @@ pub fn get_graph_categories(state: State<'_, AppState>) -> Result<Vec<GraphCateg
         return Ok(vec![]);
     };
     schema(conn)?;
-    let mut statement = conn
-        .prepare("SELECT name FROM graph_categories ORDER BY name")
-        .map_err(|e| e.to_string())?;
-    let names = statement
-        .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|e| e.to_string())?;
     let mut categories = Vec::new();
-    let colors = color_db()?;
-    for name in names {
-        let name = name.map_err(|e| e.to_string())?;
+    for GraphSyncCategory { name, color } in read_categories(conn)? {
         let mut files = conn
             .prepare("SELECT path FROM graph_files WHERE category=?1 ORDER BY path")
             .map_err(|e| e.to_string())?;
@@ -231,26 +224,21 @@ pub fn get_graph_categories(state: State<'_, AppState>) -> Result<Vec<GraphCateg
             .map_err(|e| e.to_string())?
             .collect::<Result<Vec<String>, _>>()
             .map_err(|e| e.to_string())?;
-        use rusqlite::OptionalExtension;
-        let color = colors
-            .query_row(
-                "SELECT color FROM colors WHERE category=?1",
-                [&name],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| e.to_string())?;
-        let missing_files = files
+        categories.push(GraphCategory {
+            name,
+            files,
+            missing_files: Vec::new(),
+            color,
+        });
+    }
+    drop(guard);
+    for category in &mut categories {
+        category.missing_files = category
+            .files
             .iter()
             .filter(|path| !std::path::Path::new(path).is_file())
             .cloned()
             .collect();
-        categories.push(GraphCategory {
-            name,
-            files,
-            missing_files,
-            color,
-        });
     }
     Ok(categories)
 }

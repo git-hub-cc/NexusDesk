@@ -1,8 +1,32 @@
 use crate::core::fs::FileNode;
-use rusqlite::{Connection, Result, params};
+use rusqlite::{Connection, Result, TransactionBehavior, params};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::time::Duration;
+
+type Database = Mutex<Option<Connection>>;
+
+pub fn global_db() -> &'static Arc<Database> {
+    static DB: OnceLock<Arc<Database>> = OnceLock::new();
+    DB.get_or_init(Arc::default)
+}
+
+pub fn lock_db(db: &Database) -> Result<MutexGuard<'_, Option<Connection>>, String> {
+    let mut connection = db.lock().map_err(|error| error.to_string())?;
+    if connection.is_none() {
+        *connection = Some(init_db(None).map_err(|error| error.to_string())?);
+    }
+    Ok(connection)
+}
+
+pub fn with_global_db<T>(
+    operation: impl FnOnce(&mut Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut connection = lock_db(global_db())?;
+    operation(connection.as_mut().expect("SQLite connection initialized"))
+}
 
 #[cfg(test)]
 mod tests {
@@ -235,23 +259,26 @@ mod tests {
 
 pub fn read_global_value(key: &str) -> Result<Option<String>, String> {
     use rusqlite::OptionalExtension;
-    let conn = init_db(None).map_err(|error| error.to_string())?;
-    conn.query_row(
-        "SELECT value FROM global_settings WHERE key = ?1",
-        [key],
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(|error| error.to_string())
+    with_global_db(|conn| {
+        conn.query_row(
+            "SELECT value FROM global_settings WHERE key = ?1",
+            [key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())
+    })
 }
 
 pub fn write_global_value(key: &str, value: &str) -> Result<(), String> {
-    let conn = init_db(None).map_err(|error| error.to_string())?;
-    conn.execute(
-        "INSERT INTO global_settings(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        params![key, value],
-    ).map_err(|error| error.to_string())?;
-    Ok(())
+    with_global_db(|conn| {
+        conn.execute(
+            "INSERT INTO global_settings(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![key, value],
+        )
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+    })
 }
 
 pub fn init_db(
@@ -269,8 +296,10 @@ pub fn init_db(
     }
     fs::create_dir_all(&db_path)?;
     db_path.push(if global { "nexus.db" } else { "index.db" });
-    let conn = Connection::open(db_path)?;
-    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+    let mut connection = Connection::open(db_path)?;
+    connection.busy_timeout(Duration::from_secs(5))?;
+    connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+    let conn = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS file_meta (
@@ -332,7 +361,8 @@ pub fn init_db(
         "CREATE INDEX IF NOT EXISTS file_meta_path_normalized ON file_meta(REPLACE(path, '\\', '/'){collation});"
     ))?;
     crate::core::local_history::init(&conn)?;
-    Ok(conn)
+    conn.commit()?;
+    Ok(connection)
 }
 
 pub fn upsert_file_meta(
