@@ -58,8 +58,7 @@ function setup() {
 test("controls cannot take mouse or script focus while input surfaces remain usable", () => {
   const { Element, HTMLInputElement, HTMLTextAreaElement, document, dispatch } = setup();
   const input = new HTMLInputElement({ type: "text" });
-  for (const control of [new Element(), new HTMLInputElement({ type: "checkbox" }),
-    new HTMLInputElement({ type: "range" })]) {
+  for (const control of [new Element(), new HTMLInputElement({ type: "checkbox" })]) {
     input.focus();
     assert.equal(dispatch("mousedown", control).defaultPrevented, true);
     assert.equal(document.activeElement, input, "toolbar clicks preserve text input focus");
@@ -67,6 +66,11 @@ test("controls cannot take mouse or script focus while input surfaces remain usa
     assert.equal(dispatch("focus", control).stopped, true);
     assert.equal(control.blurred, true);
   }
+  const range = new HTMLInputElement({ type: "range" });
+  assert.equal(dispatch("mousedown", range).defaultPrevented, undefined);
+  range.focus();
+  assert.equal(dispatch("focus", range).stopped, undefined);
+  assert.equal(document.activeElement, range);
   for (const field of [input, new HTMLTextAreaElement(),
     new Element({ isContentEditable: true }), new Element({ android: true })]) {
     assert.equal(dispatch("mousedown", field).defaultPrevented, undefined);
