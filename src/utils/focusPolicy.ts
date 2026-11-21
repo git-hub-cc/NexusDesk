@@ -7,6 +7,10 @@ const FILE_TREE_TAB_STOP = '.explorer-tree [role="tree"][tabindex="0"]';
 const FILE_TREE_FOCUS_TARGET = '.explorer-tree[tabindex], .explorer-tree div[tabindex]';
 const NATIVE_SELECT_TAB_STOP = 'select[data-allow-native-focus]';
 
+function isRangeInput(element: Element): boolean {
+  return element instanceof HTMLInputElement && element.type === "range";
+}
+
 function acceptsKeyboardInput(element: Element): boolean {
   if (element instanceof HTMLInputElement) return TEXT_INPUT_TYPES.has(element.type);
   if (element instanceof HTMLTextAreaElement) return true;
@@ -16,7 +20,8 @@ function acceptsKeyboardInput(element: Element): boolean {
 }
 
 function allowsFocus(element: Element): boolean {
-  return acceptsKeyboardInput(element) || element.matches(FILE_TREE_FOCUS_TARGET);
+  // 滑块需要保留原生鼠标按下行为才能点击和拖动；不将其加入自定义 Tab 停靠列表。
+  return isRangeInput(element) || acceptsKeyboardInput(element) || element.matches(FILE_TREE_FOCUS_TARGET);
 }
 
 export function installFocusPolicy(): void {
