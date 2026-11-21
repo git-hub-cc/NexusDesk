@@ -55,18 +55,43 @@ Office 转换需要安装 LibreOffice，可通过应用的软件管理安装，�
 
 ## 开发
 
-```bash
+需要提前安装 Node.js、Rust 和 Tauri 的系统依赖。在项目根目录安装依赖：
+
+```powershell
 npm install
-npm run dev
 ```
 
-构建生产版本：
+启动桌面端开发环境，并打开指定项目目录：
 
-```bash
-npm run build
+```powershell
+npm run tauri dev -- -- -- --project "C:\Users\user\Desktop\Final-Debug"
 ```
 
-运行桌面端开发命令请参阅 `package.json` 中的 Tauri 脚本及项目文档。Node.js、Rust 和 Tauri 的系统依赖需要提前安装。
+可将 `--project` 后的路径替换为需要打开的项目目录。
+
+### 构建
+
+构建桌面端生产版本：
+
+```powershell
+npm run tauri build
+```
+
+### Windows 打包
+
+生成标准安装包和内置语音识别模型的安装包，输出到 `release` 目录：
+
+```powershell
+npm run package:windows
+```
+
+仅生成不含内置语音识别模型的轻量安装包：
+
+```powershell
+npm run package:windows-no-stt-model
+```
+
+轻量版可在首次使用语音识别时下载模型；内置模型版的打包过程需要访问 Hugging Face 下载模型。
 
 ### Windows 旧版本安装 WinGet
 
@@ -126,8 +151,4 @@ winget source remove --name msstore
 Set-Service -Name camsvc -StartupType Manual
 ```
 
-## 无法进行调试
-```powershell
-npm run tauri dev -- -- -- --project "C:\Users\user\Desktop\Final-DebugData"
-```
 
