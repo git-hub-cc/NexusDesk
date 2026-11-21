@@ -16,7 +16,7 @@ const FILE_DRAG_TYPES = ["Files", "application/x-nexusdesk-files", "application/
 
 async function referenceFilesFromPaths(paths: string[]): Promise<File[]> {
   if (paths.length > 4) throw new Error("最多上传 4 张参考图片");
-  return Promise.all(paths.map(async path => {
+  return Promise.all(paths.map(async path  => {
     const name = path.split(/[/\\]/).pop() || "参考图片";
     const extension = name.split(".").pop()?.toLowerCase();
     const type = extension === "png" ? "image/png" : extension === "jpg" || extension === "jpeg" ? "image/jpeg" : extension === "webp" ? "image/webp" : "";

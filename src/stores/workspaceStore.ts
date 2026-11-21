@@ -7,8 +7,7 @@ import { persist } from "zustand/middleware";
 import { globalJsonStorage, settingsStorage } from "@/utils/globalSettings";
 import debounce from "lodash/debounce";
 import { buildTreeStatuses } from "@/utils/fileTreeAppearance";
-import { gitApi, type TreeFileStatus } from "@/utils/api";
-import { fsApi } from "@/utils/api";
+import { fsApi, gitApi, type MoveOutcome, type TreeFileStatus } from "@/utils/api";
 import type { ReverseTreeNode } from "@/utils/treeGraph";
 import type { TreeLocationEntry } from "@/utils/gitTreeLocation";
 import { invokePathCommand as invoke, isRemotePath, remotePath } from "@/utils/remote";
@@ -393,7 +392,7 @@ interface WorkspaceState {
   createLogicalFolder: (name: string) => Promise<void>;
   moveLogicalNode: (paths: string[], newType: string) => Promise<void>;
   deletePhysicalEntry: (path: string) => Promise<void>;
-  movePhysicalEntry: (sourcePath: string, targetDir: string, name?: string, opts?: any) => Promise<void>;
+  movePhysicalEntry: (sourcePath: string, targetDir: string, name?: string, opts?: any) => Promise<boolean>;
   copyFileToPhysical: (sourcePath: string, targetDir: string, opts?: any) => Promise<void>;
   createPhysicalFile: (path: string) => Promise<void>;
   createPhysicalFolder: (path: string) => Promise<void>;
@@ -878,22 +877,29 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       movePhysicalEntry: async (sourcePath, targetDir, name, opts) => {
         try {
           await flushPendingWrites();
-          const target = name === undefined
-            ? await invoke<string>("move_entry", { sourcePath, targetDir, opts })
-            : await invoke<string>("rename_entry", { sourcePath, name, opts });
+          const result = name === undefined
+            ? await invoke<string | MoveOutcome>("move_entry", { sourcePath, targetDir, opts })
+            : await invoke<string | MoveOutcome>("rename_entry", { sourcePath, name, opts });
+          const remote = typeof result === "string";
+          const target = remote ? result : result.target;
+          const moved = remote ? [{ source: sourcePath, target, subtree: true }] : result.moved;
+          const error = remote ? null : result.error;
+          if (error && !moved.length) throw error;
           fileOperationHistory.selectProject(get().rootPath);
-          if (opts && (opts.mergeFolders || opts.overwriteAll || opts.overwritePaths?.length || opts.skipAll || opts.skipPaths?.length)) {
+          if (error || (opts && (opts.mergeFolders || opts.overwriteAll || opts.overwritePaths?.length || opts.skipAll || opts.skipPaths?.length))) {
             fileOperationHistory.clear();
-          } else if (normalizePath(sourcePath) !== normalizePath(target)) {
+          } else if (moved.length && normalizePath(sourcePath) !== normalizePath(target)) {
             fileOperationHistory.record({
-              undo: () => get().movePhysicalEntry(target, parentPath(sourcePath), name === undefined ? undefined : sourcePath.split(/[/\\]/).pop()!),
-              redo: () => get().movePhysicalEntry(sourcePath, targetDir, name),
+              undo: async () => { await get().movePhysicalEntry(target, parentPath(sourcePath), name === undefined ? undefined : sourcePath.split(/[/\\]/).pop()!); },
+              redo: async () => { await get().movePhysicalEntry(sourcePath, targetDir, name); },
             });
           }
           const remap = (path: string) => {
             const normalized = normalizePath(path);
-            const source = normalizePath(sourcePath);
-            return isWithinPath(path, sourcePath) ? target + (target.includes("\\") ? normalized.slice(source.length).replace(/\//g, "\\") : normalized.slice(source.length)) : path;
+            const entry = moved.find(({ source, subtree }) => subtree ? isWithinPath(path, source) : samePath(path, source));
+            if (!entry) return path;
+            const suffix = normalized.slice(normalizePath(entry.source).length);
+            return entry.target + (entry.target.includes("\\") ? suffix.replace(/\//g, "\\") : suffix);
           };
           for (const [key, entry] of [...saves]) {
             if (remap(entry.path) !== entry.path) { entry.schedule.cancel(); saves.delete(key); }
@@ -913,6 +919,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           await Promise.all([...new Set([parentPath(sourcePath), targetDir])]
             .map(path => get().loadDirectory(path, false, true)));
           await get().fetchLogicalTree();
+          if (error) throw error;
+          return !remote && result.indexPending;
         } catch (error) { throw error; }
       },
 

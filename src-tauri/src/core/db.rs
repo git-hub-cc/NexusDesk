@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
 type Database = Mutex<Option<Connection>>;
+pub const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub fn global_db() -> &'static Arc<Database> {
     static DB: OnceLock<Arc<Database>> = OnceLock::new();
@@ -297,7 +298,7 @@ pub fn init_db(
     fs::create_dir_all(&db_path)?;
     db_path.push(if global { "nexus.db" } else { "index.db" });
     let mut connection = Connection::open(db_path)?;
-    connection.busy_timeout(Duration::from_secs(5))?;
+    connection.busy_timeout(BUSY_TIMEOUT)?;
     connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
     let conn = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
@@ -357,12 +358,38 @@ pub fn init_db(
             "CREATE INDEX IF NOT EXISTS links_{column}_normalized ON links(REPLACE({column}, '\\', '/'){collation});"
         ))?;
     }
-    conn.execute_batch(&format!(
-        "CREATE INDEX IF NOT EXISTS file_meta_path_normalized ON file_meta(REPLACE(path, '\\', '/'){collation});"
-    ))?;
     crate::core::local_history::init(&conn)?;
+    for table in [
+        "file_meta",
+        "logical_refs",
+        "logical_copies",
+        "logical_hidden",
+        "local_history",
+        "local_history_heads",
+    ] {
+        index_move_paths(&conn, table)?;
+    }
+    if conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='graph_files')",
+        [],
+        |row| row.get::<_, bool>(0),
+    )? {
+        index_move_paths(&conn, "graph_files")?;
+    }
     conn.commit()?;
     Ok(connection)
+}
+
+pub fn indexed_path_expression(column: &str) -> String {
+    let collation = if cfg!(windows) { " COLLATE NOCASE" } else { "" };
+    format!("REPLACE({column}, '\\', '/'){collation}")
+}
+
+pub fn index_move_paths(conn: &Connection, table: &str) -> Result<()> {
+    let expression = indexed_path_expression("path");
+    conn.execute_batch(&format!(
+        "CREATE INDEX IF NOT EXISTS {table}_path_normalized ON {table}({expression});"
+    ))
 }
 
 pub fn upsert_file_meta(

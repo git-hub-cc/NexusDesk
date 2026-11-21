@@ -1,8 +1,9 @@
 use crate::core::db;
 use crate::core::fs::{self, FileNode};
+use crate::core::path_operations::{self, Scan, Write};
 use crate::state::AppState;
 use std::path::PathBuf;
-use tauri::State;
+use tauri::{Emitter, State};
 
 fn project_db(
     state: &AppState,
@@ -21,38 +22,62 @@ pub async fn prepare_logical_sandbox(
     }
     let connection = state.db_conn.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        // Serialize preparations with category mutations and other preparations.
-        let guard = connection.lock().map_err(|e| e.to_string())?;
-        let conn = guard.as_ref().ok_or("数据库未初始化")?;
-        let tree = db::get_logical_tree(conn).map_err(|e| e.to_string())?;
-        let node = tree
-            .iter()
-            .find(|node| node.name == category)
-            .ok_or("分类不存在")?;
-        let mut statement = conn
-            .prepare("SELECT path FROM logical_hidden WHERE category=?1")
-            .map_err(|e| e.to_string())?;
-        let hidden = statement
-            .query_map([&category], |row| row.get::<_, String>(0))
-            .map_err(|e| e.to_string())?
-            .collect::<Result<std::collections::HashSet<_>, _>>()
-            .map_err(|e| e.to_string())?;
-        let sources = node
-            .children
-            .as_deref()
-            .unwrap_or_default()
-            .iter()
-            .filter(|entry| !entry.missing && !hidden.contains(&entry.id))
-            .map(|entry| entry.id.clone())
-            .collect::<Vec<_>>();
+        static PREPARATIONS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _preparation = PREPARATIONS.lock().map_err(|error| error.to_string())?;
         let base = dirs::home_dir()
             .ok_or("无法获取用户目录")?
             .join(".nexus/sandboxes");
-        crate::core::sandbox::prepare(&base, std::path::Path::new(&project), &category, &sources)
-            .map(|path| path.to_string_lossy().into_owned())
+        let sources = sandbox_sources(&connection, &category)?;
+        let existing = sources
+            .iter()
+            .filter(|path| std::path::Path::new(path).exists())
+            .cloned()
+            .collect::<Vec<_>>();
+        let sandbox = crate::core::sandbox::prepare(
+            &base,
+            std::path::Path::new(&project),
+            &category,
+            &existing,
+        )?;
+        if sandbox_sources(&connection, &category)? != sources {
+            return Err("沙箱准备期间分类成员已变更，请重试".into());
+        }
+        Ok(sandbox.to_string_lossy().into_owned())
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn sandbox_sources(
+    connection: &std::sync::Mutex<Option<rusqlite::Connection>>,
+    category: &str,
+) -> Result<Vec<String>, String> {
+    let guard = connection.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("数据库未初始化")?;
+    let tree = db::read_logical_tree(conn).map_err(|e| e.to_string())?;
+    let node = tree
+        .iter()
+        .find(|node| node.name == category)
+        .ok_or("分类不存在")?;
+    let mut statement = conn
+        .prepare("SELECT path FROM logical_hidden WHERE category=?1")
+        .map_err(|e| e.to_string())?;
+    let hidden = statement
+        .query_map([category], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<std::collections::HashSet<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let mut sources = node
+        .children
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter(|entry| !hidden.contains(&entry.id))
+        .map(|entry| entry.id.clone())
+        .collect::<Vec<_>>();
+    sources.sort_unstable();
+    sources.dedup();
+    Ok(sources)
 }
 
 #[tauri::command]
@@ -420,6 +445,8 @@ fn write_file_checked(
         lock
     };
     let _file_guard = file_lock.lock().map_err(|e| e.to_string())?;
+    let key = path_operations::canonical_key_path(std::path::Path::new(path));
+    let _operation = Write::begin([key.as_path()])?;
     let before = crate::core::text_file::metadata(std::path::Path::new(path))?;
     let (old, existed) = match std::fs::read_to_string(path) {
         Ok(text) => (text, true),
@@ -817,10 +844,30 @@ fn sync_project_index_blocking(
 ) -> Result<(), String> {
     let root = std::path::Path::new(&path);
     let scopes = index_scopes(root, paths);
+    let keys = scopes
+        .iter()
+        .map(|path| path_operations::canonical_key_path(path))
+        .collect::<Vec<_>>();
+    loop {
+        let scan = Scan::begin(keys.iter().map(PathBuf::as_path));
+        match try_sync_project_index(&scopes, connection, &scan) {
+            Ok(true) => return Ok(()),
+            Ok(false) => {}
+            Err(error) if scan.apply(|| ()).is_some() => return Err(error),
+            Err(_) => {}
+        }
+    }
+}
+
+fn try_sync_project_index(
+    scopes: &[PathBuf],
+    connection: &std::sync::Mutex<Option<rusqlite::Connection>>,
+    scan: &Scan,
+) -> Result<bool, String> {
     let indexed_paths = {
         let guard = connection.lock().map_err(|e| e.to_string())?;
         let Some(conn) = guard.as_ref() else {
-            return Ok(());
+            return Ok(true);
         };
         let collation = if cfg!(windows) { " COLLATE NOCASE" } else { "" };
         let normalized = format!("REPLACE(path, '\\', '/'){collation}");
@@ -829,7 +876,7 @@ fn sync_project_index_blocking(
         );
         let mut statement = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let mut paths = Vec::new();
-        for scope in &scopes {
+        for scope in scopes {
             let key = fs::index_path_key(&scope.to_string_lossy());
             paths.extend(
                 statement
@@ -845,7 +892,7 @@ fn sync_project_index_blocking(
         paths
     };
     let mut files = Vec::new();
-    for scope in &scopes {
+    for scope in scopes {
         if scope.exists() {
             files.extend(fs::collect_workspace_metadata(scope)?);
         }
@@ -859,7 +906,8 @@ fn sync_project_index_blocking(
         .collect();
 
     let guard = connection.lock().map_err(|e| e.to_string())?;
-    if let Some(conn) = guard.as_ref() {
+    scan.apply(|| {
+        let Some(conn) = guard.as_ref() else { return Ok(true); };
         let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         fs::apply_workspace_metadata(&files, &transaction)?;
         for (p, revision) in missing {
@@ -875,8 +923,8 @@ fn sync_project_index_blocking(
                 .map_err(|e| e.to_string())?;
         }
         transaction.commit().map_err(|e| e.to_string())?;
-    }
-    Ok(())
+        Ok(true)
+    }).unwrap_or(Ok(false))
 }
 
 #[tauri::command]
@@ -1421,22 +1469,18 @@ pub async fn move_entry(
     source_path: String,
     target_dir: String,
     opts: Option<fs::TransferOptions>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
-) -> Result<String, String> {
-    let connection = state.db_conn.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        move_entry_blocking(
-            source_path,
-            target_dir,
-            None,
-            opts.unwrap_or_default(),
-            &AppState {
-                db_conn: connection,
-            },
-        )
-    })
+) -> Result<fs::MoveOutcome, String> {
+    move_local_entry(
+        source_path,
+        target_dir,
+        None,
+        opts,
+        app,
+        state.db_conn.clone(),
+    )
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1444,56 +1488,147 @@ pub async fn rename_entry(
     source_path: String,
     name: String,
     opts: Option<fs::TransferOptions>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
-) -> Result<String, String> {
+) -> Result<fs::MoveOutcome, String> {
     let target_dir = std::path::Path::new(&source_path)
         .parent()
         .ok_or("Invalid source path")?
         .to_string_lossy()
         .to_string();
-    let connection = state.db_conn.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        move_entry_blocking(
-            source_path,
-            target_dir,
-            Some(name),
-            opts.unwrap_or_default(),
-            &AppState {
-                db_conn: connection,
-            },
-        )
-    })
+    move_local_entry(
+        source_path,
+        target_dir,
+        Some(name),
+        opts,
+        app,
+        state.db_conn.clone(),
+    )
     .await
-    .map_err(|e| e.to_string())?
 }
 
-fn move_entry_blocking(
+async fn move_local_entry(
     source_path: String,
     target_dir: String,
     name: Option<String>,
-    opts: fs::TransferOptions,
-    state: &AppState,
-) -> Result<String, String> {
-    let guard = state.db_conn.lock().map_err(|e| e.to_string())?;
-    let target = fs::transfer_entry_named(
-        std::path::Path::new(&source_path),
-        std::path::Path::new(&target_dir),
-        false,
-        name.as_deref(),
-        &opts,
-    )?;
-    if let Some(conn) = guard.as_ref() {
-        remap_entry_paths(conn, &source_path, &target)?;
+    opts: Option<fs::TransferOptions>,
+    app: tauri::AppHandle,
+    connection: std::sync::Arc<std::sync::Mutex<Option<rusqlite::Connection>>>,
+) -> Result<fs::MoveOutcome, String> {
+    let database = connection.clone();
+    let (mut outcome, retry) = tauri::async_runtime::spawn_blocking(move || {
+        let opts = opts.unwrap_or_default();
+        let plan = fs::MovePlan::new(
+            std::path::Path::new(&source_path),
+            std::path::Path::new(&target_dir),
+            name.as_deref(),
+            &opts,
+        )?;
+        execute_local_move(&database, &plan, || plan.execute(&opts))
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    if let Some(operation) = retry {
+        outcome.index_pending = true;
+        let moved = outcome.moved.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut delay = std::time::Duration::from_millis(250);
+            let work = std::sync::Arc::new((operation, connection, moved));
+            loop {
+                tokio::time::sleep(delay).await;
+                let attempt = work.clone();
+                match tauri::async_runtime::spawn_blocking(move || {
+                    commit_move_index(&attempt.1, &attempt.2)
+                })
+                .await
+                {
+                    Ok(Ok(())) => break,
+                    Ok(Err(error)) => log::warn!("移动后的索引重试失败: {error}"),
+                    Err(error) => log::warn!("移动后的索引重试任务失败: {error}"),
+                }
+                delay = (delay * 2).min(std::time::Duration::from_secs(30));
+            }
+            drop(work);
+            emit_move_index_updated(&app);
+        });
+    } else if !outcome.moved.is_empty() {
+        emit_move_index_updated(&app);
     }
-    Ok(target)
+    Ok(outcome)
 }
 
+fn execute_local_move(
+    connection: &std::sync::Mutex<Option<rusqlite::Connection>>,
+    plan: &fs::MovePlan,
+    execute: impl FnOnce() -> fs::MoveOutcome,
+) -> Result<(fs::MoveOutcome, Option<Write>), String> {
+    let operation = Write::begin([plan.source.as_path(), plan.target.as_path()])?;
+    let outcome = execute();
+    if !outcome.moved.is_empty() {
+        if let Err(error) = commit_move_index(connection, &outcome.moved) {
+            log::warn!("移动后的索引提交失败，将重试: {error}");
+            return Ok((outcome, Some(operation)));
+        }
+    }
+    Ok((outcome, None))
+}
+
+fn emit_move_index_updated(app: &tauri::AppHandle) {
+    let _ = app.emit("logical-tree-updated", ());
+    let _ = app.emit("workspace-move-indexed", ());
+}
+
+fn commit_move_index(
+    connection: &std::sync::Mutex<Option<rusqlite::Connection>>,
+    moved: &[fs::MovedPath],
+) -> Result<(), String> {
+    let mut files = Vec::new();
+    for path in moved {
+        let target = std::path::Path::new(&path.target);
+        if path.subtree || target.is_file() {
+            files.extend(fs::collect_workspace_metadata(target)?);
+        }
+    }
+    let guard = connection.lock().map_err(|error| error.to_string())?;
+    let Some(conn) = guard.as_ref() else {
+        return Ok(());
+    };
+    // 其他进程占用写锁时，交给后台重试，避免阻塞此进程的其他数据库操作。
+    conn.busy_timeout(std::time::Duration::ZERO)
+        .map_err(|error| error.to_string())?;
+    let result = (|| {
+        let tx =
+            rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+                .map_err(|error| error.to_string())?;
+        update_moved_paths(&tx, moved)?;
+        clear_moved_links(&tx, moved)?;
+        fs::apply_workspace_metadata(&files, &tx)?;
+        tx.commit().map_err(|error| error.to_string())
+    })();
+    conn.busy_timeout(db::BUSY_TIMEOUT)
+        .map_err(|error| error.to_string())?;
+    result
+}
+
+#[cfg(test)]
 fn remap_entry_paths(
     conn: &rusqlite::Connection,
     source_path: &str,
     target: &str,
 ) -> Result<(), String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    update_moved_paths(
+        &tx,
+        &[fs::MovedPath {
+            source: source_path.into(),
+            target: target.into(),
+            subtree: true,
+        }],
+    )?;
+    tx.commit().map_err(|e| e.to_string())
+}
+
+fn update_moved_paths(conn: &rusqlite::Connection, moved: &[fs::MovedPath]) -> Result<(), String> {
     for table in [
         "file_meta",
         "logical_refs",
@@ -1503,7 +1638,7 @@ fn remap_entry_paths(
         "local_history_heads",
         "graph_files",
     ] {
-        let exists: bool = tx
+        let exists: bool = conn
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
                 [table],
@@ -1513,24 +1648,7 @@ fn remap_entry_paths(
         if !exists {
             continue;
         }
-        // Compare literal component prefixes, not LIKE patterns (% and _ are valid names).
-        // Normalize separators on Windows, where stored paths may use either spelling.
-        let normalize = |path: &str| {
-            if cfg!(windows) {
-                path.replace('\\', "/")
-            } else {
-                path.to_string()
-            }
-        };
-        let source = normalize(source_path).trim_end_matches('/').to_string();
-        let destination = target
-            .trim_end_matches(['/', std::path::MAIN_SEPARATOR])
-            .to_string();
-        let path_expr = if cfg!(windows) {
-            "replace(path, char(92), '/')"
-        } else {
-            "path"
-        };
+        let path_expr = db::indexed_path_expression("path");
         let suffix = format!("substr({}, length(?1) + 1)", path_expr);
         let suffix = if cfg!(windows) {
             format!("replace({}, '/', char(92))", suffix)
@@ -1538,11 +1656,55 @@ fn remap_entry_paths(
             suffix
         };
         let updated = format!("?2 || {}", suffix);
-        tx.execute(&format!(
-            "UPDATE OR REPLACE {table} SET path={updated} WHERE {path_expr}=?1 OR substr({path_expr}, 1, length(?1)+1)=?1 || '/'"
-        ), rusqlite::params![source, destination]).map_err(|e| e.to_string())?;
+        let mut exact = conn
+            .prepare_cached(&format!(
+                "UPDATE OR REPLACE {table} SET path=?2 WHERE {path_expr}=?1"
+            ))
+            .map_err(|error| error.to_string())?;
+        let mut descendants = conn.prepare_cached(&format!(
+            "UPDATE OR REPLACE {table} SET path={updated} WHERE {path_expr}>=?3 AND {path_expr}<?4"
+        )).map_err(|error| error.to_string())?;
+        for path in moved {
+            let source = fs::index_path_key(&path.source);
+            let target = &path.target;
+            exact
+                .execute(rusqlite::params![source, target])
+                .map_err(|error| error.to_string())?;
+            if path.subtree {
+                descendants
+                    .execute(rusqlite::params![
+                        source,
+                        target,
+                        format!("{source}/"),
+                        format!("{source}0")
+                    ])
+                    .map_err(|error| error.to_string())?;
+            }
+        }
     }
-    tx.commit().map_err(|e| e.to_string())
+    Ok(())
+}
+
+fn clear_moved_links(conn: &rusqlite::Connection, moved: &[fs::MovedPath]) -> Result<(), String> {
+    let path = db::indexed_path_expression("source_path");
+    let mut exact = conn
+        .prepare_cached(&format!("DELETE FROM links WHERE {path}=?1"))
+        .map_err(|error| error.to_string())?;
+    let mut descendants = conn
+        .prepare_cached(&format!("DELETE FROM links WHERE {path}>=?1 AND {path}<?2"))
+        .map_err(|error| error.to_string())?;
+    for path in moved {
+        for name in [&path.source, &path.target] {
+            let key = fs::index_path_key(name);
+            exact.execute([&key]).map_err(|error| error.to_string())?;
+            if path.subtree {
+                descendants
+                    .execute([format!("{key}/"), format!("{key}0")])
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1612,6 +1774,8 @@ pub fn recent_files(state: State<'_, AppState>) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn stash_entry(path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let key = path_operations::canonical_key_path(std::path::Path::new(&path));
+        let _operation = Write::begin([key.as_path()])?;
         crate::core::delete_guard::check_directory(std::path::Path::new(&path))?;
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1644,6 +1808,8 @@ pub async fn stash_entry(path: String) -> Result<String, String> {
 pub async fn delete_entry(path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = std::path::Path::new(&path);
+        let key = path_operations::canonical_key_path(path);
+        let _operation = Write::begin([key.as_path()])?;
         crate::core::delete_guard::check_directory(path)?;
         let metadata = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
         if metadata.is_dir() && !metadata.file_type().is_symlink() {
@@ -1849,6 +2015,159 @@ mod logical_folder_tests {
 
 #[cfg(test)]
 mod path_remap_tests {
+    use super::*;
+
+    #[test]
+    fn moving_files_leaves_database_available_and_invalidates_older_scan() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("from.md");
+        let destination = root.path().join("to");
+        std::fs::create_dir(&destination).unwrap();
+        std::fs::write(&source, "[[next.md]]").unwrap();
+        let conn = db::init_db(root.path().to_str()).unwrap();
+        conn.execute("INSERT INTO terminal_history VALUES ('command', 0)", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO logical_refs VALUES (?1, 'category')",
+            [source.to_str().unwrap()],
+        )
+        .unwrap();
+        let connection = std::sync::Mutex::new(Some(conn));
+        let opts = fs::TransferOptions::default();
+        let plan = fs::MovePlan::new(&source, &destination, None, &opts).unwrap();
+        let old_scan = Scan::begin([root.path()]);
+        let (outcome, pending) = execute_local_move(&connection, &plan, || {
+            let guard = connection.try_lock().expect("磁盘操作期间不能持有数据库锁");
+            let conn = guard.as_ref().unwrap();
+            assert_eq!(
+                conn.query_row("SELECT command FROM terminal_history", [], |row| row
+                    .get::<_, String>(0))
+                    .unwrap(),
+                "command"
+            );
+            conn.execute(
+                "INSERT INTO global_settings VALUES ('setting', 'value')",
+                [],
+            )
+            .unwrap();
+            assert!(Write::begin([plan.source.as_path()]).is_err());
+            drop(guard);
+            let outcome = plan.execute(&opts);
+            assert!(old_scan.apply(|| ()).is_none());
+            outcome
+        })
+        .unwrap();
+        assert!(pending.is_none());
+        assert!(outcome.error.is_none());
+        assert!(!source.exists());
+        let guard = connection.lock().unwrap();
+        let conn = guard.as_ref().unwrap();
+        assert_eq!(
+            conn.query_row("SELECT path FROM logical_refs", [], |row| row
+                .get::<_, String>(0))
+                .unwrap(),
+            outcome.target
+        );
+        let links = db::get_links(conn, &outcome.target, false).unwrap();
+        assert_eq!(links.len(), 1);
+        assert!(links[0].0.ends_with("/to/next.md"));
+    }
+
+    #[test]
+    fn merging_moves_only_entries_that_were_not_skipped() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let target_dir = root.path().join("target");
+        let destination = target_dir.join("source");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::create_dir_all(&destination).unwrap();
+        let skipped = source.join("keep.md");
+        let moved = source.join("move.md");
+        for file in [&skipped, &moved, &destination.join("keep.md")] {
+            std::fs::write(file, "note").unwrap();
+        }
+        let conn = db::init_db(root.path().to_str()).unwrap();
+        for path in [&skipped, &moved] {
+            conn.execute(
+                "INSERT INTO logical_refs VALUES (?1, 'category')",
+                [path.to_str().unwrap()],
+            )
+            .unwrap();
+        }
+        let opts = fs::TransferOptions {
+            merge_folders: true,
+            skip_all: true,
+            ..Default::default()
+        };
+        let plan = fs::MovePlan::new(&source, &target_dir, None, &opts).unwrap();
+        let connection = std::sync::Mutex::new(Some(conn));
+        let (outcome, pending) =
+            execute_local_move(&connection, &plan, || plan.execute(&opts)).unwrap();
+        assert!(outcome.error.is_none());
+        assert!(pending.is_none());
+        assert_eq!(outcome.moved.len(), 1);
+        assert!(skipped.exists());
+        assert!(!moved.exists());
+        let guard = connection.lock().unwrap();
+        let conn = guard.as_ref().unwrap();
+        for path in [skipped.to_string_lossy().as_ref(), &outcome.moved[0].target] {
+            assert!(
+                conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM logical_refs WHERE path=?1)",
+                    [path],
+                    |row| row.get::<_, bool>(0)
+                )
+                .unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn index_write_contention_can_retry_without_moving_the_file_again() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source.md");
+        std::fs::write(&source, "note").unwrap();
+        let conn = db::init_db(root.path().to_str()).unwrap();
+        conn.execute(
+            "INSERT INTO logical_refs VALUES (?1, 'category')",
+            [source.to_str().unwrap()],
+        )
+        .unwrap();
+        let blocker = rusqlite::Connection::open(root.path().join(".nexus/index.db")).unwrap();
+        blocker.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let connection = std::sync::Mutex::new(Some(conn));
+        let opts = fs::TransferOptions::default();
+        let plan = fs::MovePlan::new(&source, root.path(), Some("target.md"), &opts).unwrap();
+        let (outcome, pending) =
+            execute_local_move(&connection, &plan, || plan.execute(&opts)).unwrap();
+        let pending = pending.expect("应保留索引提交任务");
+        assert!(!source.exists());
+        assert!(plan.target.is_file());
+        let guard = connection.try_lock().unwrap();
+        assert_eq!(
+            guard
+                .as_ref()
+                .unwrap()
+                .query_row("SELECT path FROM logical_refs", [], |row| row
+                    .get::<_, String>(0))
+                .unwrap(),
+            source.to_string_lossy()
+        );
+        drop(guard);
+        blocker.execute_batch("COMMIT").unwrap();
+        commit_move_index(&connection, &outcome.moved).unwrap();
+        drop(pending);
+        let guard = connection.lock().unwrap();
+        assert_eq!(
+            guard
+                .as_ref()
+                .unwrap()
+                .query_row("SELECT path FROM logical_refs", [], |row| row
+                    .get::<_, String>(0))
+                .unwrap(),
+            outcome.target
+        );
+    }
     #[test]
     fn moving_back_to_an_indexed_path_preserves_source_metadata() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();

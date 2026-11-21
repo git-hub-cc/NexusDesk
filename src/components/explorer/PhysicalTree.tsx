@@ -337,7 +337,9 @@ export const PhysicalTree: React.FC = React.memo(() => {
         while (true) {
             try {
                 if (action === "move") {
-                    await movePhysicalEntry(sourcePath, targetDir, undefined, currentOpts);
+                    if (await movePhysicalEntry(sourcePath, targetDir, undefined, currentOpts)) {
+                        setError("文件已移动，正在重试索引更新");
+                    }
                 } else {
                     await copyFileToPhysical(sourcePath, targetDir, currentOpts);
                 }
@@ -742,7 +744,9 @@ export const PhysicalTree: React.FC = React.memo(() => {
                 selectBasename={treeRef.current?.get(renamePath)?.isLeaf === true}
                 validate={validateEntryName}
                 onCreate={async name => {
-                    await movePhysicalEntry(renamePath, parent(renamePath), name);
+                    if (await movePhysicalEntry(renamePath, parent(renamePath), name)) {
+                        setError("文件已重命名，正在重试索引更新");
+                    }
                     setSelectedPath(null);
                     setSelectedDir(parent(renamePath));
                 }}

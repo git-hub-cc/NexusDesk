@@ -71,6 +71,9 @@ export function useWorkspaceWatcher() {
       if (disposed) return;
       void useWorkspaceStore.getState().fetchLogicalTree();
     });
+    const graphSub = listen("workspace-move-indexed", () => {
+      if (!disposed) window.dispatchEvent(new Event("nexusdesk-graph-data-changed"));
+    });
 
     const onFocus = () => { 
       void useWorkspaceStore.getState().refreshTreeStatuses(); 
@@ -84,6 +87,7 @@ export function useWorkspaceWatcher() {
       window.removeEventListener("focus", onFocus); 
       void subscription.then(unlisten => unlisten()); 
       void logicalTreeSub.then(unlisten => unlisten());
+      void graphSub.then(unlisten => unlisten());
     };
   }, []);
 }

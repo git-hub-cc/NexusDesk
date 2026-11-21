@@ -7,6 +7,20 @@ import { invalidateTreeFiles, readCachedTreeFile } from "./treeFileCache";
 import { resolveGDStudioPlayUrl, searchGDStudio } from "./gdMusic";
 import { getMusicChorus, type MusicChorus } from "./musicChorus";
 
+export interface MoveOutcome {
+    target: string;
+    moved: { source: string; target: string; subtree: boolean }[];
+    error: string | null;
+    indexPending: boolean;
+}
+
+async function movePath(command: "move_entry" | "rename_entry", args: Record<string, unknown>): Promise<string> {
+    const result = await invoke<string | MoveOutcome>(command, args);
+    if (typeof result === "string") return result;
+    if (result.error) throw result.error;
+    return result.target;
+}
+
 export interface SearchResult {
     path: string;
     title: string;
@@ -98,7 +112,7 @@ export const fsApi = {
     writeFileClipboard: (paths: string[], cut: boolean): Promise<void> => invoke("write_file_clipboard", { paths, cut }),
     updateFileClipboard: (paths: string[], cut: boolean, sequence: number): Promise<void> => invoke("write_file_clipboard", { paths, cut, expectedSequence: sequence }),
     readFileClipboard: (): Promise<{ sequence: number; paths: string[]; cut: boolean }> => invoke("read_file_clipboard"),
-    renameEntry: (sourcePath: string, name: string): Promise<string> => invoke("rename_entry", { sourcePath, name }),
+    renameEntry: (sourcePath: string, name: string): Promise<string> => movePath("rename_entry", { sourcePath, name }),
     deleteEntry: (path: string): Promise<void> => invoke("delete_entry", { path }),
     touchFile: (path: string): Promise<void> => isSnapshot ? Promise.resolve() : invoke("touch_file", { path }),
     recentFiles: (): Promise<string[]> => invoke("recent_files"),
@@ -157,7 +171,7 @@ export const fsApi = {
     copyFileToDir: (sourcePath: string, targetDir: string): Promise<void> =>
         invoke("copy_file_to_dir", { sourcePath, targetDir }),
 
-    moveEntry: (sourcePath: string, targetDir: string): Promise<string> => invoke("move_entry", { sourcePath, targetDir }),
+    moveEntry: (sourcePath: string, targetDir: string): Promise<string> => movePath("move_entry", { sourcePath, targetDir }),
 
     createPhysicalFile: (path: string): Promise<void> => invoke("create_physical_file", { path }),
 

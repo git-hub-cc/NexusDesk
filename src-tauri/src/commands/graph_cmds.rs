@@ -64,6 +64,7 @@ fn set_category_color(
 fn schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS graph_categories (name TEXT PRIMARY KEY COLLATE NOCASE);
         CREATE TABLE IF NOT EXISTS graph_files (category TEXT NOT NULL COLLATE NOCASE, path TEXT NOT NULL, PRIMARY KEY(category, path));")
+        .and_then(|()| crate::core::db::index_move_paths(conn, "graph_files"))
         .map_err(|e| e.to_string())
 }
 

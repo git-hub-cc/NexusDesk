@@ -281,7 +281,17 @@ fn index_revisions() -> &'static std::sync::Mutex<std::collections::HashMap<Stri
 }
 
 pub fn index_path_key(path: &str) -> String {
-    let value = path.replace('\\', "/").trim_end_matches('/').to_owned();
+    let value = path.replace('\\', "/");
+    let value = if cfg!(windows) {
+        if let Some(unc) = value.strip_prefix("//?/UNC/") {
+            format!("//{unc}")
+        } else {
+            value.strip_prefix("//?/").unwrap_or(&value).to_owned()
+        }
+    } else {
+        value
+    };
+    let value = value.trim_end_matches('/').to_owned();
     if cfg!(windows) {
         value.to_ascii_lowercase()
     } else {
@@ -423,6 +433,77 @@ pub fn transfer_entry_named(
     new_name: Option<&str>,
     opts: &TransferOptions,
 ) -> Result<String, String> {
+    let (source, target) = transfer_paths(source, target_dir, copy, new_name, opts)?;
+    if source != target || copy {
+        transfer_recursive(&source, &target, copy, opts, &mut Vec::new())?;
+    }
+    Ok(transfer_path(&target))
+}
+
+pub struct MovePlan {
+    pub source: std::path::PathBuf,
+    pub target: std::path::PathBuf,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MovedPath {
+    pub source: String,
+    pub target: String,
+    pub subtree: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveOutcome {
+    pub target: String,
+    pub moved: Vec<MovedPath>,
+    pub error: Option<String>,
+    pub index_pending: bool,
+}
+
+fn transfer_path(path: &Path) -> String {
+    let path = path.to_string_lossy();
+    if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else {
+        path.trim_start_matches(r"\\?\").to_owned()
+    }
+}
+
+impl MovePlan {
+    pub fn new(
+        source: &Path,
+        target_dir: &Path,
+        name: Option<&str>,
+        opts: &TransferOptions,
+    ) -> Result<Self, String> {
+        let (source, target) = transfer_paths(source, target_dir, false, name, opts)?;
+        Ok(Self { source, target })
+    }
+
+    pub fn execute(&self, opts: &TransferOptions) -> MoveOutcome {
+        let mut moved = Vec::new();
+        let error = if self.source == self.target {
+            None
+        } else {
+            transfer_recursive(&self.source, &self.target, false, opts, &mut moved).err()
+        };
+        MoveOutcome {
+            target: transfer_path(&self.target),
+            moved,
+            error,
+            index_pending: false,
+        }
+    }
+}
+
+fn transfer_paths(
+    source: &Path,
+    target_dir: &Path,
+    copy: bool,
+    new_name: Option<&str>,
+    opts: &TransferOptions,
+) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
     let source = source.canonicalize().map_err(|e| e.to_string())?;
     let target_dir = target_dir.canonicalize().map_err(|e| e.to_string())?;
     if !target_dir.is_dir() {
@@ -432,10 +513,7 @@ pub fn transfer_entry_named(
         return Err("Cannot transfer a directory into itself".into());
     }
     if !copy && new_name.is_none() && source.parent() == Some(target_dir.as_path()) {
-        return Ok(source
-            .to_string_lossy()
-            .trim_start_matches(r"\\?\")
-            .to_string());
+        return Ok((source.clone(), source));
     }
     if let Some(name) = new_name {
         if name.is_empty()
@@ -452,13 +530,6 @@ pub fn transfer_entry_named(
         .or_else(|| source.file_name())
         .ok_or("Invalid directory or source path")?;
     let mut target = target_dir.join(name);
-    if target == source && !copy {
-        return Ok(source
-            .to_string_lossy()
-            .trim_start_matches(r"\\?\")
-            .to_string());
-    }
-
     if target.exists()
         && copy
         && new_name.is_none()
@@ -486,13 +557,7 @@ pub fn transfer_entry_named(
         }
     }
 
-    transfer_recursive(&source, &target, copy, opts)?;
-
-    // Match the paths returned by read_dir_shallow on Windows (without verbatim prefixes).
-    Ok(target
-        .to_string_lossy()
-        .trim_start_matches(r"\\?\")
-        .to_string())
+    Ok((source, target))
 }
 
 #[cfg(test)]
@@ -592,6 +657,7 @@ fn transfer_recursive(
     target: &Path,
     copy: bool,
     opts: &TransferOptions,
+    moved: &mut Vec<MovedPath>,
 ) -> Result<(), String> {
     let metadata = fs::symlink_metadata(source).map_err(|e| e.to_string())?;
     if metadata.file_type().is_symlink() {
@@ -599,7 +665,8 @@ fn transfer_recursive(
     }
 
     if metadata.is_dir() {
-        if target.exists() {
+        let merged = target.exists();
+        if merged {
             if target.is_file() {
                 return Err(format!("CONFLICT:FILE:{}", target.to_string_lossy()));
             }
@@ -610,24 +677,36 @@ fn transfer_recursive(
             fs::create_dir_all(target).map_err(|e| e.to_string())?;
         }
 
+        let first_child = moved.len();
         for entry in fs::read_dir(source).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
-            transfer_recursive(&entry.path(), &target.join(entry.file_name()), copy, opts)?;
+            transfer_recursive(
+                &entry.path(),
+                &target.join(entry.file_name()),
+                copy,
+                opts,
+                moved,
+            )?;
         }
-        if !copy {
-            let _ = fs::remove_dir(source); // Ignore error if not empty (due to skipped files)
+        if !copy && fs::remove_dir(source).is_ok() {
+            if !merged {
+                moved.truncate(first_child);
+            }
+            moved.push(MovedPath {
+                source: transfer_path(source),
+                target: transfer_path(target),
+                subtree: !merged,
+            });
         }
     } else {
-        if target.exists() {
+        let overwrite = target.exists();
+        if overwrite {
             let target_str = target.to_string_lossy().to_string();
             if opts.skip_all || opts.skip_paths.contains(&target_str) {
                 return Ok(());
             }
             if !opts.overwrite_all && !opts.overwrite_paths.contains(&target_str) {
                 return Err(format!("CONFLICT:FILE:{}", target_str));
-            }
-            if !copy {
-                fs::remove_file(target).map_err(|e| e.to_string())?;
             }
         }
         if copy {
@@ -642,28 +721,77 @@ fn transfer_recursive(
                 })
                 .map_err(|e| e.to_string())?;
         } else {
-            if let Err(_) = fs::rename(source, target) {
-                // Fallback for cross-device moves
-                fs::OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .truncate(true)
-                    .open(target)
-                    .and_then(|mut output| {
-                        let mut input = fs::File::open(source)?;
-                        std::io::copy(&mut input, &mut output)
-                    })
-                    .map_err(|e| e.to_string())?;
-                fs::remove_file(source).map_err(|e| e.to_string())?;
-            }
+            move_file(source, target, overwrite)?;
+            moved.push(MovedPath {
+                source: transfer_path(source),
+                target: transfer_path(target),
+                subtree: false,
+            });
         }
     }
     Ok(())
 }
 
+fn move_file(source: &Path, target: &Path, overwrite: bool) -> Result<(), String> {
+    match fs::rename(source, target) {
+        Ok(()) => return Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::CrossesDevices => {}
+        Err(error) => return Err(error.to_string()),
+    }
+    copy_then_remove(source, target, overwrite)
+}
+
+fn copy_then_remove(source: &Path, target: &Path, overwrite: bool) -> Result<(), String> {
+    let parent = target.parent().ok_or("Invalid destination")?;
+    let mut temp = tempfile::Builder::new()
+        .prefix(".nexusdesk-save-move-")
+        .tempfile_in(parent)
+        .map_err(|error| error.to_string())?;
+    let mut input = fs::File::open(source).map_err(|error| error.to_string())?;
+    std::io::copy(&mut input, temp.as_file_mut()).map_err(|error| error.to_string())?;
+    let metadata = input.metadata().map_err(|error| error.to_string())?;
+    temp.as_file()
+        .set_times(
+            fs::FileTimes::new()
+                .set_modified(metadata.modified().map_err(|error| error.to_string())?),
+        )
+        .map_err(|error| error.to_string())?;
+    temp.as_file()
+        .set_permissions(metadata.permissions())
+        .map_err(|error| error.to_string())?;
+    temp.as_file()
+        .sync_all()
+        .map_err(|error| error.to_string())?;
+    drop(input);
+    if overwrite {
+        temp.persist(target)
+    } else {
+        temp.persist_noclobber(target)
+    }
+    .map_err(|error| error.to_string())?;
+    fs::remove_file(source).map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod transfer_tests {
     use super::{TransferOptions, transfer_entry_named};
+
+    #[test]
+    fn copy_fallback_preserves_both_files_on_conflict_and_publishes_complete_contents() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let target = root.path().join("target");
+        let bytes = vec![42; 262144];
+        std::fs::write(&source, &bytes).unwrap();
+        std::fs::write(&target, "existing").unwrap();
+        assert!(super::copy_then_remove(&source, &target, false).is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), bytes);
+        assert_eq!(std::fs::read(&target).unwrap(), b"existing");
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
+        super::copy_then_remove(&source, &target, true).unwrap();
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(&target).unwrap(), bytes);
+    }
     #[test]
     fn rename_preserves_contents_and_rejects_overwrite_and_invalid_names() {
         let root = std::env::temp_dir().join(format!("nexusdesk-rename-{}", std::process::id()));
